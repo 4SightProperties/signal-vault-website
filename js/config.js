@@ -14,9 +14,9 @@ const CONFIG = {
 
     // Role IDs — right-click role → Copy Role ID (dev mode on)
     requiredRoles: {
-      verified:   'ROLE_ID_VERIFIED',               // @Verified
-      disclaimer: 'ROLE_ID_DISCLAIMER_ACKNOWLEDGED',// @Acknowledged Discl...
-      tos:        'ROLE_ID_TOS_ACCEPTED',            // @ToS-Accepted
+      verified:   '1491285557785919588',  // @Verified
+      disclaimer: '1482171292118683731',  // @Acknowledged Discl...
+      tos:        '1496700516636561448',  // @ToS-Accepted
     },
 
     // Human-readable role names shown in the UI (match exact Discord role names)
