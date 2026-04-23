@@ -190,7 +190,9 @@ export default {
       plan,
       billing,
       amount,
-      nextPaymentDate:    subscription.current_period_end,   // Unix timestamp
+      nextPaymentDate:    subscription.current_period_end
+                       ?? subscription.items?.data?.[0]?.current_period_end
+                       ?? null,
       cancelAtPeriodEnd:  subscription.cancel_at_period_end,
       isGrandfathered:    parseGrandfathered(subscription),
     }, 200, origin);
