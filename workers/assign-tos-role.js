@@ -26,11 +26,14 @@
 
 const DISCORD_API = 'https://discord.com/api/v10';
 
-// Allowed origin — lock this to your production domain
-const ALLOWED_ORIGIN = 'https://pay.signalvault.com';
+// Allowed origins — all domains that may call this worker
+const ALLOWED_ORIGINS = new Set([
+  'https://4sightproperties.github.io',  // GitHub Pages deployment
+  'https://pay.signalvault.com',          // future custom domain
+]);
 
 const CORS = (origin) => ({
-  'Access-Control-Allow-Origin':  origin === ALLOWED_ORIGIN ? ALLOWED_ORIGIN : '',
+  'Access-Control-Allow-Origin':  ALLOWED_ORIGINS.has(origin) ? origin : '',
   'Access-Control-Allow-Methods': 'POST, OPTIONS',
   'Access-Control-Allow-Headers': 'Content-Type',
   'Access-Control-Max-Age':       '86400',
