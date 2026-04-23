@@ -33,7 +33,6 @@ const PRICE_IDS = {
   eliteAnnual:  'price_1TO90mCAG23wiziiPQlTMGKF',
 };
 
-const EARLY_ADOPTER_COUPON = 'OKeQCnao';
 
 const SUCCESS_URL = 'https://4sightproperties.github.io/signal-vault-website/success.html?session_id={CHECKOUT_SESSION_ID}';
 const CANCEL_URL  = 'https://4sightproperties.github.io/signal-vault-website/cancel.html';
@@ -77,13 +76,14 @@ async function fetchMemberRoles(env, userId) {
 
 // ── Stripe helper ────────────────────────────────────────────────────────────
 
-async function createSession(env, { priceId, plan, earlyAdopter, discordUserId, discordUsername }) {
+async function createSession(env, { priceId, plan, discordUserId, discordUsername }) {
   const params = new URLSearchParams({
     mode:                                    'subscription',
     'line_items[0][price]':                  priceId,
     'line_items[0][quantity]':               '1',
     success_url:                             SUCCESS_URL,
     cancel_url:                              CANCEL_URL,
+    allow_promotion_codes:                   'true',
     client_reference_id:                     discordUserId,
     'metadata[discord_user_id]':             discordUserId,
     'metadata[discord_username]':            discordUsername || '',
@@ -93,10 +93,6 @@ async function createSession(env, { priceId, plan, earlyAdopter, discordUserId, 
     'subscription_data[metadata][discord_username]': discordUsername || '',
     'subscription_data[metadata][plan]':     plan,
   });
-
-  if (earlyAdopter) {
-    params.set('discounts[0][coupon]', EARLY_ADOPTER_COUPON);
-  }
 
   const res = await fetch(`${STRIPE_API}/checkout/sessions`, {
     method:  'POST',
@@ -184,7 +180,6 @@ export default {
       session = await createSession(env, {
         priceId,
         plan,
-        earlyAdopter: !!earlyAdopter,
         discordUserId,
         discordUsername: discordUsername || verifiedUser.username || '',
       });
