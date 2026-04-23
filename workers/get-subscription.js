@@ -78,6 +78,7 @@ async function fetchSubscriptions(env, customerId) {
     limit:    '10',
   });
   params.append('expand[]', 'data.discount.coupon');  // older API compat
+  params.append('expand[]', 'data.discounts');         // expand IDs → full objects (source.coupon)
   params.append('expand[]', 'data.latest_invoice');   // effective amount after discounts
 
   const res = await fetch(`${STRIPE_API}/subscriptions?${params}`, {
