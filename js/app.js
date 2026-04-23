@@ -142,25 +142,19 @@ const App = (() => {
               </svg>
             </div>
             <div>
-              <h3>Discord Verification Required</h3>
-              <p>Connect your Discord to verify membership eligibility before checkout.</p>
+              <h3>3-Step Discord Verification</h3>
+              <p>Complete verification in our Discord community before checkout.</p>
             </div>
           </div>
-          <div class="role-checklist">
-            ${Object.entries(CONFIG.discord.roleLabels).map(([key, label]) => `
-              <div class="role-item role-pending">
-                <span class="role-check">○</span>
-                <span>${label}</span>
-              </div>
-            `).join('')}
+          <div class="verify-steps">
+            <div class="verify-step"><span class="step-num">1</span> Join the Signal Vault community server</div>
+            <div class="verify-step"><span class="step-num">2</span> Read &amp; acknowledge the educational disclaimer</div>
+            <div class="verify-step"><span class="step-num">3</span> Accept the Terms of Service</div>
           </div>
           <div class="discord-panel-actions">
             <button class="btn btn-discord" onclick="DiscordAuth.startOAuth()">
               Connect Discord
             </button>
-            <a href="${CONFIG.discord.serverInvite}" target="_blank" class="btn-link">
-              Not a member yet? Join our server →
-            </a>
           </div>
         </div>`;
       return;
@@ -185,23 +179,23 @@ const App = (() => {
         </div>
         <div class="role-checklist">
           ${[
-            { key: 'verified',   met: roleStatus?.verified   },
-            { key: 'disclaimer', met: roleStatus?.disclaimer  },
-            { key: 'tos',        met: roleStatus?.tos         },
-          ].map(({ key, met }) => `
+            { key: 'verified',   met: roleStatus?.verified,   label: 'Step 1 — Community Member'        },
+            { key: 'disclaimer', met: roleStatus?.disclaimer,  label: 'Step 2 — Disclaimer Acknowledged'  },
+            { key: 'tos',        met: roleStatus?.tos,         label: 'Step 3 — Terms of Service Accepted' },
+          ].map(({ key, met, label }) => `
             <div class="role-item ${met ? 'role-met' : 'role-missing'}">
               <span class="role-check">${met ? '✓' : '✗'}</span>
-              <span>${CONFIG.discord.roleLabels[key]}</span>
-              ${!met ? `<a href="${CONFIG.discord.serverInvite}" target="_blank" class="role-action">Get in Discord →</a>` : ''}
+              <span>${label}</span>
+              ${!met ? `<a href="${CONFIG.discord.serverInvite}" target="_blank" class="role-action">Complete in Discord →</a>` : ''}
             </div>
           `).join('')}
         </div>
         ${!allMet ? `
           <p class="panel-note">
-            Return to the <a href="${CONFIG.discord.serverInvite}" target="_blank">Signal Vault Discord</a>
-            to complete the required verification steps, then refresh this page.
+            Complete the remaining steps in the <a href="${CONFIG.discord.serverInvite}" target="_blank">Signal Vault Discord</a>,
+            then refresh this page.
           </p>` :
-          '<p class="panel-note panel-note-success">All roles verified. You may now proceed to checkout.</p>'
+          '<p class="panel-note panel-note-success">✓ All steps complete. You may now proceed to checkout.</p>'
         }
       </div>`;
   }
