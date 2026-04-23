@@ -15,15 +15,21 @@ const CONFIG = {
     // Role IDs — right-click role → Copy Role ID (dev mode on)
     requiredRoles: {
       verified:   'ROLE_ID_VERIFIED',               // @Verified
-      disclaimer: 'ROLE_ID_DISCLAIMER_ACKNOWLEDGED',// @Disclaimer-Acknowledged
+      disclaimer: 'ROLE_ID_DISCLAIMER_ACKNOWLEDGED',// @Acknowledged Discl...
       tos:        'ROLE_ID_TOS_ACCEPTED',            // @ToS-Accepted
     },
 
-    // Human-readable role names shown in the UI
+    // Human-readable role names shown in the UI (match exact Discord role names)
     roleLabels: {
-      verified:   'Verified Member',
-      disclaimer: 'Disclaimer Acknowledged',
-      tos:        'Terms of Service Accepted',
+      verified:   '@Verified',
+      disclaimer: '@Acknowledged Discl...',
+      tos:        '@ToS-Accepted',
+    },
+
+    // Subscription tier role IDs — assigned after payment confirmed
+    subscriptionRoles: {
+      pro:   'ROLE_ID_PRO',    // ⚡ Pro
+      elite: 'ROLE_ID_ELITE',  // 🏆 Elite
     },
 
     // Discord server invite (for users who need to join first)

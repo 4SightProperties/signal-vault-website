@@ -243,16 +243,40 @@ const App = (() => {
     const proLink      = getPaymentLink('pro',   billing, early);
     const eliteLink    = getPaymentLink('elite', billing, early);
 
+    // Base (regular) prices for strikethrough display when in early adopter mode
+    const basePro   = billing === 'monthly' ? p.active.pro.monthly   : p.active.pro.annual;
+    const baseElite = billing === 'monthly' ? p.active.elite.monthly : p.active.elite.annual;
+
     const proSavings   = billing === 'annual'
       ? ` <span class="savings-badge">2 months free</span>` : '';
     const eliteSavings = billing === 'annual'
       ? ` <span class="savings-badge">2 months free</span>` : '';
 
-    const earlyBadge   = early ? '<span class="badge badge-early">Early Adopter</span>' : '';
-    const earlyNote    = early
-      ? `<p class="early-note">30% off — grandfathered forever</p>` : '';
-    const earlyRem     = early
-      ? `<p class="early-countdown">${getEarlyAdopterRemaining()} coupon slots remaining</p>` : '';
+    const earlyBadge = early ? '<span class="badge badge-early">Early Adopter — 30% Off</span>' : '';
+    const earlyRem   = early
+      ? `<p class="early-countdown">${getEarlyAdopterRemaining()} early adopter slots remaining — grandfathered forever</p>` : '';
+
+    // Pricing display: strikethrough base + discounted price when early adopter
+    function priceBlock(price, basePrice, period, savings, equiv) {
+      if (early) {
+        return `
+          <div class="plan-price">
+            <span class="price-was">${formatPrice(basePrice)}</span>
+            <span class="price-amount">${formatPrice(price)}</span>
+            <span class="price-period">${period}${savings}</span>
+          </div>
+          <p class="early-note">Early Adopter 30% Off — locked forever</p>
+          ${equiv ? `<p class="price-equiv">${equiv}</p>` : ''}`;
+      }
+      return `
+        <div class="plan-price">
+          <span class="price-amount">${formatPrice(price)}</span>
+          <span class="price-period">${period}${savings}</span>
+        </div>
+        ${equiv ? `<p class="price-equiv">${equiv}</p>` : ''}`;
+    }
+
+    const period = billing === 'monthly' ? '/month' : '/year';
 
     return `
       <div class="pricing-toggle-wrap">
@@ -273,17 +297,15 @@ const App = (() => {
         <div class="pricing-card card-pro ${early ? 'card-early' : ''}">
           <div class="card-top">
             ${earlyBadge}
-            <h3 class="plan-name">PRO</h3>
-            <div class="plan-price">
-              <span class="price-amount">${formatPrice(proPrice)}</span>
-              <span class="price-period">${billing === 'monthly' ? '/month' : '/year'}${proSavings}</span>
-            </div>
-            ${earlyNote}
-            ${billing === 'annual' ? `<p class="price-equiv">$${Math.round(proPrice/12)}/month billed annually</p>` : ''}
+            <h3 class="plan-name">⚡ Pro</h3>
+            ${priceBlock(
+              proPrice, basePro, period, proSavings,
+              billing === 'annual' ? `$${Math.round(proPrice/12)}/month billed annually` : ''
+            )}
           </div>
           <ul class="feature-list">
             <li>Real-time scanner alerts via Discord</li>
-            <li>All PRO signal channels</li>
+            <li>⚡ Pro signal channels</li>
             <li>Morning market brief (9:15 AM ET)</li>
             <li>Dark pool flow alerts</li>
             <li>Opening Move signals (9:38 AM ET)</li>
@@ -294,7 +316,7 @@ const App = (() => {
             <a href="${locked ? '#' : proLink}"
                class="btn btn-primary btn-block ${locked ? 'btn-locked' : ''}"
                ${locked ? 'onclick="return handleLockedClick(event)"' : ''}>
-              ${locked ? '🔒 Verify Discord First' : 'Get PRO Access'}
+              ${locked ? '🔒 Verify Discord First' : 'Get ⚡ Pro Access'}
             </a>
           </div>
         </div>
@@ -303,18 +325,16 @@ const App = (() => {
           <div class="card-badge-top">MOST POPULAR</div>
           <div class="card-top">
             ${earlyBadge}
-            <h3 class="plan-name">ELITE</h3>
-            <div class="plan-price">
-              <span class="price-amount">${formatPrice(elitePrice)}</span>
-              <span class="price-period">${billing === 'monthly' ? '/month' : '/year'}${eliteSavings}</span>
-            </div>
-            ${earlyNote}
-            ${billing === 'annual' ? `<p class="price-equiv">$${Math.round(elitePrice/12)}/month billed annually</p>` : ''}
+            <h3 class="plan-name">🏆 Elite</h3>
+            ${priceBlock(
+              elitePrice, baseElite, period, eliteSavings,
+              billing === 'annual' ? `$${Math.round(elitePrice/12)}/month billed annually` : ''
+            )}
           </div>
           <ul class="feature-list">
-            <li>Everything in PRO</li>
+            <li>Everything in ⚡ Pro</li>
             <li>Priority signal alerts</li>
-            <li>ELITE-only high-conviction setups</li>
+            <li>🏆 Elite-only high-conviction setups</li>
             <li>Live position monitoring alerts</li>
             <li>Advanced confidence scoring</li>
             <li>Backtested strategy insights</li>
@@ -324,7 +344,7 @@ const App = (() => {
             <a href="${locked ? '#' : eliteLink}"
                class="btn btn-elite btn-block ${locked ? 'btn-locked' : ''}"
                ${locked ? 'onclick="return handleLockedClick(event)"' : ''}>
-              ${locked ? '🔒 Verify Discord First' : 'Get ELITE Access'}
+              ${locked ? '🔒 Verify Discord First' : 'Get 🏆 Elite Access'}
             </a>
           </div>
         </div>
