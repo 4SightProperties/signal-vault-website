@@ -26,7 +26,7 @@ const CONFIG = {
       tos:        '@ToS-Accepted',
     },
 
-    // Subscription tier role IDs — assigned after payment confirmed
+    // Subscription tier role IDs — assigned after payment confirmed via webhook
     subscriptionRoles: {
       pro:   'ROLE_ID_PRO',    // ⚡ Pro
       elite: 'ROLE_ID_ELITE',  // 🏆 Elite
@@ -36,21 +36,37 @@ const CONFIG = {
     serverInvite: 'https://discord.gg/YOUR_INVITE_CODE',
   },
 
-  // ── Stripe Payment Links ──────────────────────────────────────
-  // Create each product in Stripe → Products, then create Payment Links.
-  // Add ?prefilled_email={DISCORD_EMAIL} if you collect email via Discord OAuth.
+  // ── Stripe ────────────────────────────────────────────────────
   stripe: {
+    // Publishable key — Stripe Dashboard → Developers → API Keys
+    // Use pk_test_... for testing, pk_live_... for production
+    publishableKey: 'pk_live_YOUR_PUBLISHABLE_KEY',
+
     // Customer self-service portal — Stripe Dashboard → Billing → Customer portal
     customerPortalUrl: 'https://billing.stripe.com/p/login/YOUR_PORTAL_ID',
 
+    // Price IDs — Stripe Dashboard → Products → [product] → Pricing → Copy price ID
+    prices: {
+      proMonthly:   'price_REPLACE_ME',   // $99/month
+      proAnnual:    'price_REPLACE_ME',   // $990/year
+      eliteMonthly: 'price_REPLACE_ME',   // $150/month
+      eliteAnnual:  'price_REPLACE_ME',   // $1,500/year
+    },
+
+    // Early adopter coupon — Stripe Dashboard → Products → Coupons → Create (30% off, forever)
+    // Applied automatically for first 15 subscribers
+    earlyAdopterCoupon: 'COUPON_ID_30PCT_OFF',
+
+    // Payment Links (fallback — used if price IDs are not yet configured)
+    // Create in Stripe Dashboard → Payment Links
     paymentLinks: {
-      // Active Members — Regular pricing
+      // Regular pricing
       proMonthly:              'https://buy.stripe.com/REPLACE_ME',
       proAnnual:               'https://buy.stripe.com/REPLACE_ME',
       eliteMonthly:            'https://buy.stripe.com/REPLACE_ME',
       eliteAnnual:             'https://buy.stripe.com/REPLACE_ME',
 
-      // Active Members — Early Adopter pricing (30% off)
+      // Early Adopter pricing (30% off — separate links with coupon pre-applied)
       proMonthlyEarly:         'https://buy.stripe.com/REPLACE_ME',
       proAnnualEarly:          'https://buy.stripe.com/REPLACE_ME',
       eliteMonthlyEarly:       'https://buy.stripe.com/REPLACE_ME',
@@ -65,12 +81,15 @@ const CONFIG = {
   },
 
   // ── Capacity & Availability ───────────────────────────────────
-  // Update these manually (or via a small backend/GitHub Action) as members join.
+  // IMPORTANT: totalSold is a one-way counter — it only goes up.
+  // Cancellations do NOT reopen slots. Once 20 are sold, the tier is closed forever.
+  // Update totalSold and earlyAdopterUsed manually after each confirmed subscription
+  // (or automate via a Stripe webhook → serverless function → GitHub API commit).
   capacity: {
-    activeMax:          20,   // Hard cap on active members
-    earlyAdopterMax:    15,   // Total early adopter coupons available
-    activeCurrent:       0,   // UPDATE: current active member count
-    earlyAdopterUsed:    0,   // UPDATE: how many early adopter slots used
+    activeMax:          20,   // Hard lifetime cap — once reached, closed forever
+    earlyAdopterMax:    15,   // First 15 subscribers get 30% off automatically
+    totalSold:           0,   // UPDATE: total subscriptions ever sold (never decreases)
+    earlyAdopterUsed:    0,   // UPDATE: how many of the 15 early adopter slots claimed
     waitlistCurrent:     0,   // UPDATE: current waitlist position (determines tier)
   },
 
@@ -94,11 +113,11 @@ const CONFIG = {
 
   // ── Site ─────────────────────────────────────────────────────
   site: {
-    name:      'Signal Vault',
-    tagline:   'Institutional-Grade Signals for the Individual Trader',
-    domain:    'pay.signalvault.com',
-    discordBot: 'https://discord.gg/YOUR_INVITE_CODE',
-    successUrl: 'https://pay.signalvault.com/success.html',
-    cancelUrl:  'https://pay.signalvault.com/cancel.html',
+    name:        'Signal Vault',
+    tagline:     'Institutional-Grade Signals for the Individual Trader',
+    domain:      'pay.signalvault.com',
+    discordBot:  'https://discord.gg/YOUR_INVITE_CODE',
+    successUrl:  'https://pay.signalvault.com/success.html',
+    cancelUrl:   'https://pay.signalvault.com/cancel.html',
   },
 };

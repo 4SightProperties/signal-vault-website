@@ -151,11 +151,11 @@ ul   { list-style: none; }
 }
 
 .nav-logo-img {
-  width:         36px;
-  height:        36px;
-  border-radius: 8px;
+  width:         72px;
+  height:        72px;
+  border-radius: 14px;
   object-fit:    contain;
-  box-shadow:    0 0 20px rgba(74,222,128,0.15);
+  box-shadow:    0 0 28px rgba(74,222,128,0.20);
 }
 
 .price-was {

@@ -8,14 +8,15 @@ const App = (() => {
     auth:        { state: 'unauthenticated', user: null, roleStatus: null },
     billing:     'monthly',   // 'monthly' | 'annual'
     earlyAdopter: false,
-    activeMode:  true,        // true = active slots available; false = waitlist
+    activeMode:  true,        // true = lifetime cap not reached; false = waitlist
     capacity:    CONFIG.capacity,
   };
 
   // ── Derived state ─────────────────────────────────────────────
 
+  // One-way gate: checks total ever sold, not active count
   function isActiveMode() {
-    return state.capacity.activeCurrent < state.capacity.activeMax;
+    return state.capacity.totalSold < state.capacity.activeMax;
   }
 
   function hasEarlyAdopterSlots() {
@@ -23,7 +24,7 @@ const App = (() => {
   }
 
   function getSlotsRemaining() {
-    return Math.max(0, state.capacity.activeMax - state.capacity.activeCurrent);
+    return Math.max(0, state.capacity.activeMax - state.capacity.totalSold);
   }
 
   function getEarlyAdopterRemaining() {
@@ -106,21 +107,76 @@ const App = (() => {
     const label = el('capacity-label');
     const earlyLabel = el('early-adopter-label');
 
-    const pct = (state.capacity.activeCurrent / state.capacity.activeMax) * 100;
+    const pct = (state.capacity.totalSold / state.capacity.activeMax) * 100;
 
     if (bar)   bar.style.width = Math.min(100, pct) + '%';
     if (label) {
       const rem = getSlotsRemaining();
       label.textContent = isActiveMode()
-        ? `${rem} of ${state.capacity.activeMax} slots remaining`
-        : 'Capacity reached — Waitlist open';
+        ? `${state.capacity.totalSold} of ${state.capacity.activeMax} lifetime slots claimed`
+        : 'All 20 lifetime slots claimed — Waitlist open';
     }
     if (earlyLabel) {
       const rem = getEarlyAdopterRemaining();
       earlyLabel.textContent = hasEarlyAdopterSlots()
-        ? `Early Adopter: ${rem} of ${state.capacity.earlyAdopterMax} coupons remaining`
-        : 'Early Adopter pricing closed';
+        ? `Early Adopter: ${rem} of ${state.capacity.earlyAdopterMax} discounted slots remaining`
+        : 'Early Adopter pricing closed — regular rates apply';
     }
+  }
+
+  // ── Stripe Checkout ───────────────────────────────────────────
+
+  function startCheckout(plan, billing) {
+    // One-way capacity gate: check total ever sold
+    if (!isActiveMode()) {
+      const panel = el('discord-panel');
+      if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      return;
+    }
+
+    const early = hasEarlyAdopterSlots();
+    const priceKey = plan + (billing === 'monthly' ? 'Monthly' : 'Annual');
+    const priceId  = CONFIG.stripe.prices[priceKey];
+    const userId   = state.auth.user?.id;
+
+    // If Stripe.js is loaded and price IDs are configured, use Checkout
+    if (
+      typeof Stripe !== 'undefined' &&
+      CONFIG.stripe.publishableKey &&
+      !CONFIG.stripe.publishableKey.includes('YOUR') &&
+      priceId &&
+      !priceId.includes('REPLACE_ME')
+    ) {
+      const stripe = Stripe(CONFIG.stripe.publishableKey);
+      const params = {
+        lineItems:  [{ price: priceId, quantity: 1 }],
+        mode:       'subscription',
+        successUrl: CONFIG.site.successUrl + '?session_id={CHECKOUT_SESSION_ID}',
+        cancelUrl:  CONFIG.site.cancelUrl,
+      };
+      if (userId) params.clientReferenceId = userId;
+      if (early && CONFIG.stripe.earlyAdopterCoupon && !CONFIG.stripe.earlyAdopterCoupon.includes('COUPON_ID')) {
+        params.discounts = [{ coupon: CONFIG.stripe.earlyAdopterCoupon }];
+      }
+      stripe.redirectToCheckout(params).then(result => {
+        if (result.error) _fallbackToPaymentLink(plan, billing, early, userId);
+      });
+      return;
+    }
+
+    // Fall back to Payment Links (static URLs)
+    _fallbackToPaymentLink(plan, billing, early, userId);
+  }
+
+  function _fallbackToPaymentLink(plan, billing, early, userId) {
+    let link = getPaymentLink(plan, billing, early);
+    if (link === '#') return;
+    // Append Discord user ID as client_reference_id for Stripe metadata tracking
+    if (userId) {
+      const sep = link.includes('?') ? '&' : '?';
+      link += `${sep}client_reference_id=${encodeURIComponent(userId)}`;
+    }
+    window.location.href = link;
   }
 
   // ── Discord verification UI ───────────────────────────────────
@@ -307,11 +363,11 @@ const App = (() => {
             <li>Educational trade recaps</li>
           </ul>
           <div class="card-actions">
-            <a href="${locked ? '#' : proLink}"
+            <button
                class="btn btn-primary btn-block ${locked ? 'btn-locked' : ''}"
-               ${locked ? 'onclick="return handleLockedClick(event)"' : ''}>
+               onclick="${locked ? 'return handleLockedClick(event)' : `App.checkout('pro','${billing}')`}">
               ${locked ? '🔒 Verify Discord First' : 'Get ⚡ Pro Access'}
-            </a>
+            </button>
           </div>
         </div>
 
@@ -335,11 +391,11 @@ const App = (() => {
             <li>Direct access channel</li>
           </ul>
           <div class="card-actions">
-            <a href="${locked ? '#' : eliteLink}"
+            <button
                class="btn btn-elite btn-block ${locked ? 'btn-locked' : ''}"
-               ${locked ? 'onclick="return handleLockedClick(event)"' : ''}>
+               onclick="${locked ? 'return handleLockedClick(event)' : `App.checkout('elite','${billing}')`}">
               ${locked ? '🔒 Verify Discord First' : 'Get 🏆 Elite Access'}
-            </a>
+            </button>
           </div>
         </div>
 
@@ -629,7 +685,7 @@ const App = (() => {
     }
   }
 
-  return { run };
+  return { run, checkout: startCheckout };
 })();
 
 // Boot
