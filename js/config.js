@@ -40,22 +40,22 @@ const CONFIG = {
   stripe: {
     // Publishable key — Stripe Dashboard → Developers → API Keys
     // Use pk_test_... for testing, pk_live_... for production
-    publishableKey: 'pk_live_YOUR_PUBLISHABLE_KEY',
+    publishableKey: 'pk_test_51TO8Y1CAG23wizii2nahqbEUlOdTSZO6XYNQloj4f6Vu3aPSgKyYwQ4VqCyWgvdyPbUKyolxehqKJvGkkYU2cL3q00EIpeJTaO',
 
     // Customer self-service portal — Stripe Dashboard → Billing → Customer portal
     customerPortalUrl: 'https://billing.stripe.com/p/login/YOUR_PORTAL_ID',
 
     // Price IDs — Stripe Dashboard → Products → [product] → Pricing → Copy price ID
     prices: {
-      proMonthly:   'price_REPLACE_ME',   // $99/month
-      proAnnual:    'price_REPLACE_ME',   // $990/year
-      eliteMonthly: 'price_REPLACE_ME',   // $150/month
-      eliteAnnual:  'price_REPLACE_ME',   // $1,500/year
+      proMonthly:   'price_1TO8h8CAG23wiziiMeAbfz3r',   // $99/month
+      proAnnual:    'price_1TO94ACAG23wiziiB0wWOQee',   // $990/year
+      eliteMonthly: 'price_1TO91iCAG23wiziiodJ71huV',   // $150/month
+      eliteAnnual:  'price_1TO90mCAG23wiziiPQlTMGKF',   // $1,500/year
     },
 
     // Early adopter coupon — Stripe Dashboard → Products → Coupons → Create (30% off, forever)
     // Applied automatically for first 15 subscribers
-    earlyAdopterCoupon: 'COUPON_ID_30PCT_OFF',
+    earlyAdopterCoupon: 'OKeQCnao',
 
     // Payment Links (fallback — used if price IDs are not yet configured)
     // Create in Stripe Dashboard → Payment Links
