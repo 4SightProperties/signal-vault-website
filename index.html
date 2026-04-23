@@ -1,0 +1,290 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signal Vault — Subscription Plans</title>
+  <meta name="description" content="Join Signal Vault for institutional-grade trading signals. Real-time scanner alerts, dark pool flow, and backtested strategies.">
+  <meta property="og:title" content="Signal Vault — Subscription Plans">
+  <meta property="og:description" content="Institutional-grade trading signals for the individual trader.">
+  <meta property="og:type" content="website">
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f1d14'/><text y='22' x='5' font-size='20' fill='%234ade80'>SV</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="index">
+  <canvas id="particles-canvas"></canvas>
+  <div class="bg-grid"></div>
+
+  <div class="page-wrapper">
+
+    <!-- Nav -->
+    <nav class="nav">
+      <div class="container">
+        <div class="nav-inner">
+          <a href="/" class="nav-logo">
+            <div class="nav-logo-mark">SV</div>
+            <span class="nav-logo-text">Signal <span>Vault</span></span>
+          </a>
+          <div class="nav-links">
+            <a href="#pricing">Pricing</a>
+            <a href="#features">Features</a>
+            <a href="#faq">FAQ</a>
+            <a href="/terms.html">Terms</a>
+          </div>
+          <div id="nav-user">
+            <!-- Rendered by app.js -->
+            <span class="spinner" style="width:16px;height:16px;"></span>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <!-- Hero -->
+    <section class="hero">
+      <div class="container">
+        <div class="hero-eyebrow">Live Signals · Institutional Edge</div>
+        <h1 class="hero-title">
+          The Edge Belongs<br>to <span class="accent">the Few</span>
+        </h1>
+        <p class="hero-subtitle">
+          Real-time scanner alerts, dark pool flow, backtested strategy signals,
+          and live trade management — delivered directly to your Discord.
+        </p>
+        <div class="hero-stats">
+          <div class="stat-item">
+            <span class="stat-value">+21.4%</span>
+            <span class="stat-label">Avg Expectancy</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">53%</span>
+            <span class="stat-label">Win Rate</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">2.05×</span>
+            <span class="stat-label">Profit Factor</span>
+          </div>
+          <div class="stat-item">
+            <span class="stat-value">20</span>
+            <span class="stat-label">Max Members</span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Capacity bar -->
+    <section class="capacity-section">
+      <div class="container">
+        <div class="capacity-card animate-in">
+          <div class="capacity-header">
+            <span class="capacity-title">Active Member Capacity</span>
+            <span id="capacity-label">Loading…</span>
+          </div>
+          <div class="capacity-bar-track">
+            <div id="capacity-bar-fill"></div>
+          </div>
+          <div id="early-adopter-label">Loading…</div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Discord verification -->
+    <section class="discord-section" id="verify">
+      <div class="container">
+        <div id="discord-panel">
+          <div class="discord-panel-inner" style="padding:32px;text-align:center;">
+            <div class="spinner"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Pricing -->
+    <section class="pricing-section container" id="pricing">
+      <div class="section-header">
+        <h2 class="section-title">Choose Your Access Level</h2>
+        <p class="section-subtitle">Transparent pricing. No hidden fees. Grandfathered forever.</p>
+      </div>
+      <div id="pricing-section">
+        <!-- Rendered by app.js -->
+        <div style="text-align:center;padding:60px 0;">
+          <div class="spinner"></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Grandfathered pricing callout -->
+    <section style="padding:0 0 60px;">
+      <div class="container">
+        <div style="background:rgba(74,222,128,0.04);border:1px solid rgba(74,222,128,0.15);border-radius:16px;padding:28px 32px;display:flex;align-items:center;gap:20px;flex-wrap:wrap;max-width:800px;margin:0 auto;">
+          <div style="font-size:32px;">🔒</div>
+          <div style="flex:1;min-width:200px;">
+            <h3 style="font-size:16px;font-weight:600;color:var(--accent);margin-bottom:4px;">Grandfathered Pricing — Locked Forever</h3>
+            <p style="font-size:14px;color:var(--text-secondary);">Early adopters keep their rate permanently — regardless of future price increases or plan changes. Your rate is contractually protected.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- Features -->
+    <section class="features-section" id="features">
+      <div class="container">
+        <div class="section-header">
+          <h2 class="section-title">Everything You Need to Trade</h2>
+          <p class="section-subtitle">Built on a live backtested strategy with 3+ years of data</p>
+        </div>
+        <div class="features-grid">
+          <div class="feature-card animate-in">
+            <span class="feature-icon">📡</span>
+            <h4>Real-Time Scanner Alerts</h4>
+            <p>Multi-timeframe EMA cloud signals with VWAP reclaim, Gap and Go, and pattern confirmation posted directly to Discord.</p>
+          </div>
+          <div class="feature-card animate-in">
+            <span class="feature-icon">💧</span>
+            <h4>Dark Pool Flow</h4>
+            <p>Unusual options activity and dark pool prints filtered for meaningful institutional positioning — not noise.</p>
+          </div>
+          <div class="feature-card animate-in">
+            <span class="feature-icon">🌅</span>
+            <h4>Daily Market Brief</h4>
+            <p>Pre-market report at 9:15 AM ET. Key levels, VIX regime, market bias, and top setups to watch.</p>
+          </div>
+          <div class="feature-card animate-in">
+            <span class="feature-icon">⚡</span>
+            <h4>Opening Move Signals</h4>
+            <p>First actionable setup of the day posted at 9:38 ET — after the opening noise settles and trend confirms.</p>
+          </div>
+          <div class="feature-card animate-in">
+            <span class="feature-icon">🎯</span>
+            <h4>Confidence Scoring</h4>
+            <p>Every signal includes a composite confidence score based on ATR, breadth, IV rank, and multi-timeframe alignment.</p>
+          </div>
+          <div class="feature-card animate-in">
+            <span class="feature-icon">📊</span>
+            <h4>Live Trade Recaps</h4>
+            <p>Educational post-trade analysis showing entry rationale, exit execution, and what the data said.</p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- FAQ -->
+    <section class="faq-section" id="faq">
+      <div class="container container-narrow">
+        <div class="section-header">
+          <h2 class="section-title">Frequently Asked Questions</h2>
+        </div>
+        <div class="faq-list">
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              Why is capacity limited to 20 members?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              Signal Vault is intentionally small. Too many subscribers in the same setups reduces edge for everyone. 20 active members means our signals don't move markets or create crowded trades.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              What does "grandfathered pricing" mean?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              Early adopters lock in their rate permanently. If you join at $69/month, that's your price forever — even if we raise rates for new members. Upgrades and downgrades preserve your grandfathered pricing tier.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              Why do I need Discord roles before purchasing?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              We require server membership and acknowledgment of our disclaimer and terms before accepting payment. This ensures every subscriber understands that our signals are for educational purposes only and not financial advice.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              What's the difference between PRO and ELITE?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              PRO includes all real-time scanner signals, daily briefs, and dark pool alerts. ELITE adds priority signal delivery, ELITE-only high-conviction setups, live position monitoring alerts, and advanced confidence scoring details.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              How does the waitlist work?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              When active capacity is reached, new members join a waitlist. Your position in the waitlist determines your tier (and therefore your rate). Deposits are non-refundable but applied as credit toward your first month when a slot opens. Earlier signup = lower rate locked forever.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              Can I cancel anytime?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              Yes. Cancel anytime through the billing portal — your access continues through the end of your paid period. Note: canceling forfeits your grandfathered rate. If you rejoin within 45 days, your previous rate is honored. After 45 days, you rejoin at the current rate.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              Is there a refund policy?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              We offer a 7-day refund window for your first payment. After that, subscriptions are non-refundable but you may cancel at any time. Waitlist deposits are non-refundable.
+            </div>
+          </div>
+
+          <div class="faq-item">
+            <button class="faq-question" onclick="toggleFaq(this)">
+              Is this financial advice?
+              <span class="faq-chevron">▾</span>
+            </button>
+            <div class="faq-answer">
+              No. Signal Vault provides educational content and trading signal alerts for informational purposes only. Nothing on this platform constitutes financial, investment, or trading advice. Always conduct your own due diligence and consult a qualified financial professional.
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </section>
+
+    <!-- Footer -->
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-inner">
+          <div class="footer-copy">
+            © 2025 Signal Vault · Educational purposes only · Not financial advice
+          </div>
+          <div class="footer-links">
+            <a href="/terms.html">Terms</a>
+            <a href="/privacy.html">Privacy</a>
+            <a href="/account.html">Account</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </div><!-- /page-wrapper -->
+
+  <script src="js/config.js"></script>
+  <script src="js/discord-auth.js"></script>
+  <script src="js/app.js"></script>
+  <script>
+    function toggleFaq(btn) {
+      const item = btn.closest('.faq-item');
+      item.classList.toggle('open');
+    }
+  </script>
+</body>
+</html>

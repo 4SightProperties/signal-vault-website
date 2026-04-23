@@ -1,0 +1,76 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Payment Canceled — Signal Vault</title>
+  <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'><rect width='32' height='32' rx='8' fill='%230f1d14'/><text y='22' x='5' font-size='20' fill='%234ade80'>SV</text></svg>">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body data-page="cancel">
+  <canvas id="particles-canvas"></canvas>
+  <div class="bg-grid"></div>
+
+  <div class="page-wrapper">
+
+    <nav class="nav">
+      <div class="container">
+        <div class="nav-inner">
+          <a href="/" class="nav-logo">
+            <div class="nav-logo-mark">SV</div>
+            <span class="nav-logo-text">Signal <span>Vault</span></span>
+          </a>
+          <div id="nav-user"></div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="result-page">
+      <div class="result-card cancel-card animate-in">
+        <span class="result-icon">↩️</span>
+        <h1>Payment Canceled</h1>
+        <p>No charge was made. Your checkout session was canceled or expired. You can return to the pricing page to try again anytime.</p>
+
+        <div class="result-steps">
+          <h4>Common Issues</h4>
+          <ol>
+            <li>Checkout sessions expire after 30 minutes — start a new one if needed.</li>
+            <li>Ensure your Discord roles are verified before clicking a payment link.</li>
+            <li>If your card was declined, try a different payment method or contact your bank.</li>
+            <li>For help, open a support ticket in the Signal Vault Discord.</li>
+          </ol>
+        </div>
+
+        <div class="result-actions">
+          <a href="/#pricing" class="btn btn-primary btn-block">
+            Return to Pricing
+          </a>
+          <a href="https://discord.gg/YOUR_INVITE_CODE" target="_blank" class="btn btn-discord btn-block">
+            Get Help in Discord
+          </a>
+          <a href="/" class="btn btn-ghost btn-block">
+            Back to Home
+          </a>
+        </div>
+      </div>
+    </div>
+
+    <footer class="footer">
+      <div class="container">
+        <div class="footer-inner">
+          <div class="footer-copy">© 2025 Signal Vault · Not financial advice</div>
+          <div class="footer-links">
+            <a href="/terms.html">Terms</a>
+            <a href="/privacy.html">Privacy</a>
+          </div>
+        </div>
+      </div>
+    </footer>
+
+  </div>
+
+  <script src="js/config.js"></script>
+  <script src="js/discord-auth.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
