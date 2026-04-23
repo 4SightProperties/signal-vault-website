@@ -766,6 +766,13 @@ const App = (() => {
         return;
       }
 
+      // Defense-in-depth: treat non-access statuses same as no subscription
+      const ACCESS_STATUSES = ['active', 'trialing', 'past_due'];
+      if (!ACCESS_STATUSES.includes(data.status)) {
+        _renderPlanNotFound();
+        return;
+      }
+
       _renderPlanData(data);
 
     } catch (e) {

@@ -31,7 +31,10 @@ const STRIPE_API           = 'https://api.stripe.com/v1';
 const EARLY_ADOPTER_COUPON = 'OKeQCnao';
 
 // Status priority for selecting the "best" subscription when multiple exist
-const STATUS_PRIORITY = { active: 0, trialing: 1, past_due: 2, incomplete: 3, canceled: 4 };
+const STATUS_PRIORITY = { active: 0, trialing: 1, past_due: 2 };
+
+// Only these statuses represent actual access — canceled/incomplete/etc. are excluded
+const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 
 const ALLOWED_ORIGINS = new Set([
   'https://4sightproperties.github.io',
@@ -91,10 +94,11 @@ async function fetchSubscriptions(env, customerId) {
 }
 
 function selectSubscription(subscriptions) {
-  if (!subscriptions.length) return null;
+  const eligible = subscriptions.filter(s => ACTIVE_STATUSES.has(s.status));
+  if (!eligible.length) return null;
 
   // Pick highest-priority status; within same status take most recently created
-  return subscriptions.sort((a, b) => {
+  return eligible.sort((a, b) => {
     const pa = STATUS_PRIORITY[a.status] ?? 99;
     const pb = STATUS_PRIORITY[b.status] ?? 99;
     if (pa !== pb) return pa - pb;
