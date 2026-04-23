@@ -714,10 +714,10 @@ const App = (() => {
             <a href="${CONFIG.discord.serverInvite}" target="_blank" class="quick-link">
               <span>💬</span> Signal Vault Discord
             </a>
-            <a href="/terms.html" class="quick-link">
+            <a href="./terms.html" class="quick-link">
               <span>📄</span> Terms of Service
             </a>
-            <a href="/privacy.html" class="quick-link">
+            <a href="./privacy.html" class="quick-link">
               <span>🔒</span> Privacy Policy
             </a>
             <a href="mailto:support@signalvault.com" class="quick-link">
@@ -947,13 +947,13 @@ const App = (() => {
     if (authState === 'authenticated' && user) {
       navUser.innerHTML = `
         <span class="nav-username">${user.username}</span>
-        <a href="/account.html" class="btn btn-outline btn-sm">Portal</a>`;
+        <a href="./account.html" class="btn btn-outline btn-sm">Portal</a>`;
     } else {
       navUser.innerHTML = `
         <button class="btn btn-ghost btn-sm" onclick="DiscordAuth.startOAuth()">
           Connect Discord
         </button>
-        <a href="/account.html" class="btn btn-outline btn-sm">Sign In</a>`;
+        <a href="./account.html" class="btn btn-outline btn-sm">Sign In</a>`;
     }
   }
 
