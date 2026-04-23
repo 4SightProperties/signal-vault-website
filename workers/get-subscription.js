@@ -73,12 +73,13 @@ async function verifyDiscordToken(token) {
 
 async function fetchSubscriptions(env, customerId) {
   const params = new URLSearchParams({
-    customer:          customerId,
-    status:            'all',
-    limit:             '10',
-    // Expand coupon so we can check isGrandfathered without a second API call
-    'expand[]':        'data.discount.coupon',
+    customer: customerId,
+    status:   'all',
+    limit:    '10',
   });
+  // Expand coupon on both singular and array discount formats (API version compat)
+  params.append('expand[]', 'data.discount.coupon');
+  params.append('expand[]', 'data.discounts.coupon');
 
   const res = await fetch(`${STRIPE_API}/subscriptions?${params}`, {
     headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
@@ -110,18 +111,27 @@ function parsePlan(subscription) {
   const item      = subscription.items?.data?.[0];
   const price     = item?.price;
   const interval  = price?.recurring?.interval; // 'month' | 'year'
-  const amountRaw = price?.unit_amount ?? 0;    // cents
+  const unitAmount = price?.unit_amount ?? 0;   // cents, undiscounted
 
-  // Plan name comes from subscription metadata (set at checkout time)
   const plan    = subscription.metadata?.plan || 'pro';
   const billing = interval === 'year' ? 'annual' : 'monthly';
-  const amount  = Math.round(amountRaw / 100);
 
-  return { plan, billing, amount };
+  // Resolve discount from either format (singular object or array — API version compat)
+  const discount   = subscription.discount || subscription.discounts?.[0];
+  const percentOff = discount?.coupon?.percent_off ?? 0;
+  const amountOff  = discount?.coupon?.amount_off  ?? 0;
+
+  let effective = unitAmount;
+  if (percentOff)     effective = Math.round(unitAmount * (1 - percentOff / 100));
+  else if (amountOff) effective = Math.max(0, unitAmount - amountOff);
+
+  return { plan, billing, amount: Math.round(effective / 100) };
 }
 
 function parseGrandfathered(subscription) {
-  return subscription.discount?.coupon?.id === EARLY_ADOPTER_COUPON;
+  const singularMatch = subscription.discount?.coupon?.id === EARLY_ADOPTER_COUPON;
+  const arrayMatch    = subscription.discounts?.some(d => d.coupon?.id === EARLY_ADOPTER_COUPON);
+  return singularMatch || arrayMatch || false;
 }
 
 // ── Main handler ──────────────────────────────────────────────────────────────
