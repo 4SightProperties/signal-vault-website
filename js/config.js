@@ -35,6 +35,10 @@ const CONFIG = {
     // Discord server invite (for users who need to join first)
     serverInvite: 'https://discord.gg/YOUR_INVITE_CODE',
 
+    // Cloudflare Worker endpoint for Stripe checkout session creation.
+    // Deploy workers/create-checkout-session.js → copy the worker URL here.
+    checkoutEndpoint: 'https://sv-create-checkout.signalvault.workers.dev',
+
     // Cloudflare Worker endpoint for @ToS-Accepted role assignment.
     // Deploy workers/assign-tos-role.js → copy the worker URL here.
     // The bot token lives as a Worker secret — never put it in this file.
@@ -120,9 +124,9 @@ const CONFIG = {
   site: {
     name:        'Signal Vault',
     tagline:     'Institutional-Grade Signals for the Individual Trader',
-    domain:      'pay.signalvault.com',
+    domain:      '4sightproperties.github.io/signal-vault-website',
     discordBot:  'https://discord.gg/YOUR_INVITE_CODE',
-    successUrl:  'https://pay.signalvault.com/success.html',
-    cancelUrl:   'https://pay.signalvault.com/cancel.html',
+    successUrl:  'https://4sightproperties.github.io/signal-vault-website/success.html',
+    cancelUrl:   'https://4sightproperties.github.io/signal-vault-website/cancel.html',
   },
 };

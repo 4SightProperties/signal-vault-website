@@ -127,57 +127,91 @@ const App = (() => {
 
   // ── Stripe Checkout ───────────────────────────────────────────
 
-  function startCheckout(plan, billing) {
-    // One-way capacity gate: check total ever sold
+  async function startCheckout(plan, billing) {
+    // One-way capacity gate
     if (!isActiveMode()) {
-      const panel = el('discord-panel');
-      if (panel) panel.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      el('discord-panel')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
       return;
     }
 
-    const early = hasEarlyAdopterSlots();
-    const priceKey = plan + (billing === 'monthly' ? 'Monthly' : 'Annual');
-    const priceId  = CONFIG.stripe.prices[priceKey];
-    const userId   = state.auth.user?.id;
+    const early        = hasEarlyAdopterSlots();
+    const token        = DiscordAuth.getToken();
+    const userId       = state.auth.user?.id;
+    const username     = state.auth.user?.username || '';
+    const endpoint     = CONFIG.discord.checkoutEndpoint;
 
-    // If Stripe.js is loaded and price IDs are configured, use Checkout
-    if (
-      typeof Stripe !== 'undefined' &&
-      CONFIG.stripe.publishableKey &&
-      !CONFIG.stripe.publishableKey.includes('YOUR') &&
-      priceId &&
-      !priceId.includes('REPLACE_ME')
-    ) {
-      const stripe = Stripe(CONFIG.stripe.publishableKey);
-      const params = {
-        lineItems:  [{ price: priceId, quantity: 1 }],
-        mode:       'subscription',
-        successUrl: CONFIG.site.successUrl + '?session_id={CHECKOUT_SESSION_ID}',
-        cancelUrl:  CONFIG.site.cancelUrl,
-      };
-      if (userId) params.clientReferenceId = userId;
-      if (early && CONFIG.stripe.earlyAdopterCoupon && !CONFIG.stripe.earlyAdopterCoupon.includes('COUPON_ID')) {
-        params.discounts = [{ coupon: CONFIG.stripe.earlyAdopterCoupon }];
-      }
-      stripe.redirectToCheckout(params).then(result => {
-        if (result.error) _fallbackToPaymentLink(plan, billing, early, userId);
+    if (!endpoint || endpoint.includes('YOUR')) {
+      _setCheckoutBtn(plan, 'error', 'Checkout endpoint not configured.');
+      return;
+    }
+    if (!token || !userId) {
+      _setCheckoutBtn(plan, 'error', 'Please connect Discord first.');
+      return;
+    }
+
+    _setCheckoutBtn(plan, 'loading', 'Preparing checkout…');
+
+    try {
+      // ── Step 1: Create session server-side via Cloudflare Worker ─────────
+      const res = await fetch(endpoint, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          plan,
+          billing,
+          earlyAdopter: early,
+          discordToken:    token,
+          discordUserId:   userId,
+          discordUsername: username,
+        }),
       });
-      return;
-    }
 
-    // Fall back to Payment Links (static URLs)
-    _fallbackToPaymentLink(plan, billing, early, userId);
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.error || `Server returned ${res.status}`);
+      if (!data.sessionId) throw new Error('No session ID returned from server.');
+
+      // ── Step 2: Redirect to Stripe-hosted Checkout ───────────────────────
+      if (typeof Stripe === 'undefined') throw new Error('Stripe.js failed to load.');
+      const stripe = Stripe(CONFIG.stripe.publishableKey);
+      const result = await stripe.redirectToCheckout({ sessionId: data.sessionId });
+
+      // redirectToCheckout only returns if it fails (otherwise it navigates away)
+      if (result.error) throw new Error(result.error.message);
+
+    } catch (e) {
+      console.error('[Checkout]', e.message);
+      _setCheckoutBtn(plan, 'error', e.message || 'Checkout failed. Please try again.');
+    }
   }
 
-  function _fallbackToPaymentLink(plan, billing, early, userId) {
-    let link = getPaymentLink(plan, billing, early);
-    if (link === '#') return;
-    // Append Discord user ID as client_reference_id for Stripe metadata tracking
-    if (userId) {
-      const sep = link.includes('?') ? '&' : '?';
-      link += `${sep}client_reference_id=${encodeURIComponent(userId)}`;
+  // Update a checkout button's visual state without re-rendering the whole section.
+  function _setCheckoutBtn(plan, state, message) {
+    const btn = document.getElementById(`checkout-btn-${plan}`);
+    if (!btn) return;
+
+    if (state === 'loading') {
+      btn.disabled    = true;
+      btn.textContent = message;
+      return;
     }
-    window.location.href = link;
+
+    // Reset button text
+    btn.disabled    = false;
+    btn.textContent = plan === 'pro' ? 'Get ⚡ Pro Access' : 'Get 🏆 Elite Access';
+
+    if (state === 'error') {
+      const card = btn.closest('.card-actions');
+      if (!card) return;
+      let err = card.querySelector('.checkout-error');
+      if (!err) {
+        err = document.createElement('p');
+        err.className = 'checkout-error';
+        err.style.cssText = 'font-size:12px;color:#ef4444;margin-top:8px;text-align:center;line-height:1.5;';
+        card.appendChild(err);
+      }
+      err.textContent = message;
+      setTimeout(() => err?.remove(), 7000);
+    }
   }
 
   // ── ToS Acceptance ────────────────────────────────────────────
@@ -504,6 +538,7 @@ const App = (() => {
           </ul>
           <div class="card-actions">
             <button
+               id="checkout-btn-pro"
                class="btn btn-primary btn-block ${locked ? 'btn-locked' : ''}"
                onclick="${locked ? 'return handleLockedClick(event)' : `App.checkout('pro','${billing}')`}">
               ${locked ? '🔒 Verify Discord First' : 'Get ⚡ Pro Access'}
@@ -532,6 +567,7 @@ const App = (() => {
           </ul>
           <div class="card-actions">
             <button
+               id="checkout-btn-elite"
                class="btn btn-elite btn-block ${locked ? 'btn-locked' : ''}"
                onclick="${locked ? 'return handleLockedClick(event)' : `App.checkout('elite','${billing}')`}">
               ${locked ? '🔒 Verify Discord First' : 'Get 🏆 Elite Access'}

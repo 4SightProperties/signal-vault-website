@@ -1,0 +1,14 @@
+# Wrangler config for the Stripe checkout session worker
+# Deploy: wrangler deploy --config workers/create-checkout-session.toml
+#
+# Required secrets (run once after deploying):
+#   wrangler secret put STRIPE_SECRET_KEY  --config workers/create-checkout-session.toml
+#   wrangler secret put BOT_TOKEN          --config workers/create-checkout-session.toml
+#   wrangler secret put GUILD_ID           --config workers/create-checkout-session.toml
+#   wrangler secret put VERIFIED_ROLE_ID   --config workers/create-checkout-session.toml
+#   wrangler secret put DISCLAIMER_ROLE_ID --config workers/create-checkout-session.toml
+#   wrangler secret put TOS_ROLE_ID        --config workers/create-checkout-session.toml
+
+name               = "sv-create-checkout"
+main               = "create-checkout-session.js"
+compatibility_date = "2024-01-01"
