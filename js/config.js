@@ -28,8 +28,8 @@ const CONFIG = {
 
     // Subscription tier role IDs — assigned after payment confirmed via webhook
     subscriptionRoles: {
-      pro:   'ROLE_ID_PRO',    // ⚡ Pro
-      elite: 'ROLE_ID_ELITE',  // 🏆 Elite
+      pro:   '1492664247212183622',   // ⚡ Pro
+      elite: '1492664508441825290',   // 🏆 Elite
     },
 
     // Discord server invite (for users who need to join first)
@@ -51,8 +51,15 @@ const CONFIG = {
     // Use pk_test_... for testing, pk_live_... for production
     publishableKey: 'pk_test_51TO8Y1CAG23wizii2nahqbEUlOdTSZO6XYNQloj4f6Vu3aPSgKyYwQ4VqCyWgvdyPbUKyolxehqKJvGkkYU2cL3q00EIpeJTaO',
 
-    // Customer self-service portal — Stripe Dashboard → Billing → Customer portal
-    customerPortalUrl: 'https://billing.stripe.com/p/login/YOUR_PORTAL_ID',
+    // Customer self-service portal — Stripe Dashboard → Settings → Billing →
+    // Customer portal → test mode portal → "Copy link"
+    // Test format:  https://billing.stripe.com/p/login/test_XXXX
+    // Live format:  https://billing.stripe.com/p/login/live_XXXX
+    customerPortalUrl: 'https://billing.stripe.com/p/login/test_8x25kC5dy895eze9kg9bO00',
+
+    // Cloudflare Worker endpoint for live subscription data.
+    // Deploy workers/get-subscription.js → copy the worker URL here.
+    subscriptionEndpoint: 'https://sv-get-subscription.signalvault.workers.dev',
 
     // Price IDs — Stripe Dashboard → Products → [product] → Pricing → Copy price ID
     prices: {

@@ -77,7 +77,7 @@ async function fetchMemberRoles(env, userId) {
 
 // ── Stripe helper ────────────────────────────────────────────────────────────
 
-async function createSession(env, { priceId, earlyAdopter, discordUserId, discordUsername }) {
+async function createSession(env, { priceId, plan, earlyAdopter, discordUserId, discordUsername }) {
   const params = new URLSearchParams({
     mode:                                    'subscription',
     'line_items[0][price]':                  priceId,
@@ -87,9 +87,11 @@ async function createSession(env, { priceId, earlyAdopter, discordUserId, discor
     client_reference_id:                     discordUserId,
     'metadata[discord_user_id]':             discordUserId,
     'metadata[discord_username]':            discordUsername || '',
+    'metadata[plan]':                        plan,
     // Metadata on the subscription itself (accessible in webhooks)
     'subscription_data[metadata][discord_user_id]': discordUserId,
     'subscription_data[metadata][discord_username]': discordUsername || '',
+    'subscription_data[metadata][plan]':     plan,
   });
 
   if (earlyAdopter) {
@@ -181,6 +183,7 @@ export default {
     try {
       session = await createSession(env, {
         priceId,
+        plan,
         earlyAdopter: !!earlyAdopter,
         discordUserId,
         discordUsername: discordUsername || verifiedUser.username || '',

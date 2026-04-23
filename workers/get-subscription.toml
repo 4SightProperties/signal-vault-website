@@ -1,0 +1,17 @@
+# Wrangler config for the get-subscription worker
+# Deploy: wrangler deploy --config workers/get-subscription.toml
+#
+# Required secrets (run once after deploying):
+#   wrangler secret put STRIPE_SECRET_KEY --config workers/get-subscription.toml
+#
+# Required KV — same namespace id as stripe-webhook.toml:
+#   wrangler kv namespace create "DISCORD_STRIPE_MAPPING"  (once, shared)
+#   paste the returned id in both this file and stripe-webhook.toml
+
+name               = "sv-get-subscription"
+main               = "get-subscription.js"
+compatibility_date = "2024-01-01"
+
+[[kv_namespaces]]
+binding = "DISCORD_STRIPE_KV"
+id      = "9fbc6ed91969495a998319bcd776e436"

@@ -1,0 +1,20 @@
+# Wrangler config for the Stripe webhook worker
+# Deploy: wrangler deploy --config workers/stripe-webhook.toml
+#
+# Required secrets (run once after deploying):
+#   wrangler secret put STRIPE_WEBHOOK_SECRET --config workers/stripe-webhook.toml
+#   wrangler secret put BOT_TOKEN             --config workers/stripe-webhook.toml
+#   wrangler secret put GUILD_ID              --config workers/stripe-webhook.toml
+#   wrangler secret put PRO_ROLE_ID           --config workers/stripe-webhook.toml
+#   wrangler secret put ELITE_ROLE_ID         --config workers/stripe-webhook.toml
+
+name               = "sv-stripe-webhook"
+main               = "stripe-webhook.js"
+compatibility_date = "2024-01-01"
+
+# Shared KV namespace — maps Discord user ID → Stripe customer ID.
+# Create once: wrangler kv namespace create "DISCORD_STRIPE_MAPPING"
+# Paste the returned id below (and in get-subscription.toml).
+[[kv_namespaces]]
+binding = "DISCORD_STRIPE_KV"
+id      = "9fbc6ed91969495a998319bcd776e436"

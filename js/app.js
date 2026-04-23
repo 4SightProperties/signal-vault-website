@@ -696,23 +696,16 @@ const App = (() => {
           </div>
         </div>
 
-        <div class="account-card">
+        <div class="account-card" id="plan-info-card">
           <h3>Plan Information</h3>
-          <div class="plan-info-list">
-            <div class="plan-info-row">
-              <span>Current Plan</span>
-              <span class="plan-value">Managed in Stripe Portal</span>
-            </div>
-            <div class="plan-info-row">
-              <span>Billing</span>
-              <span class="plan-value">View in Billing Portal</span>
-            </div>
-            <div class="plan-info-row">
-              <span>Grandfathered Pricing</span>
-              <span class="plan-value badge-green">Protected</span>
+          <div id="plan-info-body">
+            <div class="plan-info-loading">
+              <div class="skeleton-row skeleton"></div>
+              <div class="skeleton-row skeleton" style="width:80%"></div>
+              <div class="skeleton-row skeleton" style="width:65%"></div>
+              <div class="skeleton-row skeleton" style="width:75%"></div>
             </div>
           </div>
-          <p class="plan-note">Early adopter rates are grandfathered and will not increase regardless of plan changes.</p>
         </div>
 
         <div class="account-card">
@@ -734,6 +727,146 @@ const App = (() => {
         </div>
 
       </div>`);
+
+    // Populate Plan Information card async — never blocks initial render
+    loadSubscriptionData();
+  }
+
+  // ── Subscription data fetch + render helpers ──────────────────────
+
+  async function loadSubscriptionData() {
+    const token    = DiscordAuth.getToken();
+    const userId   = state.auth.user?.id;
+    const endpoint = CONFIG.stripe.subscriptionEndpoint;
+
+    if (!token || !userId) return;
+
+    if (!endpoint || endpoint.includes('YOUR')) {
+      _renderPlanFallback();
+      return;
+    }
+
+    try {
+      const res = await fetch(endpoint, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ discordToken: token, discordUserId: userId }),
+      });
+
+      if (res.status === 401 || res.status === 403) {
+        _renderPlanError();
+        return;
+      }
+
+      if (!res.ok) throw new Error(`Server returned ${res.status}`);
+
+      const data = await res.json();
+      if (!data.found) {
+        _renderPlanNotFound();
+        return;
+      }
+
+      _renderPlanData(data);
+
+    } catch (e) {
+      console.error('[account] subscription fetch error:', e.message);
+      _renderPlanError();
+    }
+  }
+
+  function _planInfoBody() {
+    return document.getElementById('plan-info-body');
+  }
+
+  function _renderPlanData(data) {
+    const body = _planInfoBody();
+    if (!body) return;
+
+    const planLabel    = data.plan === 'elite' ? '🏆 Elite' : '⚡ Pro';
+    const billingLabel = data.billing === 'annual' ? 'Annual' : 'Monthly';
+    const amountFmt    = '$' + (data.amount || 0).toLocaleString();
+    const periodLabel  = data.billing === 'annual' ? '/yr' : '/mo';
+
+    const nextTs   = data.nextPaymentDate;
+    const nextDate = nextTs
+      ? new Date(nextTs * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+      : '—';
+    const nextLabel = data.cancelAtPeriodEnd ? 'Cancels' : 'Next Payment';
+
+    const statusPill = {
+      active:   '<span class="plan-status-pill pill-active">Active</span>',
+      trialing: '<span class="plan-status-pill pill-active">Trialing</span>',
+      past_due: '<span class="plan-status-pill pill-past-due">Past Due</span>',
+    }[data.status] || '<span class="plan-status-pill pill-canceled">Inactive</span>';
+
+    const gfBadge = data.isGrandfathered
+      ? '<span class="plan-status-pill pill-grandfathered">Protected</span>'
+      : '<span class="plan-status-pill pill-standard">Standard</span>';
+
+    body.innerHTML = `
+      <div class="plan-info-list">
+        <div class="plan-info-row">
+          <span>Current Plan</span>
+          <span class="plan-value">${planLabel}</span>
+        </div>
+        <div class="plan-info-row">
+          <span>Status</span>
+          <span>${statusPill}</span>
+        </div>
+        <div class="plan-info-row">
+          <span>Billing</span>
+          <span class="plan-value">${billingLabel} · ${amountFmt}${periodLabel}</span>
+        </div>
+        <div class="plan-info-row">
+          <span>${nextLabel}</span>
+          <span class="plan-value">${nextDate}</span>
+        </div>
+        <div class="plan-info-row">
+          <span>Grandfathered Pricing</span>
+          <span>${gfBadge}</span>
+        </div>
+      </div>
+      ${data.isGrandfathered ? '<p class="plan-note mt-2">Early adopter rates are grandfathered and will not increase regardless of plan changes.</p>' : ''}
+    `;
+  }
+
+  function _renderPlanNotFound() {
+    const body = _planInfoBody();
+    if (!body) return;
+    body.innerHTML = `
+      <div class="plan-info-empty">
+        <p class="text-secondary" style="font-size:14px;">No active subscription found.</p>
+        <a href="./index.html#pricing" class="btn btn-primary btn-sm">Subscribe to activate</a>
+      </div>
+    `;
+  }
+
+  function _renderPlanError() {
+    const body = _planInfoBody();
+    if (!body) return;
+    body.innerHTML = `
+      <p class="text-muted" style="font-size:13px;line-height:1.6;">
+        Unable to load subscription data —
+        <a href="#" onclick="App.loadSubscription();return false;">refresh to retry</a>
+      </p>
+    `;
+  }
+
+  function _renderPlanFallback() {
+    const body = _planInfoBody();
+    if (!body) return;
+    body.innerHTML = `
+      <div class="plan-info-list">
+        <div class="plan-info-row">
+          <span>Current Plan</span>
+          <span class="plan-value">Managed in Stripe Portal</span>
+        </div>
+        <div class="plan-info-row">
+          <span>Billing</span>
+          <span class="plan-value">View in Billing Portal</span>
+        </div>
+      </div>
+    `;
   }
 
   // ── Particles ─────────────────────────────────────────────────
@@ -861,7 +994,7 @@ const App = (() => {
     }
   }
 
-  return { run, checkout: startCheckout };
+  return { run, checkout: startCheckout, loadSubscription: loadSubscriptionData };
 })();
 
 // Boot
