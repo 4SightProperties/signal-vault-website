@@ -8,9 +8,9 @@ const CONFIG = {
 
   // ── Discord OAuth App ─────────────────────────────────────────
   discord: {
-    clientId:    'YOUR_DISCORD_CLIENT_ID',        // Discord Developer Portal → OAuth2 → Client ID
+    clientId:    '1496751088823701614',        // Discord Developer Portal → OAuth2 → Client ID
     guildId:     'YOUR_DISCORD_SERVER_ID',         // Right-click server → Copy Server ID (dev mode on)
-    redirectUri: 'https://pay.signalvault.com/',   // Must match exactly in Discord OAuth2 Redirects
+    redirectUri: 'https://4sightproperties.github.io/signal-vault-website/',   // Must match exactly in Discord OAuth2 Redirects
 
     // Role IDs — right-click role → Copy Role ID (dev mode on)
     requiredRoles: {
