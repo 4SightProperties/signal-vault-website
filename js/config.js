@@ -34,6 +34,11 @@ const CONFIG = {
 
     // Discord server invite (for users who need to join first)
     serverInvite: 'https://discord.gg/YOUR_INVITE_CODE',
+
+    // Cloudflare Worker endpoint for @ToS-Accepted role assignment.
+    // Deploy workers/assign-tos-role.js → copy the worker URL here.
+    // The bot token lives as a Worker secret — never put it in this file.
+    tosRoleEndpoint: 'https://sv-assign-tos-role.signalvault.workers.dev',
   },
 
   // ── Stripe ────────────────────────────────────────────────────

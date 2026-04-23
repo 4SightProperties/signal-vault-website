@@ -10,6 +10,7 @@ const App = (() => {
     earlyAdopter: false,
     activeMode:  true,        // true = lifetime cap not reached; false = waitlist
     capacity:    CONFIG.capacity,
+    tosAssigning: false,      // true while awaiting Worker response
   };
 
   // ── Derived state ─────────────────────────────────────────────
@@ -179,6 +180,74 @@ const App = (() => {
     window.location.href = link;
   }
 
+  // ── ToS Acceptance ────────────────────────────────────────────
+
+  // Called when the ToS checkbox changes — enables/disables the Accept button.
+  window.onTosCheckboxChange = function() {
+    const cb  = document.getElementById('tos-checkbox');
+    const btn = document.getElementById('tos-accept-btn');
+    if (btn) btn.disabled = !cb?.checked;
+  };
+
+  // Called when user clicks "Accept & Complete Verification".
+  // Sends the user's OAuth token to the Cloudflare Worker, which validates it
+  // and uses the bot token (stored server-side) to assign @ToS-Accepted.
+  window.acceptTos = async function() {
+    if (state.tosAssigning) return;
+
+    const token  = DiscordAuth.getToken();
+    const userId = state.auth.user?.id;
+    if (!token || !userId) return;
+
+    const endpoint = CONFIG.discord.tosRoleEndpoint;
+    if (!endpoint || endpoint.includes('YOUR_SUBDOMAIN')) {
+      _setTosStatus('error', 'Role assignment endpoint not configured. Deploy the Cloudflare Worker first.');
+      return;
+    }
+
+    state.tosAssigning = true;
+    _setTosStatus('loading', 'Assigning role…');
+
+    const btn = document.getElementById('tos-accept-btn');
+    if (btn) { btn.disabled = true; btn.textContent = 'Assigning…'; }
+
+    try {
+      const res = await fetch(endpoint, {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({ token, userId }),
+      });
+
+      const data = await res.json().catch(() => ({}));
+
+      if (!res.ok) {
+        throw new Error(data.error || `Server returned ${res.status}`);
+      }
+
+      // Success — clear cached roles and re-init so the panel picks up @ToS-Accepted
+      DiscordAuth.clearRolesCache();
+      state.auth = await DiscordAuth.init();
+      state.tosAssigning = false;
+      renderDiscordPanel();
+      renderPricingSection();
+
+    } catch (e) {
+      state.tosAssigning = false;
+      _setTosStatus('error', e.message || 'Role assignment failed. Please try again.');
+      const btn2 = document.getElementById('tos-accept-btn');
+      if (btn2) { btn2.disabled = false; btn2.textContent = 'Accept & Complete Verification'; }
+    }
+  };
+
+  function _setTosStatus(type, msg) {
+    const el = document.getElementById('tos-status');
+    if (!el) return;
+    el.textContent = msg;
+    el.className = type === 'error' ? 'tos-status tos-status-error'
+                 : type === 'loading' ? 'tos-status tos-status-loading'
+                 : 'tos-status';
+  }
+
   // ── Discord verification UI ───────────────────────────────────
 
   function renderDiscordPanel() {
@@ -217,8 +286,39 @@ const App = (() => {
     }
 
     // Authenticated — show role status
-    const allMet  = roleStatus?.allMet;
-    const avatarUrl = DiscordAuth.getAvatarUrl(user);
+    const allMet     = roleStatus?.allMet;
+    const step1      = roleStatus?.verified   || false;
+    const step2      = roleStatus?.disclaimer || false;
+    const step3      = roleStatus?.tos        || false;
+    const prereqsMet = step1 && step2;
+    const avatarUrl  = DiscordAuth.getAvatarUrl(user);
+
+    // Step 3 can be completed on-site once steps 1 & 2 are done.
+    // Steps 1 & 2 still require Discord actions.
+    const steps = [
+      {
+        key:    'verified',
+        met:    step1,
+        label:  'Step 1 — Community Member',
+        action: !step1
+          ? `<a href="${CONFIG.discord.serverInvite}" target="_blank" class="role-action">Complete in Discord →</a>`
+          : '',
+      },
+      {
+        key:    'disclaimer',
+        met:    step2,
+        label:  'Step 2 — Disclaimer Acknowledged',
+        action: !step2
+          ? `<a href="${CONFIG.discord.serverInvite}" target="_blank" class="role-action">Complete in Discord →</a>`
+          : '',
+      },
+      {
+        key:    'tos',
+        met:    step3,
+        label:  'Step 3 — Terms of Service Accepted',
+        action: (!step3 && prereqsMet) ? '<span class="role-action role-action-here">Accept below ↓</span>' : '',
+      },
+    ];
 
     panel.innerHTML = `
       <div class="discord-panel-inner ${allMet ? 'verified' : ''}">
@@ -228,31 +328,45 @@ const App = (() => {
             <div class="online-dot"></div>
           </div>
           <div>
-            <h3>${allMet ? '✓ Verification Complete' : 'Roles Pending'}</h3>
+            <h3>${allMet ? '✓ Verification Complete' : prereqsMet && !step3 ? 'One Step Remaining' : 'Verification Pending'}</h3>
             <p>Connected as <strong>${user.username}</strong></p>
           </div>
           <button class="btn-ghost btn-sm" onclick="DiscordAuth.logout()">Disconnect</button>
         </div>
+
         <div class="role-checklist">
-          ${[
-            { key: 'verified',   met: roleStatus?.verified,   label: 'Step 1 — Community Member'        },
-            { key: 'disclaimer', met: roleStatus?.disclaimer,  label: 'Step 2 — Disclaimer Acknowledged'  },
-            { key: 'tos',        met: roleStatus?.tos,         label: 'Step 3 — Terms of Service Accepted' },
-          ].map(({ key, met, label }) => `
-            <div class="role-item ${met ? 'role-met' : 'role-missing'}">
-              <span class="role-check">${met ? '✓' : '✗'}</span>
+          ${steps.map(({ met, label, action }) => `
+            <div class="role-item ${met ? 'role-met' : prereqsMet || met !== false ? 'role-missing' : 'role-pending'}">
+              <span class="role-check">${met ? '✓' : '○'}</span>
               <span>${label}</span>
-              ${!met ? `<a href="${CONFIG.discord.serverInvite}" target="_blank" class="role-action">Complete in Discord →</a>` : ''}
+              ${action}
             </div>
           `).join('')}
         </div>
-        ${!allMet ? `
+
+        ${prereqsMet && !step3 ? `
+          <div class="tos-acceptance" id="tos-acceptance">
+            <p class="tos-acceptance-intro">Steps 1 &amp; 2 complete. Accept the Terms of Service to unlock checkout:</p>
+            <label class="tos-checkbox-label">
+              <input type="checkbox" id="tos-checkbox" onchange="onTosCheckboxChange()">
+              <span>I have read and agree to the <a href="./terms.html" target="_blank">Terms of Service</a></span>
+            </label>
+            <button id="tos-accept-btn" class="btn btn-primary btn-sm" disabled onclick="acceptTos()">
+              Accept &amp; Complete Verification
+            </button>
+            <p class="tos-status" id="tos-status"></p>
+          </div>
+        ` : ''}
+
+        ${!prereqsMet ? `
           <p class="panel-note">
-            Complete the remaining steps in the <a href="${CONFIG.discord.serverInvite}" target="_blank">Signal Vault Discord</a>,
-            then refresh this page.
-          </p>` :
-          '<p class="panel-note panel-note-success">✓ All steps complete. You may now proceed to checkout.</p>'
-        }
+            Complete Steps 1 &amp; 2 in the
+            <a href="${CONFIG.discord.serverInvite}" target="_blank">Signal Vault Discord</a>,
+            then return here to accept the Terms of Service.
+          </p>
+        ` : allMet ? `
+          <p class="panel-note panel-note-success">✓ All steps complete. You may now proceed to checkout.</p>
+        ` : ''}
       </div>`;
   }
 

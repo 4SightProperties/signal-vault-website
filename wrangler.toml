@@ -1,0 +1,15 @@
+# Cloudflare Workers configuration for Signal Vault
+# https://developers.cloudflare.com/workers/wrangler/configuration/
+
+name       = "sv-assign-tos-role"
+main       = "workers/assign-tos-role.js"
+# Use ES module format (required for `export default { fetch }` syntax)
+compatibility_date = "2024-01-01"
+
+# Secrets are NOT listed here — set them via `wrangler secret put` or the dashboard.
+# Required secrets:
+#   BOT_TOKEN          — Discord bot token
+#   GUILD_ID           — Signal Vault server ID
+#   TOS_ROLE_ID        — @ToS-Accepted role ID
+#   VERIFIED_ROLE_ID   — @Verified role ID
+#   DISCLAIMER_ROLE_ID — @Acknowledged Discl... role ID

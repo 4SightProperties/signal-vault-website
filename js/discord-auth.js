@@ -156,5 +156,11 @@ const DiscordAuth = (() => {
     return `https://cdn.discordapp.com/embed/avatars/${defaultIdx}.png`;
   }
 
-  return { init, startOAuth, logout, getToken, clearSession, getAvatarUrl };
+  // Clears only the cached roles so the next init() re-fetches fresh role data
+  // without invalidating the OAuth token (used after ToS role assignment).
+  function clearRolesCache() {
+    sessionStorage.removeItem(ROLES_KEY);
+  }
+
+  return { init, startOAuth, logout, getToken, clearSession, clearRolesCache, getAvatarUrl };
 })();
