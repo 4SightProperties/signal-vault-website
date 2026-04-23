@@ -77,9 +77,8 @@ async function fetchSubscriptions(env, customerId) {
     status:   'all',
     limit:    '10',
   });
-  // Expand coupon on both singular and array discount formats (API version compat)
-  params.append('expand[]', 'data.discount.coupon');
-  params.append('expand[]', 'data.discounts.coupon');
+  params.append('expand[]', 'data.discount.coupon');  // older API compat
+  params.append('expand[]', 'data.latest_invoice');   // effective amount after discounts
 
   const res = await fetch(`${STRIPE_API}/subscriptions?${params}`, {
     headers: { Authorization: `Bearer ${env.STRIPE_SECRET_KEY}` },
@@ -108,29 +107,27 @@ function selectSubscription(subscriptions) {
 }
 
 function parsePlan(subscription) {
-  const item      = subscription.items?.data?.[0];
-  const price     = item?.price;
-  const interval  = price?.recurring?.interval; // 'month' | 'year'
-  const unitAmount = price?.unit_amount ?? 0;   // cents, undiscounted
+  const item     = subscription.items?.data?.[0];
+  const price    = item?.price;
+  const interval = price?.recurring?.interval; // 'month' | 'year'
 
   const plan    = subscription.metadata?.plan || 'pro';
   const billing = interval === 'year' ? 'annual' : 'monthly';
 
-  // Resolve discount from either format (singular object or array — API version compat)
-  const discount   = subscription.discount || subscription.discounts?.[0];
-  const percentOff = discount?.coupon?.percent_off ?? 0;
-  const amountOff  = discount?.coupon?.amount_off  ?? 0;
+  // latest_invoice.total reflects actual charge after discounts; fall back to list price
+  const invoiceTotal   = subscription.latest_invoice?.total;
+  const unitAmount     = price?.unit_amount ?? 0;
+  const effectiveCents = invoiceTotal != null ? invoiceTotal : unitAmount;
 
-  let effective = unitAmount;
-  if (percentOff)     effective = Math.round(unitAmount * (1 - percentOff / 100));
-  else if (amountOff) effective = Math.max(0, unitAmount - amountOff);
-
-  return { plan, billing, amount: Math.round(effective / 100) };
+  return { plan, billing, amount: Math.round(effectiveCents / 100) };
 }
 
 function parseGrandfathered(subscription) {
   const singularMatch = subscription.discount?.coupon?.id === EARLY_ADOPTER_COUPON;
-  const arrayMatch    = subscription.discounts?.some(d => d.coupon?.id === EARLY_ADOPTER_COUPON);
+  const arrayMatch    = subscription.discounts?.some(
+    d => d.coupon?.id === EARLY_ADOPTER_COUPON       // older API format
+      || d.source?.coupon === EARLY_ADOPTER_COUPON   // newer API format (confirmed)
+  );
   return singularMatch || arrayMatch || false;
 }
 
