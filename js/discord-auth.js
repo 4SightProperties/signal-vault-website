@@ -82,17 +82,26 @@ const DiscordAuth = (() => {
 
   async function fetchMemberRoles(token) {
     const cached = sessionStorage.getItem(ROLES_KEY);
-    if (cached) return JSON.parse(cached);
+    if (cached) {
+      console.log('[DiscordAuth] roles (cached):', JSON.parse(cached));
+      return JSON.parse(cached);
+    }
     try {
       const member = await apiGet(
         `/users/@me/guilds/${CONFIG.discord.guildId}/member`,
         token
       );
       const roles = member.roles || [];
+      console.log('[DiscordAuth] member roles from API:', roles);
+      console.log('[DiscordAuth] config requiredRoles:', CONFIG.discord.requiredRoles);
       sessionStorage.setItem(ROLES_KEY, JSON.stringify(roles));
       return roles;
     } catch (e) {
-      // User not in guild
+      // Distinguish between "not in guild" and other errors
+      console.warn('[DiscordAuth] fetchMemberRoles failed:', e.message);
+      console.warn('[DiscordAuth] guild ID used:', CONFIG.discord.guildId);
+      console.warn('[DiscordAuth] If you see 401/403, the OAuth app may need to be added to the server,');
+      console.warn('              or the guilds.members.read scope was not granted.');
       return [];
     }
   }
@@ -101,14 +110,20 @@ const DiscordAuth = (() => {
 
   function checkRoles(memberRoles) {
     const required = CONFIG.discord.requiredRoles;
-    return {
+    const result = {
       verified:   memberRoles.includes(required.verified),
       disclaimer: memberRoles.includes(required.disclaimer),
       tos:        memberRoles.includes(required.tos),
-      allMet:     memberRoles.includes(required.verified) &&
-                  memberRoles.includes(required.disclaimer) &&
-                  memberRoles.includes(required.tos),
     };
+    result.allMet = result.verified && result.disclaimer && result.tos;
+
+    // Log matching detail so role ID mismatches are immediately visible
+    console.log('[DiscordAuth] role check result:', result);
+    if (!result.verified)   console.warn(`  @Verified not found — looking for "${required.verified}" in`, memberRoles);
+    if (!result.disclaimer) console.warn(`  @Disclaimer not found — looking for "${required.disclaimer}" in`, memberRoles);
+    if (!result.tos)        console.warn(`  @ToS not found — looking for "${required.tos}" in`, memberRoles);
+
+    return result;
   }
 
   // ── Main auth flow ────────────────────────────────────────────

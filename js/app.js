@@ -291,6 +291,30 @@ const App = (() => {
     const step2      = roleStatus?.disclaimer || false;
     const step3      = roleStatus?.tos        || false;
     const prereqsMet = step1 && step2;
+
+    // Debug panel — shown when role IDs are still placeholders.
+    // Displays the actual snowflake IDs returned from Discord so they can be
+    // pasted directly into config.js requiredRoles.
+    const hasPlaceholders = Object.values(CONFIG.discord.requiredRoles)
+      .some(id => id.startsWith('ROLE_ID_'));
+    const rawRoles = state.auth.roles || [];
+    const debugHtml = hasPlaceholders && rawRoles.length > 0 ? `
+      <div style="margin-top:16px;padding:14px 16px;background:rgba(245,158,11,0.08);border:1px solid rgba(245,158,11,0.3);border-radius:8px;font-size:12px;">
+        <strong style="color:#f59e0b;">⚠ Role IDs not configured</strong>
+        <p style="color:#94a3b8;margin:6px 0 8px;">
+          Discord returned ${rawRoles.length} role(s) for this user.
+          Copy the IDs below into <code>config.js → requiredRoles</code>:
+        </p>
+        <code style="display:block;white-space:pre-wrap;color:#4ade80;font-size:11px;line-height:1.8;">${rawRoles.map(id => `"${id}"`).join('\n')}</code>
+        <p style="color:#64748b;margin:8px 0 0;">Check Discord (Developer Mode → right-click role → Copy ID) to match IDs to role names.</p>
+      </div>` : hasPlaceholders && rawRoles.length === 0 ? `
+      <div style="margin-top:16px;padding:14px 16px;background:rgba(239,68,68,0.08);border:1px solid rgba(239,68,68,0.25);border-radius:8px;font-size:12px;">
+        <strong style="color:#ef4444;">⚠ No roles returned from Discord API</strong>
+        <p style="color:#94a3b8;margin:6px 0 0;">
+          The member endpoint returned an empty role list. Check the browser console for the specific error.
+          Common causes: OAuth app not in the server, or <code>guilds.members.read</code> scope not granted.
+        </p>
+      </div>` : '';
     const avatarUrl  = DiscordAuth.getAvatarUrl(user);
 
     // Step 3 can be completed on-site once steps 1 & 2 are done.
@@ -343,6 +367,8 @@ const App = (() => {
             </div>
           `).join('')}
         </div>
+
+        ${debugHtml}
 
         ${prereqsMet && !step3 ? `
           <div class="tos-acceptance" id="tos-acceptance">
