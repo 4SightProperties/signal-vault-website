@@ -27,10 +27,10 @@ const ALLOWED_ORIGINS = new Set([
 
 // ── Price IDs (not secrets — safe to hardcode) ───────────────────────────────
 const PRICE_IDS = {
-  proMonthly:   'price_1TO8h8CAG23wiziiMeAbfz3r',
-  proAnnual:    'price_1TO94ACAG23wiziiB0wWOQee',
-  eliteMonthly: 'price_1TO91iCAG23wiziiodJ71huV',
-  eliteAnnual:  'price_1TO90mCAG23wiziiPQlTMGKF',
+  proMonthly:   'price_1TPaj5Fs7DVQ7uQTmYTJ7jUK',
+  proAnnual:    'price_1TPakwFs7DVQ7uQTRl5flYHU',
+  eliteMonthly: 'price_1TPam5Fs7DVQ7uQTzvvCVeIv',
+  eliteAnnual:  'price_1TPaoDFs7DVQ7uQTrk7y86Ar',
 };
 
 

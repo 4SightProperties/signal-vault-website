@@ -28,7 +28,7 @@
 
 const DISCORD_API          = 'https://discord.com/api/v10';
 const STRIPE_API           = 'https://api.stripe.com/v1';
-const EARLY_ADOPTER_COUPON = 'OKeQCnao';
+const EARLY_ADOPTER_COUPON = '0Xg6FV0n';
 
 // Status priority for selecting the "best" subscription when multiple exist
 const STATUS_PRIORITY = { active: 0, trialing: 1, past_due: 2 };

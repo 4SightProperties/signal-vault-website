@@ -55,7 +55,7 @@ const CONFIG = {
     // Customer portal → test mode portal → "Copy link"
     // Test format:  https://billing.stripe.com/p/login/test_XXXX
     // Live format:  https://billing.stripe.com/p/login/live_XXXX
-    customerPortalUrl: 'https://billing.stripe.com/p/login/test_8x25kC5dy895eze9kg9bO00',
+    customerPortalUrl: 'https://billing.stripe.com/p/login/dRm9AT7Vc7psd4rerC7ok00',
 
     // Cloudflare Worker endpoint for live subscription data.
     // Deploy workers/get-subscription.js → copy the worker URL here.
@@ -63,15 +63,15 @@ const CONFIG = {
 
     // Price IDs — Stripe Dashboard → Products → [product] → Pricing → Copy price ID
     prices: {
-      proMonthly:   'price_1TO8h8CAG23wiziiMeAbfz3r',   // $99/month
-      proAnnual:    'price_1TO94ACAG23wiziiB0wWOQee',   // $990/year
-      eliteMonthly: 'price_1TO91iCAG23wiziiodJ71huV',   // $150/month
-      eliteAnnual:  'price_1TO90mCAG23wiziiPQlTMGKF',   // $1,500/year
+      proMonthly:   'price_1TPaj5Fs7DVQ7uQTmYTJ7jUK',   // $99/month
+      proAnnual:    'price_1TPakwFs7DVQ7uQTRl5flYHU',   // $990/year
+      eliteMonthly: 'price_1TPam5Fs7DVQ7uQTzvvCVeIv',   // $150/month
+      eliteAnnual:  'price_1TPaoDFs7DVQ7uQTrk7y86Ar',   // $1,500/year
     },
 
     // Early adopter coupon — Stripe Dashboard → Products → Coupons → Create (30% off, forever)
     // Applied automatically for first 15 subscribers
-    earlyAdopterCoupon: 'OKeQCnao',
+    earlyAdopterCoupon: '0Xg6FV0n',
 
     // Payment Links (fallback — used if price IDs are not yet configured)
     // Create in Stripe Dashboard → Payment Links
