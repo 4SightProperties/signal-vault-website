@@ -382,12 +382,12 @@ const App = (() => {
       <div class="discord-panel-inner ${allMet ? 'verified' : ''}">
         <div class="discord-panel-header">
           <div class="discord-user-avatar">
-            ${avatarUrl ? `<img src="${avatarUrl}" alt="${user.username}" onerror="this.style.display='none'">` : ''}
+            ${avatarUrl ? `<img src="${avatarUrl}" alt="${DiscordAuth.getDisplayName(user)}" onerror="this.style.display='none'">` : ''}
             <div class="online-dot"></div>
           </div>
           <div>
             <h3>${allMet ? '✓ Verification Complete' : prereqsMet && !step3 ? 'One Step Remaining' : 'Verification Pending'}</h3>
-            <p>Connected as <strong>${user.username}</strong></p>
+            <p>Connected as <strong>${DiscordAuth.getDisplayName(user)}</strong></p>
           </div>
           <button class="btn-ghost btn-sm" onclick="DiscordAuth.logout()">Disconnect</button>
         </div>
@@ -655,10 +655,10 @@ const App = (() => {
     setHTML('account-content', `
       <div class="account-header">
         <div class="account-avatar">
-          ${avatarUrl ? `<img src="${avatarUrl}" alt="${user.username}">` : '<div class="avatar-placeholder"></div>'}
+          ${avatarUrl ? `<img src="${avatarUrl}" alt="${DiscordAuth.getDisplayName(user)}">` : '<div class="avatar-placeholder"></div>'}
         </div>
         <div class="account-user-info">
-          <h2>${user.username}</h2>
+          <h2>${DiscordAuth.getDisplayName(user)}</h2>
           <p class="text-muted">Discord ID: ${user.id}</p>
         </div>
         <button class="btn-ghost btn-sm" onclick="DiscordAuth.logout()">Sign Out</button>
@@ -953,7 +953,7 @@ const App = (() => {
     const { state: authState, user } = state.auth;
     if (authState === 'authenticated' && user) {
       navUser.innerHTML = `
-        <span class="nav-username">${user.username}</span>
+        <span class="nav-username">${DiscordAuth.getDisplayName(user)}</span>
         <a href="./account.html" class="btn btn-outline btn-sm">Portal</a>`;
     } else {
       navUser.innerHTML = `

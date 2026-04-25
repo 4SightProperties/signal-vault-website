@@ -3,18 +3,24 @@
 // Works entirely client-side — no server required.
 
 const DiscordAuth = (() => {
-  const STORAGE_KEY   = 'sv_discord_token';
-  const USER_KEY      = 'sv_discord_user';
-  const ROLES_KEY     = 'sv_discord_roles';
-  const EXPIRES_KEY   = 'sv_discord_expires';
-  const API_BASE      = 'https://discord.com/api/v10';
+  const STORAGE_KEY      = 'sv_discord_token';
+  const USER_KEY         = 'sv_discord_user';
+  const ROLES_KEY        = 'sv_discord_roles';
+  const EXPIRES_KEY      = 'sv_discord_expires';
+  const API_BASE         = 'https://discord.com/api/v10';
+  const ROLES_CACHE_TTL  = 5 * 60 * 1000; // 5 minutes — Bug 2C fix
 
   // ── Token management ──────────────────────────────────────────
 
+  // Bug 1 fix: clear cached identity when token changes to prevent
+  // stale-user data being served with a new user's token.
+  // See DISCORD_DUPLICATE_INVESTIGATION.md
   function saveToken(accessToken, expiresIn) {
     const expires = Date.now() + expiresIn * 1000;
     sessionStorage.setItem(STORAGE_KEY,  accessToken);
     sessionStorage.setItem(EXPIRES_KEY,  expires.toString());
+    sessionStorage.removeItem(USER_KEY);
+    sessionStorage.removeItem(ROLES_KEY);
   }
 
   function getToken() {
@@ -81,10 +87,20 @@ const DiscordAuth = (() => {
   }
 
   async function fetchMemberRoles(token) {
+    // Bug 2C fix: TTL-gated cache — only serve entries younger than ROLES_CACHE_TTL.
+    // Failed API calls (empty []) are never written to the cache.
     const cached = sessionStorage.getItem(ROLES_KEY);
     if (cached) {
-      console.log('[DiscordAuth] roles (cached):', JSON.parse(cached));
-      return JSON.parse(cached);
+      try {
+        const parsed = JSON.parse(cached);
+        if (parsed && parsed.cachedAt && (Date.now() - parsed.cachedAt < ROLES_CACHE_TTL)) {
+          console.log('[DiscordAuth] roles (cached):', parsed.roles);
+          return parsed.roles;
+        }
+        sessionStorage.removeItem(ROLES_KEY); // stale — refetch
+      } catch (e) {
+        sessionStorage.removeItem(ROLES_KEY); // corrupt — refetch
+      }
     }
     try {
       const member = await apiGet(
@@ -94,7 +110,7 @@ const DiscordAuth = (() => {
       const roles = member.roles || [];
       console.log('[DiscordAuth] member roles from API:', roles);
       console.log('[DiscordAuth] config requiredRoles:', CONFIG.discord.requiredRoles);
-      sessionStorage.setItem(ROLES_KEY, JSON.stringify(roles));
+      sessionStorage.setItem(ROLES_KEY, JSON.stringify({ roles, cachedAt: Date.now() }));
       return roles;
     } catch (e) {
       // Distinguish between "not in guild" and other errors
@@ -102,7 +118,7 @@ const DiscordAuth = (() => {
       console.warn('[DiscordAuth] guild ID used:', CONFIG.discord.guildId);
       console.warn('[DiscordAuth] If you see 401/403, the OAuth app may need to be added to the server,');
       console.warn('              or the guilds.members.read scope was not granted.');
-      return [];
+      return []; // do NOT cache failures
     }
   }
 
@@ -171,11 +187,19 @@ const DiscordAuth = (() => {
     return `https://cdn.discordapp.com/embed/avatars/${defaultIdx}.png`;
   }
 
+  // Bug 2A fix: prefer global_name (display name) over username (unique handle).
+  // Discord shows global_name in most UI contexts; username can differ (e.g., trailing dot
+  // appended during the 2023 forced migration). Falls back to username if global_name absent.
+  // See DISCORD_DUPLICATE_INVESTIGATION.md
+  function getDisplayName(user) {
+    return user?.global_name || user?.username || '';
+  }
+
   // Clears only the cached roles so the next init() re-fetches fresh role data
   // without invalidating the OAuth token (used after ToS role assignment).
   function clearRolesCache() {
     sessionStorage.removeItem(ROLES_KEY);
   }
 
-  return { init, startOAuth, logout, getToken, clearSession, clearRolesCache, getAvatarUrl };
+  return { init, startOAuth, logout, getToken, clearSession, clearRolesCache, getAvatarUrl, getDisplayName };
 })();
