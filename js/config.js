@@ -49,7 +49,7 @@ const CONFIG = {
   stripe: {
     // Publishable key — Stripe Dashboard → Developers → API Keys
     // Use pk_test_... for testing, pk_live_... for production
-    publishableKey: 'pk_test_51TO8Y1CAG23wizii2nahqbEUlOdTSZO6XYNQloj4f6Vu3aPSgKyYwQ4VqCyWgvdyPbUKyolxehqKJvGkkYU2cL3q00EIpeJTaO',
+    publishableKey: 'pk_live_51TO8XrFs7DVQ7uQTJ0l0jb1eaYHjumea91z50y4jf9TmVYIencPtftAQtL37lXeixJbNTM2aw24VVfOkI1Bu3Hby008nKaOFpQ',
 
     // Customer self-service portal — Stripe Dashboard → Settings → Billing →
     // Customer portal → test mode portal → "Copy link"
