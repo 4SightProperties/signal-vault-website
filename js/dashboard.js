@@ -23,6 +23,8 @@
   // History tab state
   let isAdmin           = false;
   let histCurrentPeriod = 'all';
+  let histCurrentScope  = 'me';   // 'me' | 'all' | 'user' — admin only
+  let histCurrentUser   = null;   // discord_id when histCurrentScope === 'user'
 
   // ── Helpers (unchanged) ────────────────────────────────────────────────────
 
@@ -706,6 +708,21 @@
         loadHistory(btn.dataset.period);
       });
     });
+
+    if (isAdmin) {
+      const scopeBar = document.getElementById('histScopeBar');
+      if (scopeBar) scopeBar.style.display = '';
+      fetchHistoryUsers();
+      histView.querySelectorAll('.hist-scope-btn').forEach(btn => {
+        btn.addEventListener('click', () => setHistScope(btn.dataset.scope, null));
+      });
+      const sel = document.getElementById('histUserSelect');
+      if (sel) {
+        sel.addEventListener('change', () => {
+          if (sel.value) setHistScope('user', sel.value);
+        });
+      }
+    }
   }
 
   async function loadHistory(period) {
@@ -715,7 +732,13 @@
     histBody.innerHTML    = '<div class="dash-placeholder">Loading…</div>';
     histSummary.innerHTML = '';
     try {
-      const data = await apiFetch('/api/history?period=' + encodeURIComponent(period));
+      let url = '/api/history?period=' + encodeURIComponent(period);
+      if (isAdmin) {
+        if (histCurrentScope === 'all')                              url += '&user=all';
+        else if (histCurrentScope === 'user' && histCurrentUser)     url += '&user=' + encodeURIComponent(histCurrentUser);
+        // 'me': no ?user= — backend defaults to admin's own trades
+      }
+      const data = await apiFetch(url);
       renderHistory(data);
     } catch (err) {
       histBody.innerHTML = '<div class="dash-placeholder">Could not load history</div>';
@@ -753,7 +776,8 @@
       return;
     }
 
-    const userHdr  = isAdmin ? '<span class="hist-cell hist-col-user hist-hdr">User</span>' : '';
+    const showUser = isAdmin && histCurrentScope !== 'me';
+    const userHdr  = showUser ? '<span class="hist-cell hist-col-user hist-hdr">User</span>' : '';
     const header   = `
 <div class="hist-row hist-header">
   ${userHdr}
@@ -773,8 +797,8 @@
       const dt     = t.closed_at
         ? new Date(t.closed_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
         : '—';
-      const userCell = isAdmin
-        ? `<span class="hist-cell hist-col-user hist-uid">${(t.user_id || '').slice(-6)}</span>`
+      const userCell = showUser
+        ? `<span class="hist-cell hist-col-user hist-uid hist-uid-link" data-uid="${t.user_id || ''}">${(t.user_id || '').slice(-6) || '—'}</span>`
         : '';
       const wlLabel = t.outcome === 'win' ? 'W' : t.outcome === 'loss' ? 'L' : '~';
       return `
@@ -792,6 +816,41 @@
     }).join('');
 
     histBody.innerHTML = header + rows;
+
+    if (showUser) {
+      histBody.querySelectorAll('.hist-uid-link').forEach(cell => {
+        cell.addEventListener('click', () => {
+          const uid = cell.dataset.uid;
+          if (uid) setHistScope('user', uid);
+        });
+      });
+    }
+  }
+
+  // ── History scope helpers ─────────────────────────────────────────────────
+
+  function setHistScope(scope, userId) {
+    histCurrentScope = scope;
+    histCurrentUser  = userId || null;
+    document.querySelectorAll('.hist-scope-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.scope === scope && scope !== 'user'));
+    const sel = document.getElementById('histUserSelect');
+    if (sel) sel.value = (scope === 'user' && userId) ? userId : '';
+    loadHistory(histCurrentPeriod);
+  }
+
+  async function fetchHistoryUsers() {
+    try {
+      const data = await apiFetch('/api/history/users');
+      const sel  = document.getElementById('histUserSelect');
+      if (!sel) return;
+      (data.users || []).forEach(u => {
+        const opt       = document.createElement('option');
+        opt.value       = u.discord_id;
+        opt.textContent = u.label;
+        sel.appendChild(opt);
+      });
+    } catch (_) {}
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────

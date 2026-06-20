@@ -134,6 +134,14 @@
           <button class="hist-period-btn" data-period="week">Week</button>
           <button class="hist-period-btn" data-period="today">Today</button>
         </div>
+        <!-- Admin-only scope selector; hidden until is_admin confirmed post-auth -->
+        <div class="hist-scope-bar" id="histScopeBar" style="display:none">
+          <button class="hist-scope-btn active" data-scope="me">My trades</button>
+          <button class="hist-scope-btn" data-scope="all">All users</button>
+          <select class="hist-user-select" id="histUserSelect">
+            <option value="">Specific user…</option>
+          </select>
+        </div>
         <div id="histSummary" class="hist-summary-wrap"></div>
         <div id="histBody" class="hist-body"></div>
       </div>

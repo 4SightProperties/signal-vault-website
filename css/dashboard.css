@@ -840,3 +840,51 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .hist-outcome.win     { background: rgba(74,222,128,0.18); color: var(--accent); }
 .hist-outcome.loss    { background: rgba(239,68,68,0.18);  color: var(--danger); }
 .hist-outcome.scratch { background: var(--bg-elevated);    color: var(--text-muted); }
+
+/* ────────────────────────────────────────────────────────────────
+   History — admin scope selector
+   ──────────────────────────────────────────────────────────────── */
+
+.hist-scope-bar {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  padding: 0.28rem 0;
+  margin-bottom: 0.4rem;
+  flex-wrap: wrap;
+}
+
+.hist-scope-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0.16rem 0.48rem;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  transition: color 0.15s, border-color 0.15s, background 0.15s;
+}
+.hist-scope-btn:hover  { color: var(--text-secondary); }
+.hist-scope-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(74,222,128,0.07); }
+
+.hist-user-select {
+  font-size: 0.62rem;
+  padding: 0.16rem 0.38rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  outline: none;
+  max-width: 110px;
+}
+.hist-user-select:focus { border-color: var(--accent); }
+
+.hist-uid-link {
+  cursor: pointer;
+  text-decoration: underline dotted currentColor;
+}
+.hist-uid-link:hover { color: var(--accent); }
