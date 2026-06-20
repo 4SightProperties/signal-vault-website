@@ -20,6 +20,10 @@
   let focusedTicker      = null; // ticker currently loaded in center column
   let openConsoleId      = null; // position_id of the currently expanded management console
 
+  // History tab state
+  let isAdmin           = false;
+  let histCurrentPeriod = 'all';
+
   // ── Helpers (unchanged) ────────────────────────────────────────────────────
 
   function fmt$(n) {
@@ -37,6 +41,12 @@
   function fmtPrice(n) {
     if (n == null) return '—';
     return '$' + parseFloat(n).toFixed(2);
+  }
+
+  function fmtPnl$(n) {
+    if (n == null) return '—';
+    const abs = Math.abs(n).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
+    return (n >= 0 ? '+' : '-') + '$' + abs;
   }
 
   function fmtRelTime(ts) {
@@ -118,6 +128,7 @@
     try {
       authToken  = DiscordAuth.getToken();
       const me   = await apiFetch('/api/me');
+      isAdmin = !!me.is_admin;
       document.getElementById('dashUser').textContent =
         (me.username || 'subscriber') + ' · ' + (me.tier || '');
       if (me.active_env) {
@@ -145,6 +156,7 @@
     // Wire up center panel and position console (post-auth only)
     setupCenterPanel();
     setupConsoleHandlers();
+    setupHistoryTab();
   }
 
   // ── WebSocket (unchanged) ─────────────────────────────────────────────────
@@ -659,6 +671,127 @@
 <div class="pos-stub-endpoint">POST /api/orders</div>
 <pre class="pos-stub-code">${JSON.stringify(payload, null, 2)}</pre>`;
     btn.insertAdjacentElement('afterend', preview);
+  }
+
+  // ── History tab ───────────────────────────────────────────────────────────
+
+  function setupHistoryTab() {
+    const tabPos   = document.getElementById('tabPositions');
+    const tabHist  = document.getElementById('tabHistory');
+    const posBody  = document.getElementById('positionsBody');
+    const histView = document.getElementById('historyView');
+    if (!tabPos || !tabHist) return;
+
+    tabPos.addEventListener('click', () => {
+      tabPos.classList.add('active');
+      tabHist.classList.remove('active');
+      posBody.style.display  = '';
+      histView.style.display = 'none';
+      document.getElementById('positionsMeta').textContent = 'live';
+    });
+
+    tabHist.addEventListener('click', () => {
+      tabHist.classList.add('active');
+      tabPos.classList.remove('active');
+      posBody.style.display  = 'none';
+      histView.style.display = '';
+      document.getElementById('positionsMeta').textContent = 'closed';
+      loadHistory(histCurrentPeriod);
+    });
+
+    histView.querySelectorAll('.hist-period-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        histView.querySelectorAll('.hist-period-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        loadHistory(btn.dataset.period);
+      });
+    });
+  }
+
+  async function loadHistory(period) {
+    histCurrentPeriod = period;
+    const histBody    = document.getElementById('histBody');
+    const histSummary = document.getElementById('histSummary');
+    histBody.innerHTML    = '<div class="dash-placeholder">Loading…</div>';
+    histSummary.innerHTML = '';
+    try {
+      const data = await apiFetch('/api/history?period=' + encodeURIComponent(period));
+      renderHistory(data);
+    } catch (err) {
+      histBody.innerHTML = '<div class="dash-placeholder">Could not load history</div>';
+    }
+  }
+
+  function renderHistory(data) {
+    const summary     = data.summary || {};
+    const trades      = data.trades  || [];
+    const histSummary = document.getElementById('histSummary');
+    const histBody    = document.getElementById('histBody');
+
+    const winRateStr = summary.win_rate != null ? summary.win_rate.toFixed(1) + '%' : '—';
+    const pnlTotal   = summary.total_pnl || 0;
+    const pnlClass   = pnlTotal >= 0 ? 'positive' : 'negative';
+
+    histSummary.innerHTML = `
+<div class="hist-summary-row">
+  <div class="hist-stat">
+    <span class="hist-stat-label">Win Rate</span>
+    <span class="hist-stat-value">${winRateStr}</span>
+  </div>
+  <div class="hist-stat">
+    <span class="hist-stat-label">Total P&amp;L</span>
+    <span class="hist-stat-value ${pnlClass}">${fmtPnl$(pnlTotal)}</span>
+  </div>
+  <div class="hist-stat">
+    <span class="hist-stat-label">Trades</span>
+    <span class="hist-stat-value">${summary.count || 0}</span>
+  </div>
+</div>`;
+
+    if (!trades.length) {
+      histBody.innerHTML = '<div class="dash-empty">No closed trades for this period</div>';
+      return;
+    }
+
+    const userHdr  = isAdmin ? '<span class="hist-cell hist-col-user hist-hdr">User</span>' : '';
+    const header   = `
+<div class="hist-row hist-header">
+  ${userHdr}
+  <span class="hist-cell hist-col-date  hist-hdr">Date</span>
+  <span class="hist-cell hist-col-tkr   hist-hdr">Ticker</span>
+  <span class="hist-cell hist-col-dir   hist-hdr">Dir</span>
+  <span class="hist-cell hist-col-entry hist-hdr">Entry</span>
+  <span class="hist-cell hist-col-exit  hist-hdr">Exit</span>
+  <span class="hist-cell hist-col-pnl   hist-hdr">P&amp;L</span>
+  <span class="hist-cell hist-col-pct   hist-hdr">%</span>
+  <span class="hist-cell hist-col-wl    hist-hdr">W/L</span>
+</div>`;
+
+    const rows = trades.map(t => {
+      const dir    = (t.direction || '').toLowerCase().includes('put') ? 'put' : 'call';
+      const pnlCls = t.realized_pnl >= 0 ? 'positive' : 'negative';
+      const dt     = t.closed_at
+        ? new Date(t.closed_at * 1000).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })
+        : '—';
+      const userCell = isAdmin
+        ? `<span class="hist-cell hist-col-user hist-uid">${(t.user_id || '').slice(-6)}</span>`
+        : '';
+      const wlLabel = t.outcome === 'win' ? 'W' : t.outcome === 'loss' ? 'L' : '~';
+      return `
+<div class="hist-row">
+  ${userCell}
+  <span class="hist-cell hist-col-date">${dt}</span>
+  <span class="hist-cell hist-col-tkr hist-ticker">${t.ticker || '?'}</span>
+  <span class="hist-cell hist-col-dir"><span class="hist-dir ${dir}">${dir === 'put' ? 'P' : 'C'}</span></span>
+  <span class="hist-cell hist-col-entry">${fmtPrice(t.entry_premium)}</span>
+  <span class="hist-cell hist-col-exit">${fmtPrice(t.exit_premium)}</span>
+  <span class="hist-cell hist-col-pnl ${pnlCls}">${fmtPnl$(t.realized_pnl)}</span>
+  <span class="hist-cell hist-col-pct ${pnlCls}">${fmtPct(t.pnl_pct)}</span>
+  <span class="hist-cell hist-col-wl"><span class="hist-outcome ${t.outcome}">${wlLabel}</span></span>
+</div>`;
+    }).join('');
+
+    histBody.innerHTML = header + rows;
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────

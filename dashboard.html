@@ -109,16 +109,33 @@
 
   </section>
 
-  <!-- Right: Positions -->
+  <!-- Right: Positions + History -->
   <aside class="dash-col dash-col-right">
 
     <section class="dash-panel">
       <div class="dash-panel-header">
-        <span class="dash-panel-title">Open Positions</span>
+        <div class="dash-tab-bar">
+          <button class="dash-tab active" id="tabPositions">Positions</button>
+          <button class="dash-tab" id="tabHistory">History</button>
+        </div>
         <span class="dash-panel-meta" id="positionsMeta">live</span>
       </div>
+
+      <!-- Positions view -->
       <div id="positionsBody" class="dash-panel-body">
         <div class="dash-placeholder">Connecting…</div>
+      </div>
+
+      <!-- History view (hidden until tab selected) -->
+      <div id="historyView" class="dash-panel-body" style="display:none">
+        <div class="hist-period-bar">
+          <button class="hist-period-btn active" data-period="all">All</button>
+          <button class="hist-period-btn" data-period="month">Month</button>
+          <button class="hist-period-btn" data-period="week">Week</button>
+          <button class="hist-period-btn" data-period="today">Today</button>
+        </div>
+        <div id="histSummary" class="hist-summary-wrap"></div>
+        <div id="histBody" class="hist-body"></div>
       </div>
     </section>
 

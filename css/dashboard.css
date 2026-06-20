@@ -689,3 +689,154 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .wl-row  { cursor: pointer; transition: background 0.12s; }
 .wl-row:hover { background: var(--bg-elevated); }
 .sig-card { cursor: pointer; }
+
+/* ════════════════════════════════════════════════════════════════
+   Tab bar — Positions / History toggle
+   ════════════════════════════════════════════════════════════════ */
+
+.dash-tab-bar {
+  display: flex;
+  gap: 0.2rem;
+}
+
+.dash-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.6rem;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.dash-tab:hover       { color: var(--text-secondary); }
+.dash-tab.active      { border-color: var(--accent); color: var(--accent); }
+
+/* ════════════════════════════════════════════════════════════════
+   History view — period bar, summary, trade table
+   ════════════════════════════════════════════════════════════════ */
+
+.hist-period-bar {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 0.5rem;
+}
+
+.hist-period-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 600;
+  padding: 0.18rem 0.5rem;
+  transition: color 0.15s, border-color 0.15s;
+}
+.hist-period-btn:hover  { color: var(--text-secondary); }
+.hist-period-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(74,222,128,0.07); }
+
+/* Summary row: Win Rate · Total P&L · Trades */
+.hist-summary-wrap { margin-bottom: 0.5rem; }
+
+.hist-summary-row {
+  display: flex;
+  gap: 0;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+}
+
+.hist-stat {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 0.4rem 0.3rem;
+  border-right: 1px solid var(--border);
+}
+.hist-stat:last-child { border-right: none; }
+
+.hist-stat-label {
+  font-size: 0.56rem;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 0.1rem;
+}
+.hist-stat-value {
+  font-family: var(--font-display);
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--text-primary);
+}
+.hist-stat-value.positive { color: var(--accent); }
+.hist-stat-value.negative { color: var(--danger); }
+
+/* Trade table */
+.hist-body { overflow-x: auto; }
+
+.hist-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.25rem 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 0.63rem;
+}
+.hist-row:last-child { border-bottom: none; }
+
+.hist-header { padding-bottom: 0.2rem; margin-bottom: 0.1rem; }
+
+.hist-hdr {
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+}
+
+.hist-cell       { flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.hist-col-user   { width: 42px; color: var(--text-muted); font-size: 0.58rem; }
+.hist-col-date   { width: 46px; color: var(--text-muted); }
+.hist-col-tkr    { width: 40px; }
+.hist-col-dir    { width: 22px; }
+.hist-col-entry  { width: 36px; color: var(--text-secondary); text-align: right; }
+.hist-col-exit   { width: 36px; color: var(--text-secondary); text-align: right; }
+.hist-col-pnl    { width: 52px; font-family: var(--font-display); font-weight: 600; text-align: right; }
+.hist-col-pct    { width: 40px; font-family: var(--font-display); text-align: right; }
+.hist-col-wl     { width: 22px; text-align: center; }
+
+.hist-ticker {
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--accent);
+}
+
+.hist-uid { font-size: 0.58rem; color: var(--text-muted); }
+
+.hist-dir {
+  display: inline-block;
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 0.08rem 0.25rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+.hist-dir.call { background: rgba(74,222,128,0.15); color: var(--accent); }
+.hist-dir.put  { background: rgba(239,68,68,0.15);  color: var(--danger); }
+
+.hist-outcome {
+  display: inline-block;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.06rem 0.24rem;
+  border-radius: 3px;
+}
+.hist-outcome.win     { background: rgba(74,222,128,0.18); color: var(--accent); }
+.hist-outcome.loss    { background: rgba(239,68,68,0.18);  color: var(--danger); }
+.hist-outcome.scratch { background: var(--bg-elevated);    color: var(--text-muted); }
