@@ -120,6 +120,11 @@
       const me   = await apiFetch('/api/me');
       document.getElementById('dashUser').textContent =
         (me.username || 'subscriber') + ' · ' + (me.tier || '');
+      if (me.active_env) {
+        const badge = document.getElementById('envBadge');
+        badge.textContent = me.active_env;
+        badge.className   = 'dash-env-badge ' + (me.active_env === 'production' ? 'production' : 'sandbox');
+      }
       hideOverlay();
     } catch (err) {
       if (String(err).includes('403')) {
