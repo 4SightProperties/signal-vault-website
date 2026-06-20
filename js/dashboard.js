@@ -424,6 +424,12 @@
     buildChart(t);
     renderLevels(t);
 
+    const tvBtn = document.getElementById('tvPopoutBtn');
+    if (tvBtn) {
+      tvBtn.href = `https://www.tradingview.com/chart/?symbol=${t}&interval=10`;
+      tvBtn.style.display = '';
+    }
+
     // Update chain stub to name the focused ticker
     const chainBody = document.getElementById('chainBody');
     if (chainBody) {
