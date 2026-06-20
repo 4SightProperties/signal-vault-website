@@ -42,10 +42,10 @@ const DiscordAuth = (() => {
 
   // ── OAuth redirect ────────────────────────────────────────────
 
-  function startOAuth() {
+  function startOAuth(redirectUri) {
     const params = new URLSearchParams({
       client_id:     CONFIG.discord.clientId,
-      redirect_uri:  CONFIG.discord.redirectUri,
+      redirect_uri:  redirectUri || CONFIG.discord.redirectUri,
       response_type: 'token',
       scope:         'identify guilds.members.read',
     });

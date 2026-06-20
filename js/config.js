@@ -11,6 +11,7 @@ const CONFIG = {
     clientId:    '1496751088823701614',        // Discord Developer Portal → OAuth2 → Client ID
     guildId:     '1471361318429917258',              // Signal Vault Discord server
     redirectUri: 'https://4sightproperties.github.io/signal-vault-website/',   // Must match exactly in Discord OAuth2 Redirects
+    dashboardRedirectUri: 'https://the-signalvault.com/dashboard.html',         // Dashboard OAuth redirect — register in Discord too
 
     // Role IDs — right-click role → Copy Role ID (dev mode on)
     requiredRoles: {
@@ -136,4 +137,7 @@ const CONFIG = {
     successUrl:  'https://4sightproperties.github.io/signal-vault-website/success.html',
     cancelUrl:   'https://4sightproperties.github.io/signal-vault-website/cancel.html',
   },
+
+  // ── Dashboard API ─────────────────────────────────────────────
+  backendUrl: 'https://api.the-signalvault.com',
 };

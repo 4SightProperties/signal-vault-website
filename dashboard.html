@@ -1,0 +1,144 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Signal Vault — Dashboard</title>
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/dashboard.css">
+</head>
+<body>
+
+<!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+<header class="dash-header">
+  <div class="dash-header-left">
+    <span class="dash-logo">SIGNAL VAULT</span>
+    <span class="dash-env-badge" id="envBadge">···</span>
+  </div>
+  <div class="dash-header-center">
+    <span class="dash-pnl-label">Open Positions</span>
+    <span class="dash-pnl-count" id="positionCount">—</span>
+    <span class="dash-pnl-label" style="margin-left:1.5rem">Total Cost</span>
+    <span class="dash-pnl-value" id="totalCost">—</span>
+  </div>
+  <div class="dash-header-right">
+    <span class="dash-user" id="dashUser">···</span>
+    <button class="dash-logout-btn" id="logoutBtn">Logout</button>
+  </div>
+</header>
+
+<!-- ── WS status bar ────────────────────────────────────────────────────── -->
+<div class="dash-ws-bar" id="wsBar">
+  <span class="ws-dot" id="wsDot"></span>
+  <span id="wsStatus">Connecting…</span>
+</div>
+
+<!-- ── Three-column layout ──────────────────────────────────────────────── -->
+<main class="dash-grid">
+
+  <!-- Left: Watchlist + Signals -->
+  <aside class="dash-col dash-col-left">
+
+    <section class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="dash-panel-title">Watchlist</span>
+        <span class="dash-panel-meta" id="watchlistMeta">—</span>
+      </div>
+      <div id="watchlistBody" class="dash-panel-body">
+        <div class="dash-placeholder">Loading…</div>
+      </div>
+    </section>
+
+    <section class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="dash-panel-title">Live Signals</span>
+        <span class="dash-panel-meta" id="signalsMeta">—</span>
+      </div>
+      <div id="signalsBody" class="dash-panel-body">
+        <div class="dash-placeholder">Loading…</div>
+      </div>
+    </section>
+
+  </aside>
+
+  <!-- Center: Ticker focus — chart, levels, chain -->
+  <section class="dash-col dash-col-center">
+
+    <!-- Title + ticker search bar -->
+    <div class="dash-center-topbar">
+      <div class="dash-panel-header">
+        <span class="dash-panel-title">Ticker Focus</span>
+        <span class="dash-panel-meta" id="focusMeta">click a row to focus</span>
+      </div>
+      <div class="dash-search-bar">
+        <input class="dash-search-input" id="tickerSearch" type="text"
+               placeholder="Symbol…" autocomplete="off" spellcheck="false">
+        <button class="dash-search-btn" id="tickerSearchBtn">Go</button>
+      </div>
+    </div>
+
+    <!-- TradingView Advanced Chart (10-min, dark, full toolbar, allow_symbol_change) -->
+    <div class="dash-chart-host" id="chartHost">
+      <div class="dash-chart-placeholder" id="chartPlaceholder">
+        <div class="dash-coming-icon">📊</div>
+        <div class="dash-coming-text">Select a ticker to load chart</div>
+        <div class="dash-coming-sub">Click any watchlist or signal row · or type above</div>
+      </div>
+    </div>
+
+    <!-- Watchlist-derived levels for the focused ticker -->
+    <div class="dash-levels-panel">
+      <div class="dash-levels-header">
+        <span class="dash-levels-ticker" id="levelsTicker">—</span>
+        <span class="dash-levels-source" id="levelsSource">no ticker selected</span>
+      </div>
+      <div class="dash-levels-grid" id="levelsGrid"></div>
+    </div>
+
+    <!-- Option chain — Phase 4 stub (/api/chain not yet deployed on backend) -->
+    <div class="dash-chain-panel">
+      <div class="dash-panel-header">
+        <span class="dash-panel-title">Option Chain</span>
+        <span class="dash-panel-meta"><span class="dash-phase-label">Phase 4</span></span>
+      </div>
+      <div class="dash-chain-stub" id="chainBody">
+        <span class="dash-coming-text">Chain — Phase 4</span>
+        <span class="dash-coming-sub">Requires <code>/api/chain</code> backend endpoint</span>
+      </div>
+    </div>
+
+  </section>
+
+  <!-- Right: Positions -->
+  <aside class="dash-col dash-col-right">
+
+    <section class="dash-panel">
+      <div class="dash-panel-header">
+        <span class="dash-panel-title">Open Positions</span>
+        <span class="dash-panel-meta" id="positionsMeta">live</span>
+      </div>
+      <div id="positionsBody" class="dash-panel-body">
+        <div class="dash-placeholder">Connecting…</div>
+      </div>
+    </section>
+
+  </aside>
+
+</main>
+
+<!-- ── Auth gate overlay ──────────────────────────────────────────────── -->
+<div id="authOverlay" class="dash-auth-overlay" style="display:none">
+  <div class="dash-auth-card">
+    <div class="dash-auth-logo">SIGNAL VAULT</div>
+    <div class="dash-auth-title">Dashboard Access</div>
+    <div class="dash-auth-sub">Pro or Elite subscriber required</div>
+    <button class="dash-auth-btn" id="authBtn">Connect Discord</button>
+    <div class="dash-auth-note" id="authNote"></div>
+  </div>
+</div>
+
+<script src="js/config.js"></script>
+<script src="js/discord-auth.js"></script>
+<script src="js/dashboard.js"></script>
+</body>
+</html>
