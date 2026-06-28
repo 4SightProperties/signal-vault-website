@@ -1618,7 +1618,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cmd-regime-cell.rc-error .cmd-rc-value { color: var(--text-muted) !important; opacity: 0.5; }
 .cmd-rc-sub { font-size: 0.58rem; font-weight: 400; opacity: 0.65; }
 
-/* ── Regime health dot ──────────────────────────────────────── */
+/* ── Regime health dot + panel-health popover ───────────────── */
 .cmd-rc-health-cell {
   padding: 0 0.6rem;
   display: flex;
@@ -1626,16 +1626,69 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   justify-content: center;
   border-right: none;
   flex-shrink: 0;
+  cursor: pointer;
 }
 .cmd-rc-health-dot {
   width: 6px; height: 6px;
   border-radius: 50%;
   background: var(--text-muted);
   transition: background 0.4s;
+  flex-shrink: 0;
 }
 .cmd-rc-health-dot.live  { background: var(--accent); }
 .cmd-rc-health-dot.stale { background: var(--warning); }
 .cmd-rc-health-dot.error { background: var(--danger); }
+
+/* Popover uses position:fixed (set by JS) to escape cmd-regime-bar overflow:hidden */
+.rc-health-popover {
+  display: none;
+  position: fixed;
+  z-index: 200;
+  min-width: 196px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem 0.5rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.rc-health-popover.visible { display: block; }
+.rc-health-popover-hd {
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 0.4rem;
+}
+.rc-health-session-row {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+  padding-bottom: 0.3rem;
+  border-bottom: 1px solid var(--border);
+}
+.rc-health-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  padding: 0.12rem 0;
+}
+.rc-health-name {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  text-transform: capitalize;
+}
+.rc-health-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+}
+.rc-health-badge.live  { color: var(--accent); }
+.rc-health-badge.stale { color: var(--warning); }
+.rc-health-badge.error { color: var(--danger); }
+.rc-health-badge.empty { color: var(--text-muted); }
+.rc-health-badge.na    { color: var(--text-muted); opacity: 0.5; }
 
 /* ── MTF clouds row — 4 equal cells ─────────────────────────── */
 .cmd-mtf-row {

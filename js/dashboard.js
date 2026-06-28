@@ -20,10 +20,11 @@
   let authToken    = null;
   let wsConn       = null;
   let wsRetries    = 0;
-  let signalTimer  = null;
-  let watchTimer   = null;
-  let regimeTimer  = null;
-  let flowTimer    = null;
+  let signalTimer      = null;
+  let watchTimer       = null;
+  let regimeTimer      = null;
+  let flowTimer        = null;
+  let panelHealthTimer = null;
 
   // Center panel + console state
   let currentPositions   = [];   // last positions array from WS — used by console delegation
@@ -182,15 +183,18 @@
     loadSignals();
     loadWatchlist();
     loadFlow();
-    regimeTimer = setInterval(loadRegime,    60_000);
-    signalTimer = setInterval(loadSignals,   30_000);
-    watchTimer  = setInterval(loadWatchlist, 60_000);
-    flowTimer   = setInterval(loadFlow,      90_000);
+    loadPanelHealth();
+    regimeTimer      = setInterval(loadRegime,      60_000);
+    signalTimer      = setInterval(loadSignals,     30_000);
+    watchTimer       = setInterval(loadWatchlist,   60_000);
+    flowTimer        = setInterval(loadFlow,        90_000);
+    panelHealthTimer = setInterval(loadPanelHealth, 90_000);
 
     setupCenterPanel();
     setupConsoleHandlers();
     setupHistoryTab();
     setupModal();
+    setupHealthPopover();
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -469,16 +473,7 @@
       const rlColor = rl.value != null && rl.value < 50 ? 'cmd-rc-puts' : '';
       _rcSetCell('rcCellRisk', 'rcRisk', rl.state, rlHtml, rlColor);
 
-      // ── Health dot ───────────────────────────────────────────────
-      const cells = [d.directive, d.regime, d.opening, d.vix, d.breadth, d.pnl_today, d.risk_left];
-      const states = cells.map(c => (c || {}).state);
-      const dot   = document.getElementById('rcHealthDot');
-      if (dot) {
-        const hasError = states.some(s => s === 'error');
-        const hasStale = states.some(s => s === 'stale');
-        dot.className  = 'cmd-rc-health-dot'
-          + (hasError ? ' error' : hasStale ? ' stale' : ' live');
-      }
+      // Health dot is driven by /api/panel-health (loadPanelHealth), not regime cells.
 
     } catch (_) {
       // Silently fail — don't disrupt the rest of the dashboard
@@ -1799,6 +1794,107 @@
   document.getElementById('confirmModal').addEventListener('click', e => {
     if (e.target === document.getElementById('confirmModal')) closeModal();
   });
+
+  // ── Panel health ──────────────────────────────────────────────────────────
+
+  function _fmtAge(secs) {
+    if (secs == null || secs < 0) return '';
+    if (secs < 60)   return Math.round(secs) + 's';
+    if (secs < 3600) return Math.round(secs / 60) + 'm';
+    return Math.round(secs / 3600) + 'h';
+  }
+
+  async function loadPanelHealth() {
+    const dot = document.getElementById('rcHealthDot');
+    try {
+      const d = await apiFetch('/api/panel-health');
+
+      // Drive the dot from the overall rollup
+      if (dot) {
+        const cls = d.overall === 'healthy' ? 'live'
+                  : d.overall === 'degraded' ? 'stale'
+                  : 'error';
+        dot.className = 'cmd-rc-health-dot ' + cls;
+      }
+
+      // Populate popover body
+      const body = document.getElementById('rcHealthPopoverBody');
+      if (!body || !d.panels) return;
+
+      const SESSION_LABEL = {
+        open:      'MARKET OPEN',
+        closed:    'MARKET CLOSED',
+        premarket: 'PRE-MARKET',
+      };
+      const sesHtml = `<div class="rc-health-session-row">${SESSION_LABEL[d.market_session] || d.market_session}</div>`;
+
+      const rowsHtml = Object.entries(d.panels).map(([key, panel]) => {
+        const state   = panel.state || 'error';
+        const agePart = panel.age_secs != null ? ' · ' + _fmtAge(panel.age_secs) : '';
+        const notePart = panel.note ? ` · ${panel.note}` : '';
+        const label   = key.replace(/_/g, ' ');
+        const badgeCls = state === 'n/a' ? 'na' : state;
+        const badgeTxt = state === 'n/a' ? 'n/a' : state.toUpperCase() + agePart + notePart;
+        return `<div class="rc-health-row">` +
+          `<span class="rc-health-name">${label}</span>` +
+          `<span class="rc-health-badge ${badgeCls}">${badgeTxt}</span>` +
+          `</div>`;
+      }).join('');
+
+      body.innerHTML = sesHtml + rowsHtml;
+
+    } catch (_) {
+      if (dot) dot.className = 'cmd-rc-health-dot error';
+    }
+  }
+
+  function setupHealthPopover() {
+    const cell    = document.getElementById('rcHealthCell');
+    const popover = document.getElementById('rcHealthPopover');
+    if (!cell || !popover) return;
+
+    function showPopover() {
+      const r = cell.getBoundingClientRect();
+      popover.style.top   = (r.bottom + 4) + 'px';
+      popover.style.right = (window.innerWidth - r.right) + 'px';
+      popover.classList.add('visible');
+      popover.setAttribute('aria-hidden', 'false');
+    }
+
+    function hidePopover() {
+      popover.classList.remove('visible');
+      popover.setAttribute('aria-hidden', 'true');
+    }
+
+    cell.addEventListener('mouseenter', showPopover);
+    cell.addEventListener('mouseleave', (e) => {
+      if (!cell.contains(e.relatedTarget) && !popover.contains(e.relatedTarget)) {
+        hidePopover();
+      }
+    });
+    popover.addEventListener('mouseleave', (e) => {
+      if (!cell.contains(e.relatedTarget) && !popover.contains(e.relatedTarget)) {
+        hidePopover();
+      }
+    });
+
+    // Toggle on click (also works on touch)
+    cell.addEventListener('click', (e) => {
+      e.stopPropagation();
+      if (popover.classList.contains('visible')) {
+        hidePopover();
+      } else {
+        showPopover();
+      }
+    });
+
+    // Close on outside click
+    document.addEventListener('click', (e) => {
+      if (!cell.contains(e.target) && !popover.contains(e.target)) {
+        hidePopover();
+      }
+    });
+  }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
 

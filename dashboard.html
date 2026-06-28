@@ -70,9 +70,13 @@
     <div class="cmd-rc-value" id="rcRisk" style="color:var(--text-muted)">—</div>
   </div>
 
-  <!-- Health dot: green=all live, amber=any stale, red=any error -->
-  <div class="cmd-regime-cell cmd-rc-health-cell" title="Regime data health">
+  <!-- Health dot: overall panel health — click/hover for per-panel detail -->
+  <div class="cmd-regime-cell cmd-rc-health-cell" id="rcHealthCell">
     <span class="cmd-rc-health-dot" id="rcHealthDot"></span>
+    <div class="rc-health-popover" id="rcHealthPopover" aria-hidden="true">
+      <div class="rc-health-popover-hd">Panel Health</div>
+      <div id="rcHealthPopoverBody"></div>
+    </div>
   </div>
 
 </div>
