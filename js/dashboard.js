@@ -555,9 +555,6 @@
     const t = ticker.toUpperCase();
     focusedTicker = t;
 
-    const metaEl = document.getElementById('focusMeta');
-    if (metaEl) metaEl.textContent = t;
-
     const searchInput = document.getElementById('tickerSearch');
     if (searchInput) searchInput.value = t;
 
@@ -568,15 +565,8 @@
     const price = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
     const bias  = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
 
-    // Update price-ref strip
+    // Update price-ref strip (merged focus header)
     buildPriceStrip(t, price);
-
-    // Also update topbar TV link (legacy; price strip has the prominent button)
-    const tvPopout = document.getElementById('tvPopoutBtn');
-    if (tvPopout) {
-      tvPopout.href = `https://www.tradingview.com/chart/?symbol=${t}&interval=10`;
-      tvPopout.style.display = '';
-    }
 
     // Seed bias selector from watchlist direction
     const biasEl = document.getElementById('chainBias');
@@ -794,31 +784,29 @@
     <button class="cockpit-refresh-btn" id="cockpitRefreshBtn" title="Re-fetch live quote + projection">↻</button>
   </div>
 
-  <div class="chain-qty-row">
-    <span class="chain-armed-label">Qty</span>
+  <div class="cockpit-qty-target-row">
+    <span class="chain-cost-label">Qty</span>
     <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
     <span class="chain-cost-label">cost</span>
     <span class="chain-cost-value" id="chainCost">${fmtPrice(ask * 2 * 100)}</span>
-    <span class="chain-cost-label" style="margin-left:0.25rem">max loss</span>
+    <span class="chain-cost-label">max loss</span>
     <span class="chain-cost-value" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span>
-  </div>
-
-  <div class="cockpit-target-row">
-    <span class="chain-armed-label">Target $</span>
+    <span class="cockpit-row-sep">|</span>
+    <span class="chain-cost-label">Target $</span>
     <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
     <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
     <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
   </div>
 
   <div class="cockpit-proj-wrap" id="cockpitProjWrap">
-    <div class="dash-placeholder" style="padding:0.4rem 0">Loading projection…</div>
+    <div class="dash-placeholder" style="padding:0.25rem 0">Loading projection…</div>
   </div>
 
   <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
 
   <div class="cockpit-levels-section">
-    <div class="cockpit-section-label">Exit target — wired later</div>
     <div class="cockpit-level-btns" id="cockpitLevelBtns">
+      <span class="cockpit-section-label">Exit target</span>
       <button class="cockpit-level-btn active" data-mode="profit">Profit-only</button>
       <button class="cockpit-level-btn" data-mode="stop">+ Stop</button>
       <button class="cockpit-level-btn" data-mode="manual">Full manual</button>
@@ -1022,28 +1010,19 @@
       return;
     }
 
-    const maxAbsGain = Math.max(1, ...rows.map(r => Math.abs(r.gain_pct)));
-
     const rowsHtml = rows.map(r => {
       const gainCls = r.gain_pct >= 0 ? 'positive' : 'negative';
-      const barPct  = Math.min(100, (Math.abs(r.gain_pct) / maxAbsGain) * 100);
-      const barCls  = r.gain_pct >= 0 ? 'proj-bar-pos' : 'proj-bar-neg';
       const dolSign = r.dollars >= 0 ? '+' : '';
       return `
-<tr>
-  <td class="proj-col-when">${r.horizon_label}</td>
-  <td class="proj-col-val">$${r.value.toFixed(2)}</td>
-  <td class="proj-col-gain ${gainCls}">${r.gain_pct >= 0 ? '+' : ''}${r.gain_pct.toFixed(1)}%</td>
-  <td class="proj-col-dol ${gainCls}">${dolSign}$${Math.abs(Math.round(r.dollars))}</td>
-  <td class="proj-col-bar"><div class="proj-bar ${barCls}" style="width:${barPct.toFixed(0)}%"></div></td>
-</tr>`;
+<div class="proj-strip-cell">
+  <div class="proj-strip-when">${r.horizon_label}</div>
+  <div class="proj-strip-val">$${r.value.toFixed(2)}</div>
+  <div class="proj-strip-gain ${gainCls}">${r.gain_pct >= 0 ? '+' : ''}${r.gain_pct.toFixed(1)}%</div>
+  <div class="proj-strip-dol ${gainCls}">${dolSign}$${Math.abs(Math.round(r.dollars))}</div>
+</div>`;
     }).join('');
 
-    wrapEl.innerHTML = `
-<table class="cockpit-proj-table">
-  <thead><tr><th>When</th><th>Value</th><th>Gain%</th><th>$/ct</th><th></th></tr></thead>
-  <tbody>${rowsHtml}</tbody>
-</table>`;
+    wrapEl.innerHTML = `<div class="cockpit-proj-strip">${rowsHtml}</div>`;
 
     // Verdict banner
     const verdictMap = {

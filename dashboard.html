@@ -104,24 +104,9 @@
   <!-- ══ CENTER: Ticker focus ═══════════════════════════════════════════════ -->
   <section class="cmd-col cmd-col-center">
 
-    <!-- Search + focus topbar -->
-    <div class="dash-center-topbar">
-      <div class="dash-panel-header">
-        <span class="dash-panel-title">Ticker Focus</span>
-        <span class="dash-panel-meta" id="focusMeta">click a row to focus</span>
-        <a id="tvPopoutBtn" href="#" target="_blank" rel="noopener"
-           style="display:none; font-size:0.66rem; color:var(--accent); text-decoration:none;">Open in TradingView ↗</a>
-      </div>
-      <div class="dash-search-bar">
-        <input class="dash-search-input" id="tickerSearch" type="text"
-               placeholder="Symbol…" autocomplete="off" spellcheck="false">
-        <button class="dash-search-btn" id="tickerSearchBtn">Go</button>
-      </div>
-    </div>
-
-    <!-- Price-reference strip -->
-    <div class="dash-price-strip" id="priceStrip">
-      <div class="price-strip-placeholder" id="priceStripPlaceholder">Select a ticker to load</div>
+    <!-- Merged focus header: ticker/price info + TV link + search -->
+    <div class="dash-focus-header">
+      <div class="price-strip-placeholder" id="priceStripPlaceholder">click a row to focus</div>
       <div class="price-strip-data" id="priceStripData" style="display:none">
         <div class="price-strip-left">
           <span class="price-strip-ticker" id="priceStripTicker">—</span>
@@ -131,6 +116,11 @@
         <a class="price-strip-tv-btn" id="priceStripTvBtn" href="#" target="_blank" rel="noopener">
           Open 10m chart in TradingView ↗
         </a>
+      </div>
+      <div class="dash-search-bar">
+        <input class="dash-search-input" id="tickerSearch" type="text"
+               placeholder="Symbol…" autocomplete="off" spellcheck="false">
+        <button class="dash-search-btn" id="tickerSearchBtn">Go</button>
       </div>
     </div>
 
