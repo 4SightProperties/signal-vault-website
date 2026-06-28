@@ -497,6 +497,14 @@
     document.getElementById('chainExpiry').addEventListener('change', () => {
       if (chainTicker) loadChain(chainTicker, chainCurrentPrice);
     });
+
+    // Chain refresh button
+    const chainRefreshBtn = document.getElementById('chainRefreshBtn');
+    if (chainRefreshBtn) {
+      chainRefreshBtn.addEventListener('click', () => {
+        if (chainTicker) loadChain(chainTicker, chainCurrentPrice);
+      });
+    }
   }
 
   function handleSearch() {
@@ -516,86 +524,52 @@
     const searchInput = document.getElementById('tickerSearch');
     if (searchInput) searchInput.value = t;
 
-    buildChart(t);
     renderLevels(t);
 
-    const tvBtn = document.getElementById('tvPopoutBtn');
-    if (tvBtn) {
-      tvBtn.href = `https://www.tradingview.com/chart/?symbol=${t}&interval=10`;
-      tvBtn.style.display = '';
-    }
-
-    // Derive price from watchlist data if available for chain loading
+    // Derive price and bias from watchlist cache
     const wlRow = watchlistDataCache.find(r => r.ticker === t);
     const price = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
     const bias  = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
+
+    // Update price-ref strip
+    buildPriceStrip(t, price);
+
+    // Also update topbar TV link (legacy; price strip has the prominent button)
+    const tvPopout = document.getElementById('tvPopoutBtn');
+    if (tvPopout) {
+      tvPopout.href = `https://www.tradingview.com/chart/?symbol=${t}&interval=10`;
+      tvPopout.style.display = '';
+    }
 
     // Seed bias selector from watchlist direction
     const biasEl = document.getElementById('chainBias');
     if (biasEl) biasEl.value = bias;
 
-    // Show chain controls and load expirations
+    // Show chain controls (including refresh button) and load expirations
     const controls = document.getElementById('chainControls');
     if (controls) controls.style.display = 'flex';
 
     loadChainExpirations(t, price);
   }
 
-  // TradingView Advanced Chart: 10-min interval, dark theme, full toolbar.
-  function buildChart(ticker) {
-    const host = document.getElementById('chartHost');
-    if (!host) return;
+  // Price-reference strip — replaces the TradingView embed.
+  // Shows the watchlist trigger price + a prominent TV link-out. Read-only.
+  function buildPriceStrip(ticker, price) {
+    const placeholder = document.getElementById('priceStripPlaceholder');
+    const dataEl      = document.getElementById('priceStripData');
+    const tickerEl    = document.getElementById('priceStripTicker');
+    const priceEl     = document.getElementById('priceStripPrice');
+    const noteEl      = document.getElementById('priceStripNote');
+    const tvBtn       = document.getElementById('priceStripTvBtn');
 
-    const placeholder = document.getElementById('chartPlaceholder');
+    if (!dataEl) return;
     if (placeholder) placeholder.style.display = 'none';
+    dataEl.style.display = 'flex';
 
-    // Remove previous chart widget
-    const old = host.querySelector('.tv-widget-wrapper');
-    if (old) old.remove();
-
-    const containerId = 'tv_' + ticker.toLowerCase().replace(/[^a-z0-9]/g, '') + '_' + Date.now();
-
-    const wrapper = document.createElement('div');
-    wrapper.className    = 'tv-widget-wrapper';
-    wrapper.style.cssText = 'width:100%;height:100%;';
-
-    const inner = document.createElement('div');
-    inner.id           = containerId;
-    inner.style.cssText = 'width:100%;height:100%;';
-    wrapper.appendChild(inner);
-    host.appendChild(wrapper);
-
-    function createWidget() {
-      new window.TradingView.widget({
-        autosize:            true,
-        symbol:              ticker,
-        interval:            '10',
-        timezone:            'America/New_York',
-        theme:               'dark',
-        style:               '1',
-        locale:              'en',
-        toolbar_bg:          '#0a1210',
-        enable_publishing:   false,
-        allow_symbol_change: true,
-        hide_side_toolbar:   false,
-        container_id:        containerId,
-      });
-    }
-
-    if (window.TradingView) {
-      createWidget();
-    } else if (!document.getElementById('tv-script')) {
-      const script   = document.createElement('script');
-      script.id      = 'tv-script';
-      script.src     = 'https://s3.tradingview.com/tv.js';
-      script.onload  = createWidget;
-      document.head.appendChild(script);
-    } else {
-      // Script already injected but not yet loaded — poll until ready
-      const poll = setInterval(() => {
-        if (window.TradingView) { clearInterval(poll); createWidget(); }
-      }, 100);
-    }
+    if (tickerEl) tickerEl.textContent = ticker;
+    if (priceEl)  priceEl.textContent  = price > 0 ? fmtPrice(price) : '—';
+    if (noteEl)   noteEl.textContent   = price > 0 ? 'watchlist trigger' : 'price unavailable';
+    if (tvBtn)    tvBtn.href = `https://www.tradingview.com/chart/?symbol=${ticker}&interval=10`;
   }
 
   // Levels panel: shows watchlist-derived context for the focused ticker.
@@ -688,7 +662,7 @@
     armedContract = null;
 
     try {
-      const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 6 });
+      const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 13 });
       const data   = await apiFetch(`/api/chain?${params}`);
       renderChain(data.strikes || [], bias);
     } catch (err) {
@@ -745,56 +719,129 @@
         armContract(strikes[i], bias);
       });
     });
+
+    // Scroll ATM row into view so the center strike is always visible
+    const atmRow = chainBody.querySelector('tr.chain-atm');
+    if (atmRow) atmRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
-  function armContract(strike, bias) {
+  async function armContract(strike, bias) {
     armedContract = { ...strike, bias };
 
     const chainBody = document.getElementById('chainBody');
-    const armed = chainBody.querySelector('.chain-armed');
-    if (armed) armed.remove();
+    const old = chainBody.querySelector('.chain-armed');
+    if (old) old.remove();
 
-    const ask = parseFloat(strike.ask);
     const dir = bias === 'bullish' ? 'call' : 'put';
     const sym = strike.symbol || `${chainTicker} $${strike.strike}${dir[0].toUpperCase()} ${strike.expiration}`;
+    const ask = parseFloat(strike.ask);
+    const iv  = parseFloat(strike.iv)  || 0;
+    const dte = parseInt(strike.dte,10) || 0;
 
-    const armedHtml = `
+    const defaultTarget = chainCurrentPrice > 0 ? chainCurrentPrice.toFixed(2) : '';
+    const targetSrc     = chainCurrentPrice > 0 ? 'watchlist trigger' : 'enter target';
+
+    const cockpitHtml = `
 <div class="chain-armed" id="chainArmed">
-  <div class="chain-armed-row">
-    <span class="chain-armed-label">Armed</span>
-    <span class="chain-armed-symbol">${sym}</span>
+  <div class="cockpit-header">
+    <div class="cockpit-header-left">
+      <span class="cockpit-symbol">${sym}</span>
+      <span class="cockpit-meta" id="cockpitMeta">${dir.toUpperCase()} · ask $${ask.toFixed(2)} · ${dte}DTE${iv > 0 ? ' · IV ' + (iv * 100).toFixed(0) + '%' : ''}<span class="cockpit-quote-age" id="cockpitQuoteAge"></span></span>
+    </div>
+    <button class="cockpit-refresh-btn" id="cockpitRefreshBtn" title="Re-fetch live quote + projection">↻</button>
   </div>
+
   <div class="chain-qty-row">
     <span class="chain-armed-label">Qty</span>
     <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
-    <span class="chain-cost-label">est. cost</span>
+    <span class="chain-cost-label">cost</span>
     <span class="chain-cost-value" id="chainCost">${fmtPrice(ask * 2 * 100)}</span>
+    <span class="chain-cost-label" style="margin-left:0.25rem">max loss</span>
+    <span class="chain-cost-value" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span>
   </div>
-  <button class="chain-open-btn" id="chainOpenBtn">
-    Open Position (gated by kill-switch)
-  </button>
+
+  <div class="cockpit-target-row">
+    <span class="chain-armed-label">Target $</span>
+    <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
+    <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
+    <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
+  </div>
+
+  <div class="cockpit-proj-wrap" id="cockpitProjWrap">
+    <div class="dash-placeholder" style="padding:0.4rem 0">Loading projection…</div>
+  </div>
+
+  <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
+
+  <div class="cockpit-levels-section">
+    <div class="cockpit-section-label">Exit target — wired later</div>
+    <div class="cockpit-level-btns" id="cockpitLevelBtns">
+      <button class="cockpit-level-btn active" data-mode="profit">Profit-only</button>
+      <button class="cockpit-level-btn" data-mode="stop">+ Stop</button>
+      <button class="cockpit-level-btn" data-mode="manual">Full manual</button>
+    </div>
+  </div>
+
+  <div class="cockpit-actions">
+    <button class="cockpit-action-btn" id="cockpitLimitBtn" disabled>
+      Set limit
+      <span class="pos-preview-tag">wired later</span>
+    </button>
+    <button class="chain-open-btn" id="chainOpenBtn">
+      Open Position
+      <span class="pos-preview-tag">gated by kill-switch</span>
+    </button>
+  </div>
 </div>`;
 
-    chainBody.insertAdjacentHTML('beforeend', armedHtml);
+    chainBody.insertAdjacentHTML('beforeend', cockpitHtml);
 
-    // Update cost on qty change
-    document.getElementById('chainQty').addEventListener('input', e => {
-      const qty  = Math.max(1, parseInt(e.target.value, 10) || 1);
-      const cost = ask * qty * 100;
-      document.getElementById('chainCost').textContent = fmtPrice(cost);
+    // Qty → update cost + max-loss (cost = max-loss for long options)
+    document.getElementById('chainQty').addEventListener('input', () => {
+      const qty  = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
+      const cost = armedContract.ask * qty * 100;
+      document.getElementById('chainCost').textContent    = fmtPrice(cost);
+      document.getElementById('chainMaxLoss').textContent = fmtPrice(cost);
     });
 
-    // Open button — shows confirmation modal before placing any order
+    // Exit level mode buttons (UI only — no backend wiring in this task)
+    document.getElementById('cockpitLevelBtns').addEventListener('click', e => {
+      const btn = e.target.closest('.cockpit-level-btn');
+      if (!btn) return;
+      document.querySelectorAll('#cockpitLevelBtns .cockpit-level-btn')
+        .forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+    });
+
+    // Target override apply
+    document.getElementById('cockpitApplyTarget').addEventListener('click', () => {
+      const tgt = parseFloat(document.getElementById('cockpitTarget').value);
+      if (tgt > 0) {
+        document.getElementById('cockpitTargetSrc').textContent = 'manual override';
+        loadProjection();
+      }
+    });
+    // Also apply on Enter key in target input
+    document.getElementById('cockpitTarget').addEventListener('keydown', e => {
+      if (e.key === 'Enter') document.getElementById('cockpitApplyTarget').click();
+    });
+
+    // Cockpit refresh: re-fetch live quote then re-run projection
+    document.getElementById('cockpitRefreshBtn').addEventListener('click', async () => {
+      await refreshArmedQuote();
+      loadProjection();
+    });
+
+    // Open Position button — existing kill-switch gated behavior
     document.getElementById('chainOpenBtn').addEventListener('click', () => {
       const qty     = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
-      const cost    = ask * qty * 100;
+      const cost    = armedContract.ask * qty * 100;
       const cpLabel = dir === 'call' ? 'CALL' : 'PUT';
-
       showConfirmModal({
         title:   `Open ${chainTicker} ${cpLabel}`,
         body:    `<strong>${sym}</strong><br>` +
                  `Qty: <strong>${qty}</strong> contract${qty > 1 ? 's' : ''}<br>` +
-                 `Est. cost: <strong>${fmtPrice(cost)}</strong> (${qty} × $${ask.toFixed(2)} × 100)<br><br>` +
+                 `Est. cost: <strong>${fmtPrice(cost)}</strong> (${qty} × $${armedContract.ask.toFixed(2)} × 100)<br><br>` +
                  `<span style="color:var(--text-muted);font-size:0.68rem">` +
                  `Gated by kill-switch. Order goes to your active env (verify sandbox before first live use).</span>`,
         okLabel: 'Place Order',
@@ -804,12 +851,12 @@
           try {
             const result = await apiPost('/api/v1/orders/open', {
               ticker:        chainTicker,
-              option_symbol: strike.symbol,
+              option_symbol: armedContract.symbol,
               direction:     dir,
-              strike:        strike.strike,
-              expiry:        strike.expiration,
+              strike:        armedContract.strike,
+              expiry:        armedContract.expiration,
               qty,
-              bid_price:     ask,
+              bid_price:     armedContract.ask,
             });
             if (result.status === 'filled') {
               setStatus(`Filled @ $${result.fill_price.toFixed(2)} · position_id ${result.position_id}`, 'ok');
@@ -823,6 +870,150 @@
         },
       });
     });
+
+    // Auto-refresh quote then load projection on arm
+    await refreshArmedQuote();
+    loadProjection();
+  }
+
+  // Re-fetches the live quote for the armed contract from /api/chain/quote.
+  // Updates armedContract.ask / .iv / .dte in place so subsequent projection
+  // calls and the Open button use fresh data.
+  async function refreshArmedQuote() {
+    if (!armedContract || !chainTicker) return;
+    const ageEl = document.getElementById('cockpitQuoteAge');
+    if (ageEl) ageEl.textContent = ' · refreshing…';
+
+    try {
+      const optionType = armedContract.option_type ||
+        (armedContract.bias === 'bullish' ? 'call' : 'put');
+      const params = new URLSearchParams({
+        ticker:      chainTicker,
+        strike:      armedContract.strike,
+        expiry:      armedContract.expiration,
+        option_type: optionType,
+        price:       chainCurrentPrice > 0 ? chainCurrentPrice : armedContract.strike,
+      });
+      const fresh = await apiFetch(`/api/chain/quote?${params}`);
+
+      // Update in-place so qty handler and Open button use fresh ask
+      armedContract.ask = fresh.ask;
+      armedContract.iv  = fresh.iv;
+      armedContract.dte = fresh.dte;
+
+      // Refresh meta label
+      const dir    = armedContract.bias === 'bullish' ? 'CALL' : 'PUT';
+      const metaEl = document.getElementById('cockpitMeta');
+      if (metaEl) {
+        metaEl.innerHTML =
+          `${dir} · ask $${fresh.ask.toFixed(2)} · ${fresh.dte}DTE` +
+          (fresh.iv > 0 ? ` · IV ${(fresh.iv * 100).toFixed(0)}%` : '') +
+          ` <span class="cockpit-quote-age" id="cockpitQuoteAge"> · live</span>`;
+      }
+
+      // Refresh cost display with current qty
+      const qtyEl = document.getElementById('chainQty');
+      if (qtyEl) {
+        const qty  = Math.max(1, parseInt(qtyEl.value, 10) || 1);
+        const cost = fresh.ask * qty * 100;
+        const costEl = document.getElementById('chainCost');
+        const mlEl   = document.getElementById('chainMaxLoss');
+        if (costEl) costEl.textContent = fmtPrice(cost);
+        if (mlEl)   mlEl.textContent   = fmtPrice(cost);
+      }
+    } catch (_) {
+      if (ageEl) ageEl.textContent = ' · refresh failed';
+    }
+  }
+
+  // Calls /api/projection with the current armed contract data + target override.
+  async function loadProjection() {
+    const wrapEl = document.getElementById('cockpitProjWrap');
+    const verdEl = document.getElementById('cockpitVerdict');
+    if (!wrapEl || !armedContract) return;
+
+    const targetEl = document.getElementById('cockpitTarget');
+    const target   = targetEl && parseFloat(targetEl.value) > 0
+      ? parseFloat(targetEl.value)
+      : chainCurrentPrice;
+
+    if (!target || target <= 0) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Enter a target price above to see projection</div>';
+      return;
+    }
+
+    if (!armedContract.iv || armedContract.iv <= 0) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">IV unavailable — projection requires market hours data</div>';
+      return;
+    }
+
+    wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Loading projection…</div>';
+
+    try {
+      const optionType = armedContract.option_type ||
+        (armedContract.bias === 'bullish' ? 'call' : 'put');
+      const params = new URLSearchParams({
+        ticker:      chainTicker,
+        strike:      armedContract.strike,
+        expiry:      armedContract.expiration,
+        target,
+        option_type: optionType,
+        iv:          armedContract.iv,
+        premium:     armedContract.ask,
+        dte:         armedContract.dte,
+        iv_crush:    0,
+      });
+      const proj = await apiFetch(`/api/projection?${params}`);
+      renderProjection(proj, wrapEl, verdEl);
+    } catch (err) {
+      const detail = String(err).includes('403') ? 'Admin access required' : 'Projection unavailable';
+      wrapEl.innerHTML = `<div class="dash-placeholder" style="padding:0.4rem 0">${detail}</div>`;
+    }
+  }
+
+  // Renders the projection matrix table + verdict banner.
+  function renderProjection(proj, wrapEl, verdEl) {
+    const rows = proj.rows || [];
+    if (!rows.length) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">No projection data</div>';
+      return;
+    }
+
+    const maxAbsGain = Math.max(1, ...rows.map(r => Math.abs(r.gain_pct)));
+
+    const rowsHtml = rows.map(r => {
+      const gainCls = r.gain_pct >= 0 ? 'positive' : 'negative';
+      const barPct  = Math.min(100, (Math.abs(r.gain_pct) / maxAbsGain) * 100);
+      const barCls  = r.gain_pct >= 0 ? 'proj-bar-pos' : 'proj-bar-neg';
+      const dolSign = r.dollars >= 0 ? '+' : '';
+      return `
+<tr>
+  <td class="proj-col-when">${r.horizon_label}</td>
+  <td class="proj-col-val">$${r.value.toFixed(2)}</td>
+  <td class="proj-col-gain ${gainCls}">${r.gain_pct >= 0 ? '+' : ''}${r.gain_pct.toFixed(1)}%</td>
+  <td class="proj-col-dol ${gainCls}">${dolSign}$${Math.abs(Math.round(r.dollars))}</td>
+  <td class="proj-col-bar"><div class="proj-bar ${barCls}" style="width:${barPct.toFixed(0)}%"></div></td>
+</tr>`;
+    }).join('');
+
+    wrapEl.innerHTML = `
+<table class="cockpit-proj-table">
+  <thead><tr><th>When</th><th>Value</th><th>Gain%</th><th>$/ct</th><th></th></tr></thead>
+  <tbody>${rowsHtml}</tbody>
+</table>`;
+
+    // Verdict banner
+    const verdictMap = {
+      worthless_at_expiry: { cls: 'verdict-red',   icon: '✗', text: 'Worthless at expiry — expires OTM even if stock hits target' },
+      theta_dominated:     { cls: 'verdict-amber',  icon: '⚡', text: 'Theta dominated — most value lost by expiry; move must happen soon' },
+      survives_slow_move:  { cls: 'verdict-green',  icon: '✓', text: 'Survives slow move — retains value at target even near expiry' },
+    };
+    const v = verdictMap[proj.verdict] || { cls: '', icon: '?', text: proj.verdict };
+    if (verdEl) {
+      verdEl.innerHTML     = `${v.icon} ${v.text}`;
+      verdEl.className     = `cockpit-verdict ${v.cls}`;
+      verdEl.style.display = '';
+    }
   }
 
   // ── Position management console (Part 3 — close wired) ───────────────────

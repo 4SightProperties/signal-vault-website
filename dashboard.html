@@ -79,12 +79,18 @@
       </div>
     </div>
 
-    <!-- TradingView Advanced Chart (10-min, dark, full toolbar, allow_symbol_change) -->
-    <div class="dash-chart-host" id="chartHost">
-      <div class="dash-chart-placeholder" id="chartPlaceholder">
-        <div class="dash-coming-icon">📊</div>
-        <div class="dash-coming-text">Select a ticker to load chart</div>
-        <div class="dash-coming-sub">Click any watchlist or signal row · or type above</div>
+    <!-- Price-reference strip (TradingView chart demoted — use the link for real analysis) -->
+    <div class="dash-price-strip" id="priceStrip">
+      <div class="price-strip-placeholder" id="priceStripPlaceholder">Select a ticker to load</div>
+      <div class="price-strip-data" id="priceStripData" style="display:none">
+        <div class="price-strip-left">
+          <span class="price-strip-ticker" id="priceStripTicker">—</span>
+          <span class="price-strip-price" id="priceStripPrice">—</span>
+          <span class="price-strip-note" id="priceStripNote">ref</span>
+        </div>
+        <a class="price-strip-tv-btn" id="priceStripTvBtn" href="#" target="_blank" rel="noopener">
+          Open 10m chart in TradingView ↗
+        </a>
       </div>
     </div>
 
@@ -109,6 +115,7 @@
           <select class="chain-select" id="chainExpiry">
             <option value="">— expiry —</option>
           </select>
+          <button class="chain-refresh-btn" id="chainRefreshBtn" title="Reload chain">↻</button>
         </div>
       </div>
       <div id="chainBody" class="dash-panel-body">

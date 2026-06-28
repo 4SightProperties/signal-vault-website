@@ -485,30 +485,77 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .dash-search-btn:hover { opacity: 0.82; }
 
-/* Chart host — flex:1 fills the remaining center space */
-.dash-chart-host {
-  flex: 1;
-  min-height: 0;
-  position: relative;
+/* Price-reference strip — compact replacement for the TV chart embed */
+.dash-price-strip {
+  flex-shrink: 0;
+  height: 56px;
+  display: flex;
+  align-items: center;
+  padding: 0 0.9rem;
   background: var(--bg-base);
   border-bottom: 1px solid var(--border);
-  overflow: hidden;
 }
 
-.dash-chart-placeholder {
-  position: absolute;
-  inset: 0;
+.price-strip-placeholder {
+  font-size: 0.72rem;
+  color: var(--text-muted);
+  width: 100%;
+  text-align: center;
+}
+
+.price-strip-data {
+  width: 100%;
   display: flex;
-  flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 0.5rem;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.price-strip-left {
+  display: flex;
+  align-items: baseline;
+  gap: 0.65rem;
+}
+
+.price-strip-ticker {
+  font-family: var(--font-display);
+  font-size: 1rem;
+  font-weight: 700;
+  color: var(--accent);
+  letter-spacing: 0.08em;
+}
+
+.price-strip-price {
+  font-family: var(--font-display);
+  font-size: 0.95rem;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.price-strip-note {
+  font-size: 0.62rem;
   color: var(--text-muted);
 }
 
-/* TradingView widget wrapper fills the host */
-.tv-widget-wrapper,
-.tv-widget-wrapper > div { width: 100% !important; height: 100% !important; }
+.price-strip-tv-btn {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.3rem 0.8rem;
+  background: rgba(74,222,128,0.1);
+  border: 1px solid rgba(74,222,128,0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  font-size: 0.72rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-decoration: none;
+  white-space: nowrap;
+  transition: background 0.2s, border-color 0.2s;
+}
+.price-strip-tv-btn:hover {
+  background: rgba(74,222,128,0.18);
+  border-color: var(--accent);
+}
 
 /* Levels panel */
 .dash-levels-panel {
@@ -563,10 +610,16 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .dash-level-cell-value.bull { color: var(--accent); }
 .dash-level-cell-value.bear { color: var(--danger); }
 
-/* Chain panel */
-.dash-chain-panel { flex-shrink: 0; }
+/* Chain panel — grows to fill remaining center space after strip + levels */
+.dash-chain-panel {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  min-height: 0;
+}
 
-/* Chain controls row (bias + expiry selectors) */
+/* Chain controls row (bias + expiry selectors + refresh button) */
 .chain-controls {
   display: flex;
   gap: 0.4rem;
@@ -583,6 +636,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   cursor: pointer;
 }
 .chain-select:focus { outline: none; border-color: var(--accent); }
+
+.chain-refresh-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.12rem 0.38rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+.chain-refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
 
 /* Chain table */
 .chain-table {
@@ -1095,3 +1160,220 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .dash-modal-status.ok    { color: var(--accent); }
 .dash-modal-status.error { color: var(--danger); }
+
+/* ════════════════════════════════════════════════════════════════
+   Trading cockpit — armed contract panel + projection matrix
+   ════════════════════════════════════════════════════════════════ */
+
+/* Cockpit header: symbol + meta + refresh button */
+.cockpit-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.5rem;
+  margin-bottom: 0.4rem;
+}
+
+.cockpit-header-left {
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  min-width: 0;
+}
+
+.cockpit-symbol {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--accent);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.cockpit-meta {
+  font-size: 0.62rem;
+  color: var(--text-muted);
+}
+
+.cockpit-quote-age { color: var(--text-muted); }
+
+.cockpit-refresh-btn {
+  flex-shrink: 0;
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.7rem;
+  padding: 0.14rem 0.4rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+.cockpit-refresh-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Target override row */
+.cockpit-target-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  margin: 0.35rem 0;
+  padding-bottom: 0.35rem;
+  border-bottom: 1px solid var(--border);
+}
+
+.cockpit-target-input {
+  width: 68px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  font-size: 0.68rem;
+  font-weight: 600;
+  padding: 0.18rem 0.28rem;
+  text-align: right;
+}
+.cockpit-target-input:focus { outline: none; border-color: var(--accent); }
+
+.cockpit-apply-btn {
+  background: rgba(74,222,128,0.1);
+  border: 1px solid rgba(74,222,128,0.25);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 700;
+  padding: 0.18rem 0.42rem;
+  transition: background 0.2s;
+}
+.cockpit-apply-btn:hover { background: rgba(74,222,128,0.18); }
+
+.cockpit-target-src {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  margin-left: auto;
+  white-space: nowrap;
+}
+
+/* Projection matrix table */
+.cockpit-proj-wrap { margin: 0.2rem 0 0.3rem; }
+
+.cockpit-proj-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.62rem;
+  font-family: var(--font-display);
+}
+.cockpit-proj-table th {
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  padding: 0.12rem 0.22rem;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+.cockpit-proj-table th:first-child { text-align: left; }
+.cockpit-proj-table td {
+  padding: 0.16rem 0.22rem;
+  text-align: right;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(148,163,184,0.06);
+}
+.cockpit-proj-table td:first-child { text-align: left; color: var(--text-muted); }
+.cockpit-proj-table .positive { color: var(--accent); }
+.cockpit-proj-table .negative { color: var(--danger); }
+
+.proj-col-when { min-width: 72px; }
+.proj-col-val  { min-width: 42px; }
+.proj-col-gain { min-width: 48px; }
+.proj-col-dol  { min-width: 42px; }
+.proj-col-bar  { width: 44px; padding-left: 0.3rem; }
+
+.proj-bar {
+  height: 5px;
+  border-radius: 2px;
+  min-width: 2px;
+}
+.proj-bar-pos { background: var(--accent); opacity: 0.65; }
+.proj-bar-neg { background: var(--danger); opacity: 0.65; }
+
+/* Verdict banner */
+.cockpit-verdict {
+  font-size: 0.65rem;
+  font-weight: 600;
+  padding: 0.25rem 0.45rem;
+  border-radius: var(--radius-sm);
+  margin: 0.25rem 0;
+  border-left: 2px solid transparent;
+}
+.cockpit-verdict.verdict-red   { background: rgba(239,68,68,0.1);  color: var(--danger);  border-color: var(--danger); }
+.cockpit-verdict.verdict-amber { background: rgba(245,158,11,0.1); color: var(--warning); border-color: var(--warning); }
+.cockpit-verdict.verdict-green { background: rgba(74,222,128,0.1); color: var(--accent);  border-color: var(--accent); }
+
+/* Exit level stub section */
+.cockpit-levels-section {
+  margin: 0.3rem 0;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+
+.cockpit-section-label {
+  font-size: 0.57rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+
+.cockpit-level-btns { display: flex; gap: 0.3rem; }
+
+.cockpit-level-btn {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.6rem;
+  font-weight: 600;
+  padding: 0.2rem 0.25rem;
+  text-align: center;
+  transition: border-color 0.15s, color 0.15s;
+}
+.cockpit-level-btn:hover { border-color: var(--accent); color: var(--text-secondary); }
+.cockpit-level-btn.active {
+  border-color: rgba(74,222,128,0.4);
+  background: rgba(74,222,128,0.07);
+  color: var(--accent);
+}
+
+/* Cockpit action buttons row */
+.cockpit-actions {
+  display: flex;
+  gap: 0.4rem;
+  margin-top: 0.38rem;
+}
+
+.cockpit-action-btn {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: not-allowed;
+  font-size: 0.64rem;
+  font-weight: 600;
+  line-height: 1.2;
+  padding: 0.3rem 0.35rem;
+  text-align: center;
+  opacity: 0.5;
+}
+
+/* Open button within cockpit actions — inherits chain-open-btn, no extra top margin */
+.cockpit-actions .chain-open-btn {
+  flex: 1;
+  margin-top: 0;
+}
