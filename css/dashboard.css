@@ -175,8 +175,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
-.pos-direction.call { background: rgba(74,222,128,0.15); color: var(--accent); }
-.pos-direction.put  { background: rgba(239,68,68,0.15);  color: var(--danger); }
+.pos-direction.call { background: rgba(148,163,184,0.1); color: var(--accent); }
+.pos-direction.put  { background: rgba(148,163,184,0.1); color: var(--danger); }
 
 .pos-contract {
   font-size: 0.72rem;
@@ -346,8 +346,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-radius: 3px;
   letter-spacing: 0.04em;
 }
-.wl-dir.bull { background: rgba(74,222,128,0.12); color: var(--accent); }
-.wl-dir.bear { background: rgba(239,68,68,0.12);  color: var(--danger); }
+.wl-dir.bull { background: rgba(148,163,184,0.1); color: var(--accent); }
+.wl-dir.bear { background: rgba(148,163,184,0.1); color: var(--danger); }
 
 /* Zone state badge */
 .wl-zone {
@@ -394,8 +394,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   transition: width 0.3s ease;
   background: rgba(148,163,184,0.35);
 }
-.wl-gauge-track.bull .wl-gauge-fill { background: rgba(74,222,128,0.4); }
-.wl-gauge-track.bear .wl-gauge-fill { background: rgba(239,68,68,0.4); }
+.wl-gauge-track.bull .wl-gauge-fill { background: rgba(148,163,184,0.3); }
+.wl-gauge-track.bear .wl-gauge-fill { background: rgba(148,163,184,0.3); }
 .wl-gauge-marker {
   position: absolute;
   top: -3px;
@@ -609,18 +609,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .dash-search-input:focus { border-color: var(--accent); }
 
 .dash-search-btn {
-  background: var(--accent);
-  border: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--bg-base);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.7rem;
   font-weight: 700;
   letter-spacing: 0.06em;
   padding: 0.28rem 0.65rem;
-  transition: opacity 0.2s;
+  transition: border-color 0.2s, color 0.2s;
 }
-.dash-search-btn:hover { opacity: 0.82; }
+.dash-search-btn:hover { border-color: var(--border-bright); color: var(--text-primary); }
 
 .price-strip-placeholder {
   font-size: 0.7rem;
@@ -818,7 +818,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-color: var(--accent);
 }
 .chain-table tr.chain-selected td:first-child { border-left: 2px solid var(--accent); }
-.chain-table tr.chain-atm td { color: var(--accent); font-weight: 500; }
+.chain-table tr.chain-atm td { color: var(--text-secondary); font-weight: 500; }
 .chain-table tr.chain-atm td:first-child { border-left: 2px solid var(--border-bright); }
 
 .chain-badge {
@@ -830,8 +830,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.chain-badge.ATM   { background: rgba(74,222,128,0.15); color: var(--accent); }
-.chain-badge.ITM   { background: rgba(74,222,128,0.08); color: var(--accent); opacity: 0.7; }
+.chain-badge.ATM   { background: rgba(148,163,184,0.13); color: var(--text-secondary); }
+.chain-badge.ITM   { background: rgba(148,163,184,0.07); color: var(--text-muted); opacity: 0.85; }
 .chain-badge.OTM   { background: rgba(148,163,184,0.1); color: var(--text-muted); }
 .chain-badge.lotto { background: rgba(251,191,36,0.1);  color: var(--gold); }
 
@@ -1172,8 +1172,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-radius: 3px;
   text-transform: uppercase;
 }
-.hist-dir.call { background: rgba(74,222,128,0.15); color: var(--accent); }
-.hist-dir.put  { background: rgba(239,68,68,0.15);  color: var(--danger); }
+.hist-dir.call { background: rgba(148,163,184,0.1); color: var(--accent); }
+.hist-dir.put  { background: rgba(148,163,184,0.1); color: var(--danger); }
 
 .hist-outcome {
   display: inline-block;
@@ -1383,18 +1383,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cockpit-target-input:focus { outline: none; border-color: var(--accent); }
 
 .cockpit-apply-btn {
-  background: rgba(74,222,128,0.1);
-  border: 1px solid rgba(74,222,128,0.25);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
   border-radius: var(--radius-sm);
-  color: var(--accent);
+  color: var(--text-secondary);
   cursor: pointer;
   font-size: 0.64rem;
   font-weight: 700;
   padding: 0.1rem 0.32rem;
-  transition: background 0.2s;
+  transition: border-color 0.2s, color 0.2s;
   flex-shrink: 0;
 }
-.cockpit-apply-btn:hover { background: rgba(74,222,128,0.18); }
+.cockpit-apply-btn:hover { border-color: var(--border-bright); color: var(--text-primary); }
 
 .cockpit-target-src {
   font-size: 0.57rem;
