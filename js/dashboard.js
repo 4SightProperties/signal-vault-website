@@ -401,13 +401,22 @@
         cardsHtml = '<div class="dash-empty">No signals today</div>';
       } else {
         cardsHtml = sigs.map(s => {
-          const tier   = (s.conviction_tier || s.cf_tier || '').toUpperCase();
-          const dirStr = (s.direction || 'bullish').toLowerCase().includes('bear') ? '🔴' : '🟢';
+          const tier      = (s.conviction_tier || s.cf_tier || '').toUpperCase();
+          const dirStr    = (s.direction || 'bullish').toLowerCase().includes('bear') ? '🔴' : '🟢';
+          const starHtml  = s.prime_star ? ' <span class="sig-star">★</span>' : '';
+          const score     = s.conviction_score || 0;
+          const scorePct  = Math.min(100, score * 10);
+          const setupStr  = s.setup_type ? `<span class="sig-setup">${s.setup_type}</span>` : '';
           return `
 <div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}">
   <div class="sig-card-top">
-    <span class="sig-ticker">${dirStr} ${s.ticker || '?'}</span>
+    <span class="sig-ticker">${dirStr} ${s.ticker || '?'}${starHtml}</span>
     <span class="sig-tier ${tier}">${tier || '—'}</span>
+  </div>
+  <div class="sig-score-row">
+    <div class="sig-score-bar-wrap"><div class="sig-score-bar" style="width:${scorePct}%"></div></div>
+    <span class="sig-score-val">${score}</span>
+    ${setupStr}
   </div>
   <div class="sig-meta">
     <span>${s.recommended_strike ? '$' + s.recommended_strike + ' strike' : '—'}</span>
@@ -450,14 +459,42 @@
       }
 
       body.innerHTML = rows.map(r => {
-        const dirClass = (r.direction || '').toLowerCase().startsWith('bear') ? 'bear' : 'bull';
-        const dirLabel = dirClass === 'bear' ? 'BEAR' : 'BULL';
+        const isLong   = !(r.direction || '').toLowerCase().startsWith('short');
+        const dirClass = isLong ? 'bull' : 'bear';
+        const dirArrow = isLong ? '▲' : '▼';
+        const dirLabel = isLong ? 'CALL' : 'PUT';
+
+        // Zone state badge
+        const zoneKey   = r.arm_state || 'armed';
+        const zoneLabel = { armed: 'armed', at_risk: 'at risk', fired: 'fired', invalidated: 'invalid', deactivated: 'inactive' }[zoneKey] || zoneKey;
+        const zoneCls   = 'wl-zone wl-zone-' + zoneKey.replace('_', '-');
+
+        // Level gauge: for calls → low=vs, high=trigger; for puts → low=trigger, high=vs
+        const low  = isLong ? (r.vs || 0) : (r.trigger || 0);
+        const high = isLong ? (r.trigger || 0) : (r.vs || 0);
+        const cur  = r.current_price || 0;
+        let gaugeHtml = '';
+        if (low && high && high > low) {
+          const pct     = Math.min(100, Math.max(0, ((cur - low) / (high - low)) * 100));
+          const marker  = cur > 0 ? `<div class="wl-gauge-marker" style="left:${pct.toFixed(1)}%"></div>` : '';
+          gaugeHtml = `
+  <div class="wl-gauge">
+    <span class="wl-gauge-label">${fmtPrice(low)}</span>
+    <div class="wl-gauge-track ${dirClass}">
+      <div class="wl-gauge-fill" style="width:${cur > 0 ? pct.toFixed(1) : 0}%"></div>
+      ${marker}
+    </div>
+    <span class="wl-gauge-label">${fmtPrice(high)}</span>
+  </div>`;
+        }
+
         return `
 <div class="wl-row" data-ticker="${r.ticker || ''}">
-  <span class="wl-ticker">${r.ticker || '?'}</span>
-  <span class="wl-dir ${dirClass}">${dirLabel}</span>
-  <span class="wl-gate">${r.gate_n != null ? r.gate_n + '/4' : ''}</span>
-  <span class="wl-arm">${r.arm_state || ''}</span>
+  <div class="wl-row-header">
+    <span class="wl-ticker">${r.ticker || '?'}</span>
+    <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
+    <span class="${zoneCls}">${zoneLabel}</span>
+  </div>${gaugeHtml}
 </div>`;
       }).join('');
 

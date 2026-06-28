@@ -317,37 +317,133 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── Watchlist rows ──────────────────────────────────────────── */
 .wl-row {
   display: flex;
-  align-items: center;
-  justify-content: space-between;
-  padding: 0.45rem 0.25rem;
+  flex-direction: column;
+  padding: 0.45rem 0.25rem 0.5rem;
   border-bottom: 1px solid var(--border);
   font-size: 0.72rem;
+  cursor: pointer;
 }
 .wl-row:last-child { border-bottom: none; }
+.wl-row:hover { background: var(--bg-elevated); }
+
+.wl-row-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-bottom: 0.3rem;
+}
 .wl-ticker {
   font-family: var(--font-display);
   font-size: 0.78rem;
   font-weight: 600;
   color: var(--text-primary);
-  min-width: 60px;
+  flex: 1;
 }
 .wl-dir {
-  font-size: 0.62rem;
-  font-weight: 600;
+  font-size: 0.6rem;
+  font-weight: 700;
   padding: 0.1rem 0.35rem;
   border-radius: 3px;
+  letter-spacing: 0.04em;
 }
 .wl-dir.bull { background: rgba(74,222,128,0.12); color: var(--accent); }
 .wl-dir.bear { background: rgba(239,68,68,0.12);  color: var(--danger); }
-.wl-gate {
-  font-size: 0.66rem;
-  color: var(--text-muted);
+
+/* Zone state badge */
+.wl-zone {
+  font-size: 0.58rem;
+  font-weight: 600;
+  padding: 0.1rem 0.3rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
 }
-.wl-arm {
-  font-size: 0.62rem;
+.wl-zone-armed       { background: rgba(148,163,184,0.12); color: var(--text-secondary); }
+.wl-zone-at-risk     { background: rgba(245,158,11,0.18);  color: var(--warning); }
+.wl-zone-fired       { background: rgba(74,222,128,0.18);  color: var(--accent); }
+.wl-zone-invalidated { background: rgba(75,85,99,0.2);     color: var(--text-muted); }
+.wl-zone-deactivated { background: rgba(75,85,99,0.12);    color: var(--text-muted); }
+
+/* Level gauge */
+.wl-gauge {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0 0.1rem;
+}
+.wl-gauge-label {
+  font-size: 0.58rem;
   color: var(--text-muted);
+  font-family: var(--font-display);
+  white-space: nowrap;
+  min-width: 44px;
+}
+.wl-gauge-label:last-child { text-align: right; }
+.wl-gauge-track {
+  flex: 1;
+  height: 4px;
+  background: var(--border);
+  border-radius: 2px;
+  position: relative;
+  overflow: visible;
+}
+.wl-gauge-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+  background: rgba(148,163,184,0.35);
+}
+.wl-gauge-track.bull .wl-gauge-fill { background: rgba(74,222,128,0.4); }
+.wl-gauge-track.bear .wl-gauge-fill { background: rgba(239,68,68,0.4); }
+.wl-gauge-marker {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: 10px;
+  background: var(--text-primary);
+  border-radius: 1px;
+  transform: translateX(-50%);
+  box-shadow: 0 0 4px rgba(226,232,240,0.5);
+}
+
+/* ── Signal cards — score bar + star + setup ─────────────────── */
+.sig-score-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.3rem;
+}
+.sig-score-bar-wrap {
+  flex: 1;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.sig-score-bar {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--accent-dim);
+  transition: width 0.3s ease;
+}
+.sig-score-val {
+  font-size: 0.62rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  min-width: 14px;
   text-align: right;
-  min-width: 50px;
+}
+.sig-setup {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  text-transform: lowercase;
+}
+.sig-star {
+  color: var(--gold);
+  font-size: 0.72rem;
+  margin-left: 0.15rem;
 }
 
 /* ── Utility ─────────────────────────────────────────────────── */
