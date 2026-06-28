@@ -200,6 +200,27 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .pos-pnl-value.negative { color: var(--danger); }
 .pos-pnl-value.neutral  { color: var(--text-secondary); }
 
+/* P&L state badges: LIVE / STALE / PEAK */
+.pnl-badge {
+  display: inline-block;
+  font-size: 0.55rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.35rem;
+  border-radius: 3px;
+  vertical-align: middle;
+  text-transform: uppercase;
+  margin-left: 0.3rem;
+}
+.pnl-badge.live  { background: rgba(74,222,128,0.2);  color: var(--accent); }
+.pnl-badge.stale { background: rgba(239,68,68,0.15);  color: var(--danger); }
+.pnl-badge.peak  { background: var(--bg-elevated);    color: var(--text-muted); }
+
+/* Stale P&L row: dim the whole row so it doesn't look authoritative */
+.pos-pnl-row.stale-row { opacity: 0.55; }
+/* Peak row: slightly dimmer than live to enforce hierarchy */
+.pos-pnl-row.peak-row  { opacity: 0.75; }
+
 .pos-trail-row {
   display: flex;
   align-items: center;
@@ -240,6 +261,25 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .sig-card.stale { opacity: 0.5; }
 .sig-card:hover { border-color: var(--border-bright); }
+
+/* Engine health banner — shown above signal cards when staleness is detected */
+.sig-engine-banner {
+  font-size:    0.68rem;
+  padding:      0.35rem 0.55rem;
+  border-radius: 4px;
+  margin-bottom: 0.4rem;
+  border-left:  2px solid transparent;
+}
+.sig-engine-banner.alarm  {
+  background:  rgba(239,68,68,0.1);
+  color:       var(--danger);
+  border-color: var(--danger);
+}
+.sig-engine-banner.closed {
+  background:  var(--bg-elevated);
+  color:       var(--text-muted);
+  border-color: var(--border);
+}
 
 .sig-card-top {
   display: flex;
@@ -523,37 +563,142 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .dash-level-cell-value.bull { color: var(--accent); }
 .dash-level-cell-value.bear { color: var(--danger); }
 
-/* Chain panel — Phase 4 stub */
+/* Chain panel */
 .dash-chain-panel { flex-shrink: 0; }
 
-.dash-chain-stub {
+/* Chain controls row (bias + expiry selectors) */
+.chain-controls {
   display: flex;
-  flex-direction: column;
+  gap: 0.4rem;
   align-items: center;
-  gap: 0.25rem;
-  padding: 0.55rem 0.75rem;
+}
+.chain-select {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15rem 0.35rem;
+  cursor: pointer;
+}
+.chain-select:focus { outline: none; border-color: var(--accent); }
+
+/* Chain table */
+.chain-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.63rem;
+  font-family: var(--font-display);
+}
+.chain-table th {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  padding: 0.18rem 0.3rem;
+  text-align: right;
+  border-bottom: 1px solid var(--border);
+}
+.chain-table th:first-child { text-align: left; }
+.chain-table td {
+  padding: 0.2rem 0.3rem;
+  text-align: right;
+  color: var(--text-secondary);
+  border-bottom: 1px solid rgba(148,163,184,0.06);
+  cursor: pointer;
+}
+.chain-table td:first-child { text-align: left; }
+.chain-table tr:hover td { background: var(--bg-elevated); }
+.chain-table tr.chain-selected td {
+  background: rgba(74,222,128,0.06);
+  border-color: var(--accent);
+}
+.chain-table tr.chain-selected td:first-child { border-left: 2px solid var(--accent); }
+.chain-table tr.chain-atm td { color: var(--accent); font-weight: 500; }
+.chain-table tr.chain-atm td:first-child { border-left: 2px solid rgba(74,222,128,0.4); }
+
+.chain-badge {
+  display: inline-block;
+  font-size: 0.54rem;
+  font-weight: 700;
+  padding: 0.06rem 0.24rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.chain-badge.ATM   { background: rgba(74,222,128,0.15); color: var(--accent); }
+.chain-badge.ITM   { background: rgba(74,222,128,0.08); color: var(--accent); opacity: 0.7; }
+.chain-badge.OTM   { background: rgba(148,163,184,0.1); color: var(--text-muted); }
+.chain-badge.lotto { background: rgba(251,191,36,0.1);  color: var(--gold); }
+
+/* Armed open panel (appears below chain table when a contract is selected) */
+.chain-armed {
+  margin-top: 0.5rem;
+  padding: 0.5rem 0.6rem;
+  background: rgba(74,222,128,0.04);
+  border: 1px solid rgba(74,222,128,0.2);
+  border-radius: var(--radius-sm);
+}
+.chain-armed-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.5rem;
+  font-size: 0.65rem;
+}
+.chain-armed-label { color: var(--text-muted); }
+.chain-armed-symbol {
+  font-family: var(--font-display);
+  font-size: 0.7rem;
+  font-weight: 700;
+  color: var(--accent);
+  flex: 1;
+}
+.chain-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 0.35rem;
+}
+.chain-qty-input {
+  width: 52px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text);
+  font-size: 0.72rem;
+  font-weight: 700;
+  padding: 0.2rem 0.35rem;
   text-align: center;
 }
-.dash-chain-stub code {
-  font-family: monospace;
-  font-size: 0.68rem;
+.chain-qty-input:focus { outline: none; border-color: var(--accent); }
+.chain-cost-label { font-size: 0.64rem; color: var(--text-muted); }
+.chain-cost-value {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
   color: var(--text-secondary);
-  background: var(--bg-elevated);
-  padding: 0.04rem 0.28rem;
-  border-radius: 3px;
 }
-
-.dash-phase-label {
-  display: inline-block;
-  font-size: 0.6rem;
-  font-weight: 600;
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-  background: rgba(148,163,184,0.1);
-  color: var(--text-muted);
+.chain-open-btn {
+  width: 100%;
+  margin-top: 0.4rem;
+  background: rgba(74,222,128,0.1);
+  border: 1px solid rgba(74,222,128,0.3);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 700;
+  padding: 0.35rem 0.5rem;
+  text-align: center;
+  transition: background 0.2s, border-color 0.2s;
+  letter-spacing: 0.04em;
   text-transform: uppercase;
-  letter-spacing: 0.08em;
 }
+.chain-open-btn:hover { background: rgba(74,222,128,0.18); border-color: var(--accent); }
+.chain-open-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ════════════════════════════════════════════════════════════════
    Position cards — clickable + inline management console (stub)
@@ -888,3 +1033,65 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   text-decoration: underline dotted currentColor;
 }
 .hist-uid-link:hover { color: var(--accent); }
+
+/* ════════════════════════════════════════════════════════════════
+   Confirmation modal (close + open orders)
+   ════════════════════════════════════════════════════════════════ */
+
+.dash-modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0,0,0,0.7);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 500;
+}
+.dash-modal-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  min-width: 320px;
+  max-width: 480px;
+}
+.dash-modal-title {
+  font-family: var(--font-display);
+  font-size: 0.9rem;
+  font-weight: 700;
+  color: var(--text);
+  margin-bottom: 0.65rem;
+}
+.dash-modal-body {
+  font-size: 0.75rem;
+  color: var(--text-secondary);
+  line-height: 1.55;
+  margin-bottom: 1rem;
+}
+.dash-modal-actions {
+  display: flex;
+  gap: 0.6rem;
+  justify-content: flex-end;
+}
+.dash-modal-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.72rem;
+  font-weight: 600;
+  padding: 0.35rem 0.9rem;
+  transition: border-color 0.2s, color 0.2s;
+}
+.dash-modal-btn:hover { border-color: var(--accent); color: var(--accent); }
+.dash-modal-btn.danger { border-color: rgba(239,68,68,0.3); color: var(--danger); }
+.dash-modal-btn.danger:hover { background: rgba(239,68,68,0.08); border-color: var(--danger); }
+.dash-modal-status {
+  font-size: 0.68rem;
+  margin-top: 0.6rem;
+  min-height: 1rem;
+  color: var(--text-muted);
+}
+.dash-modal-status.ok    { color: var(--accent); }
+.dash-modal-status.error { color: var(--danger); }

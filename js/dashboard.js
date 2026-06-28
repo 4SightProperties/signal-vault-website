@@ -1,6 +1,15 @@
-// dashboard.js — Signal Vault Monitor Cockpit (Phase 1, read-only)
+// dashboard.js — Signal Vault Monitor Cockpit
 // Authenticates via Discord OAuth, connects a WebSocket for live positions,
 // and polls REST endpoints for watchlist + signals.
+//
+// Phase 0  — Live/Stale/Peak P&L badges, engine-down banner
+// Part 2   — Chain panel: loadChainExpirations, loadChain, renderChain, armContract
+// Part 3   — Close wire: console "Exit Nx" button → real POST /api/v1/orders/close
+// Part 4   — Open wire: "Open" button in chain armed panel → POST /api/v1/orders/open
+// History  — History tab: setupHistoryTab, loadHistory, renderHistory, admin scope selector
+//
+// Execution (close/open) is gated by WEB_TRADING_ENABLED kill-switch on the backend.
+// A confirmation modal is shown for BOTH actions before any order is placed.
 
 (() => {
   'use strict';
@@ -20,13 +29,18 @@
   let focusedTicker      = null; // ticker currently loaded in center column
   let openConsoleId      = null; // position_id of the currently expanded management console
 
+  // Chain state
+  let chainTicker       = null;  // ticker for which chain is loaded
+  let chainCurrentPrice = 0.0;   // stock price at chain load time
+  let armedContract     = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
+
   // History tab state
   let isAdmin           = false;
   let histCurrentPeriod = 'all';
   let histCurrentScope  = 'me';   // 'me' | 'all' | 'user' — admin only
   let histCurrentUser   = null;   // discord_id when histCurrentScope === 'user'
 
-  // ── Helpers (unchanged) ────────────────────────────────────────────────────
+  // ── Helpers ────────────────────────────────────────────────────────────────
 
   function fmt$(n) {
     if (n == null) return '—';
@@ -64,13 +78,25 @@
     return { Authorization: 'Bearer ' + authToken };
   }
 
-  async function apiFetch(path) {
-    const res = await fetch(API + path, { headers: authHeaders() });
+  async function apiFetch(path, opts) {
+    const res = await fetch(API + path, { headers: authHeaders(), ...opts });
     if (!res.ok) throw new Error(res.status + ' ' + path);
     return res.json();
   }
 
-  // ── Auth gate (unchanged) ──────────────────────────────────────────────────
+  async function apiPost(path, body) {
+    const res = await fetch(API + path, {
+      method:  'POST',
+      headers: { ...authHeaders(), 'Content-Type': 'application/json' },
+      body:    JSON.stringify(body),
+    });
+    let data;
+    try { data = await res.json(); } catch (_) { data = {}; }
+    if (!res.ok) throw Object.assign(new Error(data.detail || res.status + ' ' + path), { data, status: res.status });
+    return data;
+  }
+
+  // ── Auth gate ──────────────────────────────────────────────────────────────
 
   const overlay  = document.getElementById('authOverlay');
   const authBtn  = document.getElementById('authBtn');
@@ -155,13 +181,13 @@
     signalTimer = setInterval(loadSignals,   30_000);
     watchTimer  = setInterval(loadWatchlist, 60_000);
 
-    // Wire up center panel and position console (post-auth only)
     setupCenterPanel();
     setupConsoleHandlers();
     setupHistoryTab();
+    setupModal();
   }
 
-  // ── WebSocket (unchanged) ─────────────────────────────────────────────────
+  // ── WebSocket ─────────────────────────────────────────────────────────────
 
   function setWsStatus(state, text) {
     const dot  = document.getElementById('wsDot');
@@ -208,8 +234,8 @@
   }
 
   // ── Positions render ───────────────────────────────────────────────────────
-  // Changed: caches currentPositions, adds data-pos-id, uses backend peak_pnl/peak_pnl_pct,
-  // re-attaches management console after each re-render.
+  // Shows LIVE / STALE / PEAK P&L badges based on whether the backend is
+  // streaming a current_price for the position.
 
   function renderPositions(positions) {
     currentPositions = positions;
@@ -232,11 +258,43 @@
       const dir      = (pos.direction || '').toLowerCase().includes('put') ? 'put' : 'call';
       const dirLabel = dir === 'put' ? 'PUT' : 'CALL';
 
-      // Use pre-computed backend values (peak_pnl / peak_pnl_pct from positions.py).
-      // current_price is null in Phase 1 — do not render live P&L.
+      const isLive  = pos.current_price != null;
+      const isStale = !isLive && pos.price_age_secs != null;
+
+      let livePnlHtml;
+      if (isLive) {
+        const cls = pos.unrealized_pnl >= 0 ? 'positive' : 'negative';
+        livePnlHtml = `
+  <div class="pos-pnl-row">
+    <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge live">LIVE</span></span>
+    <span class="pos-pnl-value ${cls}">${fmt$(Math.round(pos.unrealized_pnl))} (${fmtPct(pos.unrealized_pnl_pct)})</span>
+  </div>`;
+      } else if (isStale) {
+        const ageSecs = pos.price_age_secs;
+        const ageStr  = ageSecs < 60
+          ? Math.round(ageSecs) + 's'
+          : Math.floor(ageSecs / 60) + 'm' + Math.round(ageSecs % 60) + 's';
+        livePnlHtml = `
+  <div class="pos-pnl-row stale-row">
+    <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge stale">STALE · ${ageStr} old</span></span>
+    <span class="pos-pnl-value neutral">—</span>
+  </div>`;
+      } else {
+        livePnlHtml = `
+  <div class="pos-pnl-row stale-row">
+    <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge stale">NO PRICE</span></span>
+    <span class="pos-pnl-value neutral">—</span>
+  </div>`;
+      }
+
       const peakPnl  = pos.peak_pnl;
       const peakPct  = pos.peak_pnl_pct;
-      const pnlClass = peakPnl == null ? 'neutral' : (peakPnl >= 0 ? 'positive' : 'negative');
+      const peakCls  = peakPnl == null ? 'neutral' : (peakPnl >= 0 ? 'positive' : 'negative');
+      const peakPnlHtml = `
+  <div class="pos-pnl-row peak-row">
+    <span class="pos-pnl-label">Peak P&amp;L <span class="pnl-badge peak">PEAK</span></span>
+    <span class="pos-pnl-value ${peakCls}">${peakPnl != null ? fmt$(Math.round(peakPnl)) + ' (' + fmtPct(peakPct) + ')' : '—'}</span>
+  </div>`;
 
       const trailArmed = pos.trail_armed;
 
@@ -249,12 +307,8 @@
   <div class="pos-contract">
     $${pos.strike} · ${pos.expiry || ''} · ${pos.contracts_open}x · entry ${fmtPrice(pos.entry_price)}
   </div>
-  <div class="pos-pnl-row">
-    <span class="pos-pnl-label">Peak P&amp;L</span>
-    <span class="pos-pnl-value ${pnlClass}">
-      ${peakPnl != null ? fmt$(Math.round(peakPnl)) + ' (' + fmtPct(peakPct) + ')' : '—'}
-    </span>
-  </div>
+  ${livePnlHtml}
+  ${peakPnlHtml}
   <div class="pos-trail-row">
     <span class="trail-badge ${trailArmed ? 'armed' : 'waiting'}">
       ${trailArmed ? '⬆ Trail Armed' : '⭕ Awaiting Arm'}
@@ -289,7 +343,7 @@
       if (card && pos) {
         card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
         card.classList.add('expanded');
-        wireConsoleButtons(card);
+        wireConsoleButtons(card, pos);
       } else {
         openConsoleId = null;
       }
@@ -297,26 +351,59 @@
   }
 
   // ── Signals ────────────────────────────────────────────────────────────────
-  // Changed: adds data-ticker on each sig-card for center panel focus delegation.
+  // Shows an engine-down banner when market is open but no recent signal has fired.
+
+  function _marketMinutesOpen() {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York',
+      weekday:  'short',
+      hour:     '2-digit',
+      minute:   '2-digit',
+      hour12:   false,
+    });
+    const parts = Object.fromEntries(
+      fmt.formatToParts(new Date()).map(p => [p.type, p.value])
+    );
+    if (['Sat', 'Sun'].includes(parts.weekday)) return 0;
+    const hour  = parseInt(parts.hour,   10) % 24;
+    const min   = parseInt(parts.minute, 10);
+    const total = hour * 60 + min;
+    if (total < 570 || total >= 960) return 0;
+    return total - 570;
+  }
 
   async function loadSignals() {
     const body = document.getElementById('signalsBody');
     const meta = document.getElementById('signalsMeta');
     try {
-      const data = await apiFetch('/api/signals');
-      const sigs = data.signals || [];
-      meta.textContent = sigs.length + ' signals';
+      const data      = await apiFetch('/api/signals');
+      const sigs      = data.signals       || [];
+      const lastSigTs = data.last_signal_ts || 0;
 
-      if (!sigs.length) {
-        body.innerHTML = '<div class="dash-empty">No signals today</div>';
-        return;
+      const nowSecs    = Date.now() / 1000;
+      const sigAgeMins = lastSigTs > 0 ? (nowSecs - lastSigTs) / 60 : null;
+
+      const ageLabel = lastSigTs > 0 ? ' · last ' + fmtRelTime(lastSigTs) : '';
+      meta.textContent = sigs.length + ' signals' + ageLabel;
+
+      const minsOpen = _marketMinutesOpen();
+      let bannerHtml = '';
+      if (minsOpen > 30 && sigAgeMins != null && sigAgeMins > 30) {
+        bannerHtml = `<div class="sig-engine-banner alarm">` +
+          `⚠ Engine may be offline · last signal ${fmtRelTime(lastSigTs)}</div>`;
+      } else if (minsOpen === 0 && sigAgeMins != null && sigAgeMins > 30) {
+        bannerHtml = `<div class="sig-engine-banner closed">` +
+          `Market closed · last signal ${fmtRelTime(lastSigTs)}</div>`;
       }
 
-      body.innerHTML = sigs.map(s => {
-        // Real field: conviction_tier (cf_tier as fallback for CF-only signals)
-        const tier   = (s.conviction_tier || s.cf_tier || '').toUpperCase();
-        const dirStr = (s.direction || 'bullish').toLowerCase().includes('bear') ? '🔴' : '🟢';
-        return `
+      let cardsHtml;
+      if (!sigs.length) {
+        cardsHtml = '<div class="dash-empty">No signals today</div>';
+      } else {
+        cardsHtml = sigs.map(s => {
+          const tier   = (s.conviction_tier || s.cf_tier || '').toUpperCase();
+          const dirStr = (s.direction || 'bullish').toLowerCase().includes('bear') ? '🔴' : '🟢';
+          return `
 <div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}">
   <div class="sig-card-top">
     <span class="sig-ticker">${dirStr} ${s.ticker || '?'}</span>
@@ -329,7 +416,10 @@
     <span class="sig-time">${fmtRelTime(s.fire_time)}</span>
   </div>
 </div>`;
-      }).join('');
+        }).join('');
+      }
+
+      body.innerHTML = bannerHtml + cardsHtml;
     } catch (err) {
       meta.textContent = 'error';
       body.innerHTML   = '<div class="dash-placeholder">Could not load signals</div>';
@@ -337,8 +427,6 @@
   }
 
   // ── Watchlist ──────────────────────────────────────────────────────────────
-  // Changed: caches rows for levels panel, adds data-ticker on each wl-row,
-  // refreshes levels if a ticker is already focused.
 
   async function loadWatchlist() {
     const body = document.getElementById('watchlistBody');
@@ -385,7 +473,6 @@
   // ── Center panel — chart, levels, chain ───────────────────────────────────
 
   function setupCenterPanel() {
-    // Search
     const searchBtn   = document.getElementById('tickerSearchBtn');
     const searchInput = document.getElementById('tickerSearch');
     if (searchBtn)   searchBtn.addEventListener('click', handleSearch);
@@ -401,6 +488,14 @@
     document.getElementById('signalsBody').addEventListener('click', e => {
       const card = e.target.closest('.sig-card');
       if (card && card.dataset.ticker) focusOn(card.dataset.ticker);
+    });
+
+    // Chain bias / expiry selector changes
+    document.getElementById('chainBias').addEventListener('change', () => {
+      if (chainTicker) loadChain(chainTicker, chainCurrentPrice);
+    });
+    document.getElementById('chainExpiry').addEventListener('change', () => {
+      if (chainTicker) loadChain(chainTicker, chainCurrentPrice);
     });
   }
 
@@ -430,13 +525,20 @@
       tvBtn.style.display = '';
     }
 
-    // Update chain stub to name the focused ticker
-    const chainBody = document.getElementById('chainBody');
-    if (chainBody) {
-      chainBody.innerHTML = `
-<span class="dash-coming-text">${t} option chain — Phase 4</span>
-<span class="dash-coming-sub">Requires <code>/api/chain</code> backend endpoint (not yet deployed)</span>`;
-    }
+    // Derive price from watchlist data if available for chain loading
+    const wlRow = watchlistDataCache.find(r => r.ticker === t);
+    const price = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
+    const bias  = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
+
+    // Seed bias selector from watchlist direction
+    const biasEl = document.getElementById('chainBias');
+    if (biasEl) biasEl.value = bias;
+
+    // Show chain controls and load expirations
+    const controls = document.getElementById('chainControls');
+    if (controls) controls.style.display = 'flex';
+
+    loadChainExpirations(t, price);
   }
 
   // TradingView Advanced Chart: 10-min interval, dark theme, full toolbar.
@@ -465,18 +567,18 @@
 
     function createWidget() {
       new window.TradingView.widget({
-        autosize:           true,
-        symbol:             ticker,
-        interval:           '10',
-        timezone:           'America/New_York',
-        theme:              'dark',
-        style:              '1',
-        locale:             'en',
-        toolbar_bg:         '#0a1210',
-        enable_publishing:  false,
+        autosize:            true,
+        symbol:              ticker,
+        interval:            '10',
+        timezone:            'America/New_York',
+        theme:               'dark',
+        style:               '1',
+        locale:              'en',
+        toolbar_bg:          '#0a1210',
+        enable_publishing:   false,
         allow_symbol_change: true,
-        hide_side_toolbar:  false,
-        container_id:       containerId,
+        hide_side_toolbar:   false,
+        container_id:        containerId,
       });
     }
 
@@ -497,7 +599,6 @@
   }
 
   // Levels panel: shows watchlist-derived context for the focused ticker.
-  // Fields: trigger, vs, gate_n, arm_state, rank, direction — all from watchlist rows.
   function renderLevels(ticker) {
     const titleEl  = document.getElementById('levelsTicker');
     const sourceEl = document.getElementById('levelsSource');
@@ -533,11 +634,202 @@
 </div>`).join('');
   }
 
-  // ── Position management console (stub — Phase 2) ──────────────────────────
+  // ── Chain — Part 2 ─────────────────────────────────────────────────────────
+
+  async function loadChainExpirations(ticker, price) {
+    const chainBody = document.getElementById('chainBody');
+    const expiryEl  = document.getElementById('chainExpiry');
+    if (!chainBody || !expiryEl) return;
+
+    chainBody.innerHTML = '<div class="dash-placeholder">Loading expirations…</div>';
+    expiryEl.innerHTML  = '<option value="">— loading —</option>';
+    armedContract       = null;
+
+    try {
+      const data = await apiFetch(`/api/chain/expirations?ticker=${encodeURIComponent(ticker)}`);
+      const exps = data.expirations || [];
+
+      if (!exps.length) {
+        chainBody.innerHTML = '<div class="dash-placeholder">No near-term expirations (market closed or illiquid)</div>';
+        return;
+      }
+
+      expiryEl.innerHTML = exps.map(e =>
+        `<option value="${e.date}">${e.date} (${e.dte}DTE)</option>`
+      ).join('');
+
+      // Load chain for the first expiry
+      chainTicker       = ticker;
+      chainCurrentPrice = price;
+      await loadChain(ticker, price);
+    } catch (err) {
+      if (String(err).includes('403')) {
+        chainBody.innerHTML = '<div class="dash-placeholder">Chain requires admin access</div>';
+      } else {
+        chainBody.innerHTML = '<div class="dash-placeholder">Could not load expirations</div>';
+      }
+    }
+  }
+
+  async function loadChain(ticker, price) {
+    const chainBody = document.getElementById('chainBody');
+    const expiryEl  = document.getElementById('chainExpiry');
+    const biasEl    = document.getElementById('chainBias');
+    if (!chainBody || !expiryEl || !biasEl) return;
+
+    const expiry = expiryEl.value;
+    const bias   = biasEl.value;
+    if (!expiry || !ticker || !price) {
+      chainBody.innerHTML = '<div class="dash-placeholder">Select expiry and ensure ticker price is available</div>';
+      return;
+    }
+
+    chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
+    armedContract = null;
+
+    try {
+      const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 6 });
+      const data   = await apiFetch(`/api/chain?${params}`);
+      renderChain(data.strikes || [], bias);
+    } catch (err) {
+      if (String(err).includes('403')) {
+        chainBody.innerHTML = '<div class="dash-placeholder">Chain requires admin access</div>';
+      } else {
+        chainBody.innerHTML = '<div class="dash-placeholder">Could not load chain</div>';
+      }
+    }
+  }
+
+  function renderChain(strikes, bias) {
+    const chainBody = document.getElementById('chainBody');
+    if (!strikes.length) {
+      chainBody.innerHTML = '<div class="dash-placeholder">No liquid strikes (market closed or try different expiry)</div>';
+      return;
+    }
+
+    const dirLabel = bias === 'bullish' ? 'CALL' : 'PUT';
+
+    const rows = strikes.map((s, i) => `
+<tr data-idx="${i}" class="${s.is_target ? 'chain-atm' : ''}">
+  <td>
+    <span class="chain-badge ${s.badge}">${s.badge}</span>
+    $${s.strike}
+  </td>
+  <td>${s.delta.toFixed(2)}</td>
+  <td>${s.ask.toFixed(2)}</td>
+  <td>${s.bid.toFixed(2)}</td>
+  <td>${s.iv > 0 ? (s.iv * 100).toFixed(0) + '%' : '—'}</td>
+  <td>${s.tp1_val > 0 ? s.tp1_val.toFixed(2) : '—'}</td>
+</tr>`).join('');
+
+    chainBody.innerHTML = `
+<table class="chain-table">
+  <thead>
+    <tr>
+      <th>${dirLabel}</th>
+      <th>Δ</th>
+      <th>Ask</th>
+      <th>Bid</th>
+      <th>IV</th>
+      <th>@TP1</th>
+    </tr>
+  </thead>
+  <tbody>${rows}</tbody>
+</table>`;
+
+    // Click-to-select a row
+    chainBody.querySelectorAll('table tbody tr').forEach((row, i) => {
+      row.addEventListener('click', () => {
+        chainBody.querySelectorAll('table tbody tr').forEach(r => r.classList.remove('chain-selected'));
+        row.classList.add('chain-selected');
+        armContract(strikes[i], bias);
+      });
+    });
+  }
+
+  function armContract(strike, bias) {
+    armedContract = { ...strike, bias };
+
+    const chainBody = document.getElementById('chainBody');
+    const armed = chainBody.querySelector('.chain-armed');
+    if (armed) armed.remove();
+
+    const ask = parseFloat(strike.ask);
+    const dir = bias === 'bullish' ? 'call' : 'put';
+    const sym = strike.symbol || `${chainTicker} $${strike.strike}${dir[0].toUpperCase()} ${strike.expiration}`;
+
+    const armedHtml = `
+<div class="chain-armed" id="chainArmed">
+  <div class="chain-armed-row">
+    <span class="chain-armed-label">Armed</span>
+    <span class="chain-armed-symbol">${sym}</span>
+  </div>
+  <div class="chain-qty-row">
+    <span class="chain-armed-label">Qty</span>
+    <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
+    <span class="chain-cost-label">est. cost</span>
+    <span class="chain-cost-value" id="chainCost">${fmtPrice(ask * 2 * 100)}</span>
+  </div>
+  <button class="chain-open-btn" id="chainOpenBtn">
+    Open Position (gated by kill-switch)
+  </button>
+</div>`;
+
+    chainBody.insertAdjacentHTML('beforeend', armedHtml);
+
+    // Update cost on qty change
+    document.getElementById('chainQty').addEventListener('input', e => {
+      const qty  = Math.max(1, parseInt(e.target.value, 10) || 1);
+      const cost = ask * qty * 100;
+      document.getElementById('chainCost').textContent = fmtPrice(cost);
+    });
+
+    // Open button — shows confirmation modal before placing any order
+    document.getElementById('chainOpenBtn').addEventListener('click', () => {
+      const qty     = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
+      const cost    = ask * qty * 100;
+      const cpLabel = dir === 'call' ? 'CALL' : 'PUT';
+
+      showConfirmModal({
+        title:   `Open ${chainTicker} ${cpLabel}`,
+        body:    `<strong>${sym}</strong><br>` +
+                 `Qty: <strong>${qty}</strong> contract${qty > 1 ? 's' : ''}<br>` +
+                 `Est. cost: <strong>${fmtPrice(cost)}</strong> (${qty} × $${ask.toFixed(2)} × 100)<br><br>` +
+                 `<span style="color:var(--text-muted);font-size:0.68rem">` +
+                 `Gated by kill-switch. Order goes to your active env (verify sandbox before first live use).</span>`,
+        okLabel: 'Place Order',
+        okClass: '',
+        onOk: async (setStatus) => {
+          setStatus('Placing order…');
+          try {
+            const result = await apiPost('/api/v1/orders/open', {
+              ticker:        chainTicker,
+              option_symbol: strike.symbol,
+              direction:     dir,
+              strike:        strike.strike,
+              expiry:        strike.expiration,
+              qty,
+              bid_price:     ask,
+            });
+            if (result.status === 'filled') {
+              setStatus(`Filled @ $${result.fill_price.toFixed(2)} · position_id ${result.position_id}`, 'ok');
+            } else {
+              setStatus(`Status: ${result.status} — ${result.detail || ''}`, 'ok');
+            }
+          } catch (err) {
+            const detail = err.data && err.data.detail ? err.data.detail : err.message;
+            setStatus(`Error: ${detail}`, 'error');
+          }
+        },
+      });
+    });
+  }
+
+  // ── Position management console (Part 3 — close wired) ───────────────────
 
   function setupConsoleHandlers() {
     document.getElementById('positionsBody').addEventListener('click', e => {
-      // Clicks inside the console itself (non-button) should not re-toggle the card.
+      // Clicks inside the console itself should not re-toggle the card.
       if (e.target.closest('.pos-console')) return;
       const card = e.target.closest('.pos-card');
       if (!card) return;
@@ -569,25 +861,62 @@
       card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
       card.classList.add('expanded');
       openConsoleId = posId;
-      wireConsoleButtons(card);
+      wireConsoleButtons(card, pos);
     }
   }
 
-  function wireConsoleButtons(card) {
-    card.querySelectorAll('.pos-console-btn[data-stub]').forEach(btn => {
-      btn.addEventListener('click', e => {
-        e.stopPropagation(); // prevent the delegation from toggling the card
-        showStubPreview(btn);
+  function wireConsoleButtons(card, pos) {
+    // Close button — real POST /api/v1/orders/close behind a confirmation modal
+    const closeBtn = card.querySelector('.pos-console-close-btn');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const posId = closeBtn.dataset.posId;
+        const cts   = parseInt(closeBtn.dataset.contracts, 10);
+        const sym   = closeBtn.dataset.symbol;
+        const entry = parseFloat(closeBtn.dataset.entry);
+        showConfirmModal({
+          title:   `Close ${pos.ticker} position`,
+          body:    `<strong>${sym}</strong><br>` +
+                   `Qty: <strong>${cts} contract${cts !== 1 ? 's' : ''}</strong> · entry $${entry.toFixed(2)}<br><br>` +
+                   `<span style="color:var(--text-muted);font-size:0.68rem">` +
+                   `Market order. Fill price may differ from current mid. Gated by kill-switch.</span>`,
+          okLabel: `Close ${cts}x at market`,
+          okClass: 'danger',
+          onOk: async (setStatus) => {
+            setStatus('Placing close order…');
+            try {
+              const result = await apiPost('/api/v1/orders/close', { position_id: posId });
+              if (result.status === 'closed') {
+                setStatus(`Closed @ $${result.fill_price.toFixed(2)}`, 'ok');
+              } else if (result.status === 'closing_pending') {
+                setStatus('Close order placed — fill pending. Verify in Tradier.', 'ok');
+              } else if (result.status === 'pdt_protected') {
+                setStatus('PDT protected — close manually in your broker.', 'error');
+              } else {
+                setStatus(`Status: ${result.status || JSON.stringify(result)}`, 'ok');
+              }
+            } catch (err) {
+              const detail = err.data && err.data.detail ? err.data.detail : err.message;
+              if (err.status === 503) {
+                setStatus('Kill-switch is OFF — web trading disabled', 'error');
+              } else if (err.status === 403) {
+                setStatus('Admin access required', 'error');
+              } else {
+                setStatus(`Error: ${detail}`, 'error');
+              }
+            }
+          },
+        });
       });
-    });
+    }
   }
 
   // Builds the HTML for the inline management console.
-  // All actions are stubs: they show what Phase 2 would POST, but make no API call.
+  // Scale and Rebase are stubs (not yet wired). Exit is wired via Part 3.
   function buildConsoleHtml(pos) {
     const cts     = pos.contracts_open || 1;
     const halfCts = Math.max(1, Math.floor(cts / 2));
-    // trail_width is a float 0–1 (e.g. 0.10 = 10%); display as integer percent
     const tw      = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
 
     const tp2Row = pos.tp2_stock_price ? `
@@ -602,6 +931,9 @@
       <span class="pos-target-type">Trail stk</span>
       <span class="pos-target-price">${fmtPrice(pos.trail_stop_stock_price)}</span>
     </div>` : '';
+
+    const sym   = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
+    const entry = pos.entry_price || 0;
 
     return `<div class="pos-console">
   <div class="pos-console-section">
@@ -628,57 +960,23 @@
     <button class="pos-console-btn"
             data-stub="partial_close" data-contracts="${halfCts}" data-pos-id="${pos.position_id}">
       Scale ${halfCts}x
-      <span class="pos-preview-tag">preview · Phase 2</span>
+      <span class="pos-preview-tag">stub · not wired</span>
     </button>
     <button class="pos-console-btn"
             data-stub="rebase_trail" data-pos-id="${pos.position_id}">
       Rebase Trail
-      <span class="pos-preview-tag">preview · Phase 2</span>
+      <span class="pos-preview-tag">stub · not wired</span>
     </button>
-    <button class="pos-console-btn danger"
-            data-stub="close_all" data-pos-id="${pos.position_id}">
+    <button class="pos-console-btn danger pos-console-close-btn"
+            data-pos-id="${pos.position_id}"
+            data-contracts="${cts}"
+            data-symbol="${sym}"
+            data-entry="${entry}">
       Exit ${cts}x
-      <span class="pos-preview-tag">preview · Phase 2</span>
+      <span class="pos-preview-tag">real · gated by kill-switch</span>
     </button>
   </div>
 </div>`;
-  }
-
-  // Shows (or toggles off) the inline stub preview below the clicked button.
-  // Displays what Phase 2 would POST to /api/orders — no request is made.
-  function showStubPreview(btn) {
-    const next = btn.nextElementSibling;
-    if (next && next.classList.contains('pos-stub-preview')) {
-      next.remove();
-      return;
-    }
-
-    const stub  = btn.dataset.stub;
-    const posId = btn.dataset.posId;
-    const cts   = btn.dataset.contracts;
-
-    let payload;
-    switch (stub) {
-      case 'partial_close':
-        payload = { type: 'partial_close', position_id: posId, contracts: Number(cts) };
-        break;
-      case 'close_all':
-        payload = { type: 'close_all', position_id: posId };
-        break;
-      case 'rebase_trail':
-        payload = { type: 'rebase_trail', position_id: posId };
-        break;
-      default:
-        payload = { type: stub, position_id: posId };
-    }
-
-    const preview       = document.createElement('div');
-    preview.className   = 'pos-stub-preview';
-    preview.innerHTML   = `
-<div class="pos-stub-badge">preview — Phase 2 only · no order placed</div>
-<div class="pos-stub-endpoint">POST /api/orders</div>
-<pre class="pos-stub-code">${JSON.stringify(payload, null, 2)}</pre>`;
-    btn.insertAdjacentElement('afterend', preview);
   }
 
   // ── History tab ───────────────────────────────────────────────────────────
@@ -740,8 +1038,8 @@
     try {
       let url = '/api/history?period=' + encodeURIComponent(period);
       if (isAdmin) {
-        if (histCurrentScope === 'all')                              url += '&user=all';
-        else if (histCurrentScope === 'user' && histCurrentUser)     url += '&user=' + encodeURIComponent(histCurrentUser);
+        if (histCurrentScope === 'all')                          url += '&user=all';
+        else if (histCurrentScope === 'user' && histCurrentUser) url += '&user=' + encodeURIComponent(histCurrentUser);
         // 'me': no ?user= — backend defaults to admin's own trades
       }
       const data = await apiFetch(url);
@@ -833,8 +1131,6 @@
     }
   }
 
-  // ── History scope helpers ─────────────────────────────────────────────────
-
   function setHistScope(scope, userId) {
     histCurrentScope = scope;
     histCurrentUser  = userId || null;
@@ -858,6 +1154,58 @@
       });
     } catch (_) {}
   }
+
+  // ── Confirmation modal (Part 3 + 4) ───────────────────────────────────────
+
+  function setupModal() {
+    document.getElementById('confirmCancel').addEventListener('click', closeModal);
+  }
+
+  function showConfirmModal({ title, body, okLabel, okClass, onOk }) {
+    document.getElementById('confirmTitle').textContent  = title;
+    document.getElementById('confirmBody').innerHTML     = body;
+    document.getElementById('confirmStatus').textContent = '';
+    document.getElementById('confirmStatus').className   = 'dash-modal-status';
+
+    const okBtn = document.getElementById('confirmOk');
+    okBtn.textContent = okLabel || 'Confirm';
+    okBtn.className   = 'dash-modal-btn dash-modal-btn-ok' + (okClass ? ' ' + okClass : '');
+
+    // Replace the button node to shed any stale event listener from a previous call
+    const newOk = okBtn.cloneNode(true);
+    okBtn.parentNode.replaceChild(newOk, okBtn);
+    newOk.textContent = okLabel || 'Confirm';
+    newOk.className   = 'dash-modal-btn dash-modal-btn-ok' + (okClass ? ' ' + okClass : '');
+    newOk.addEventListener('click', async () => {
+      newOk.disabled = true;
+      const setStatus = (msg, cls) => {
+        const el = document.getElementById('confirmStatus');
+        el.textContent = msg;
+        el.className   = 'dash-modal-status' + (cls ? ' ' + cls : '');
+        if (cls === 'ok') setTimeout(closeModal, 2500);
+      };
+      try {
+        await onOk(setStatus);
+      } catch (err) {
+        const el = document.getElementById('confirmStatus');
+        el.textContent = 'Unexpected error: ' + err.message;
+        el.className   = 'dash-modal-status error';
+      } finally {
+        newOk.disabled = false;
+      }
+    });
+
+    document.getElementById('confirmModal').style.display = 'flex';
+  }
+
+  function closeModal() {
+    document.getElementById('confirmModal').style.display = 'none';
+  }
+
+  // Close modal when clicking the overlay backdrop
+  document.getElementById('confirmModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('confirmModal')) closeModal();
+  });
 
   // ── Boot ──────────────────────────────────────────────────────────────────
 
