@@ -32,42 +32,47 @@
 <!-- ws-bar kept in DOM (hidden) so no layout band is consumed -->
 <div class="dash-ws-bar" id="wsBar" aria-hidden="true"></div>
 
-<!-- ── Regime / Context Bar (placeholder — wired in follow-up task) ───────── -->
+<!-- ── Regime / Context Bar ────────────────────────────────────────────────── -->
 <div class="cmd-regime-bar">
 
-  <div class="cmd-regime-cell cmd-rc-directive">
+  <div class="cmd-regime-cell cmd-rc-directive" id="rcCellDirective">
     <div class="cmd-rc-label">Directive</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">— awaiting —</div>
+    <div class="cmd-rc-value" id="rcDirective" style="color:var(--text-muted)">— awaiting —</div>
   </div>
 
-  <div class="cmd-regime-cell">
+  <div class="cmd-regime-cell" id="rcCellRegime">
     <div class="cmd-rc-label">Regime</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+    <div class="cmd-rc-value" id="rcRegime" style="color:var(--text-muted)">—</div>
   </div>
 
-  <div class="cmd-regime-cell">
+  <div class="cmd-regime-cell" id="rcCellOpening">
     <div class="cmd-rc-label">Opening</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">posts at 9:50 ET</div>
+    <div class="cmd-rc-value" id="rcOpening" style="color:var(--text-muted)">posts at 9:50 ET</div>
   </div>
 
-  <div class="cmd-regime-cell">
+  <div class="cmd-regime-cell" id="rcCellVix">
     <div class="cmd-rc-label">VIX</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+    <div class="cmd-rc-value" id="rcVix" style="color:var(--text-muted)">—</div>
   </div>
 
-  <div class="cmd-regime-cell">
+  <div class="cmd-regime-cell" id="rcCellBreadth">
     <div class="cmd-rc-label">Breadth</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+    <div class="cmd-rc-value" id="rcBreadth" style="color:var(--text-muted)">—</div>
   </div>
 
-  <div class="cmd-regime-cell cmd-rc-grow">
+  <div class="cmd-regime-cell cmd-rc-grow" id="rcCellPnl">
     <div class="cmd-rc-label">Today P/L</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">— awaiting —</div>
+    <div class="cmd-rc-value" id="rcPnl" style="color:var(--text-muted)">—</div>
   </div>
 
-  <div class="cmd-regime-cell">
+  <div class="cmd-regime-cell" id="rcCellRisk">
     <div class="cmd-rc-label">Risk Left</div>
-    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+    <div class="cmd-rc-value" id="rcRisk" style="color:var(--text-muted)">—</div>
+  </div>
+
+  <!-- Health dot: green=all live, amber=any stale, red=any error -->
+  <div class="cmd-regime-cell cmd-rc-health-cell" title="Regime data health">
+    <span class="cmd-rc-health-dot" id="rcHealthDot"></span>
   </div>
 
 </div>

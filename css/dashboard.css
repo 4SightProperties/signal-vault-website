@@ -1613,6 +1613,30 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cmd-breadth-bar-fill.bull { background: var(--accent); opacity: 0.7; }
 .cmd-breadth-bar-fill.bear { background: var(--danger);  opacity: 0.7; }
 
+/* ── Regime cell freshness states ───────────────────────────── */
+.cmd-regime-cell.rc-stale .cmd-rc-value { opacity: 0.45; }
+.cmd-regime-cell.rc-error .cmd-rc-value { color: var(--text-muted) !important; opacity: 0.5; }
+.cmd-rc-sub { font-size: 0.58rem; font-weight: 400; opacity: 0.65; }
+
+/* ── Regime health dot ──────────────────────────────────────── */
+.cmd-rc-health-cell {
+  padding: 0 0.6rem;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-right: none;
+  flex-shrink: 0;
+}
+.cmd-rc-health-dot {
+  width: 6px; height: 6px;
+  border-radius: 50%;
+  background: var(--text-muted);
+  transition: background 0.4s;
+}
+.cmd-rc-health-dot.live  { background: var(--accent); }
+.cmd-rc-health-dot.stale { background: var(--warning); }
+.cmd-rc-health-dot.error { background: var(--danger); }
+
 /* ── MTF clouds row — 4 equal cells ─────────────────────────── */
 .cmd-mtf-row {
   display: grid;

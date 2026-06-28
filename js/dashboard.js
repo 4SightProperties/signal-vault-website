@@ -17,11 +17,12 @@
   const API    = CONFIG.backendUrl;
   const WS_URL = API.replace(/^https/, 'wss').replace(/^http/, 'ws');
 
-  let authToken   = null;
-  let wsConn      = null;
-  let wsRetries   = 0;
-  let signalTimer = null;
-  let watchTimer  = null;
+  let authToken    = null;
+  let wsConn       = null;
+  let wsRetries    = 0;
+  let signalTimer  = null;
+  let watchTimer   = null;
+  let regimeTimer  = null;
 
   // Center panel + console state
   let currentPositions   = [];   // last positions array from WS — used by console delegation
@@ -176,8 +177,10 @@
 
     // All good — start the cockpit
     startWebSocket();
+    loadRegime();
     loadSignals();
     loadWatchlist();
+    regimeTimer = setInterval(loadRegime,    60_000);
     signalTimer = setInterval(loadSignals,   30_000);
     watchTimer  = setInterval(loadWatchlist, 60_000);
 
@@ -371,6 +374,115 @@
     if (total < 570 || total >= 960) return 0;
     return total - 570;
   }
+
+  // ── Regime bar ────────────────────────────────────────────────────────────
+
+  function _rcSetCell(cellId, valueEl, state, html, extraClass) {
+    const cell = document.getElementById(cellId);
+    const val  = document.getElementById(valueEl);
+    if (!cell || !val) return;
+    // Remove stale/error modifiers, re-apply as needed
+    cell.classList.remove('rc-stale', 'rc-error');
+    if (state === 'stale') cell.classList.add('rc-stale');
+    if (state === 'error') cell.classList.add('rc-error');
+    val.className = 'cmd-rc-value' + (extraClass ? ' ' + extraClass : '');
+    val.innerHTML = html;
+  }
+
+  async function loadRegime() {
+    try {
+      const d = await apiFetch('/api/regime');
+
+      // ── Directive ────────────────────────────────────────────────
+      const dir   = d.directive || {};
+      const dirV  = dir.value || 'STAY_CASH';
+      const dirCls = dirV === 'TRADE_CALLS' ? 'cmd-rc-calls'
+                   : dirV === 'TRADE_PUTS'  ? 'cmd-rc-puts'
+                   : 'cmd-rc-cash';
+      const dirLabel = dirV === 'TRADE_CALLS' ? 'TRADE CALLS'
+                     : dirV === 'TRADE_PUTS'  ? 'TRADE PUTS'
+                     : 'STAY CASH';
+      const dirHtml = dir.state === 'empty' ? '— awaiting —'
+                    : dir.state === 'error' ? '—'
+                    : dirLabel;
+      _rcSetCell('rcCellDirective', 'rcDirective', dir.state,
+                 dirHtml, dir.state === 'empty' || dir.state === 'error' ? '' : dirCls);
+
+      // ── Regime ───────────────────────────────────────────────────
+      const reg  = d.regime || {};
+      const regV = reg.value || {};
+      const regHtml = reg.state === 'empty' || reg.state === 'error' ? '—'
+                    : (regV.label || '—').toUpperCase()
+                      + (regV.weight != null ? ` <span class="cmd-rc-sub">${regV.weight.toFixed(2)}×</span>` : '');
+      _rcSetCell('rcCellRegime', 'rcRegime', reg.state, regHtml, '');
+
+      // ── Opening move ─────────────────────────────────────────────
+      const op  = d.opening || {};
+      const opHtml = op.state === 'empty' ? 'posts at 9:50 ET'
+                   : op.state === 'error' ? '—'
+                   : (op.value || '—');
+      _rcSetCell('rcCellOpening', 'rcOpening', op.state, opHtml, '');
+
+      // ── VIX ──────────────────────────────────────────────────────
+      const vx  = d.vix || {};
+      const vxV = vx.value || {};
+      let vixHtml = '—';
+      if (vx.state !== 'empty' && vx.state !== 'error' && vxV.level != null) {
+        const arrowCls = vxV.trend === 'up' ? 'up' : vxV.trend === 'down' ? 'down' : '';
+        const arrowCh  = vxV.trend === 'up' ? '▲' : vxV.trend === 'down' ? '▼' : '—';
+        vixHtml = `<span class="cmd-rc-with-arrow">${vxV.level.toFixed(1)}<span class="cmd-rc-arrow ${arrowCls}">${arrowCh}</span></span>`;
+      }
+      _rcSetCell('rcCellVix', 'rcVix', vx.state, vixHtml, '');
+
+      // ── Breadth ──────────────────────────────────────────────────
+      const br  = d.breadth || {};
+      const brV = br.value || {};
+      let breadthHtml = '—';
+      if (br.state !== 'empty' && br.state !== 'error' && brV.pct_adv != null) {
+        const pct     = brV.pct_adv;
+        const fillCls = pct >= 55 ? 'bull' : pct <= 45 ? 'bear' : '';
+        breadthHtml   = `<div class="cmd-rc-breadth-wrap">`
+          + `<span>${pct}% adv</span>`
+          + `<div class="cmd-breadth-bar-track"><div class="cmd-breadth-bar-fill ${fillCls}" style="width:${pct}%"></div></div>`
+          + `</div>`;
+      } else if (br.state === 'empty') {
+        breadthHtml = '— awaiting —';
+      }
+      _rcSetCell('rcCellBreadth', 'rcBreadth', br.state, breadthHtml, '');
+
+      // ── Today P/L ────────────────────────────────────────────────
+      const pl  = d.pnl_today || {};
+      const plHtml = pl.state === 'error' ? '—'
+                   : pl.state === 'empty' ? '— awaiting —'
+                   : fmtPnl$(pl.value);
+      const plColor = pl.value == null ? '' : pl.value >= 0 ? 'cmd-rc-calls' : 'cmd-rc-puts';
+      _rcSetCell('rcCellPnl', 'rcPnl', pl.state, plHtml, plColor);
+
+      // ── Risk Left ────────────────────────────────────────────────
+      const rl  = d.risk_left || {};
+      const rlHtml = rl.state === 'error' ? '—'
+                   : rl.state === 'empty' ? '—'
+                   : '$' + (rl.value || 0).toFixed(0);
+      const rlColor = rl.value != null && rl.value < 50 ? 'cmd-rc-puts' : '';
+      _rcSetCell('rcCellRisk', 'rcRisk', rl.state, rlHtml, rlColor);
+
+      // ── Health dot ───────────────────────────────────────────────
+      const cells = [d.directive, d.regime, d.opening, d.vix, d.breadth, d.pnl_today, d.risk_left];
+      const states = cells.map(c => (c || {}).state);
+      const dot   = document.getElementById('rcHealthDot');
+      if (dot) {
+        const hasError = states.some(s => s === 'error');
+        const hasStale = states.some(s => s === 'stale');
+        dot.className  = 'cmd-rc-health-dot'
+          + (hasError ? ' error' : hasStale ? ' stale' : ' live');
+      }
+
+    } catch (_) {
+      // Silently fail — don't disrupt the rest of the dashboard
+    }
+  }
+
+  // ── Signals ───────────────────────────────────────────────────────────────
 
   async function loadSignals() {
     const body = document.getElementById('signalsBody');
