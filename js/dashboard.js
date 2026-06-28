@@ -655,6 +655,8 @@
     chainBody.innerHTML = '<div class="dash-placeholder">Loading expirations…</div>';
     expiryEl.innerHTML  = '<option value="">— loading —</option>';
     armedContract       = null;
+    const cockpit0 = document.getElementById('chainCockpit');
+    if (cockpit0) cockpit0.innerHTML = '';
 
     try {
       const data = await apiFetch(`/api/chain/expirations?ticker=${encodeURIComponent(ticker)}`);
@@ -697,6 +699,8 @@
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
     armedContract = null;
+    const cockpit1 = document.getElementById('chainCockpit');
+    if (cockpit1) cockpit1.innerHTML = '';
 
     try {
       const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 13 });
@@ -747,6 +751,8 @@
   </thead>
   <tbody>${rows}</tbody>
 </table>`;
+    const cockpitEl = document.getElementById('chainCockpit');
+    if (cockpitEl) cockpitEl.innerHTML = '';
 
     // Click-to-select a row
     chainBody.querySelectorAll('table tbody tr').forEach((row, i) => {
@@ -766,8 +772,8 @@
     armedContract = { ...strike, bias };
 
     const chainBody = document.getElementById('chainBody');
-    const old = chainBody.querySelector('.chain-armed');
-    if (old) old.remove();
+    const chainCockpit = document.getElementById('chainCockpit');
+    chainCockpit.innerHTML = '';
 
     const dir = bias === 'bullish' ? 'call' : 'put';
     const sym = strike.symbol || `${chainTicker} $${strike.strike}${dir[0].toUpperCase()} ${strike.expiration}`;
@@ -831,7 +837,7 @@
   </div>
 </div>`;
 
-    chainBody.insertAdjacentHTML('beforeend', cockpitHtml);
+    chainCockpit.innerHTML = cockpitHtml;
 
     // Qty → update cost + max-loss (cost = max-loss for long options)
     document.getElementById('chainQty').addEventListener('input', () => {

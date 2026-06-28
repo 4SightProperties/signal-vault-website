@@ -164,7 +164,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 0.88rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   letter-spacing: 0.05em;
 }
 .pos-direction {
@@ -617,7 +617,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   letter-spacing: 0.08em;
 }
 
@@ -637,20 +637,22 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   display: inline-flex;
   align-items: center;
   padding: 0.3rem 0.8rem;
-  background: rgba(74,222,128,0.1);
-  border: 1px solid rgba(74,222,128,0.3);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
   border-radius: var(--radius-sm);
-  color: var(--accent);
+  color: var(--text-secondary);
   font-size: 0.72rem;
   font-weight: 600;
   letter-spacing: 0.04em;
   text-decoration: none;
   white-space: nowrap;
-  transition: background 0.2s, border-color 0.2s;
+  transition: background 0.2s, border-color 0.2s, color 0.2s;
 }
 .price-strip-tv-btn:hover {
-  background: rgba(74,222,128,0.18);
-  border-color: var(--accent);
+  background: var(--bg-elevated);
+  border-color: var(--text-muted);
+  color: var(--text-primary);
+  opacity: 1;
 }
 
 /* Levels panel */
@@ -672,7 +674,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 0.78rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   letter-spacing: 0.08em;
 }
 
@@ -714,6 +716,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   overflow: hidden;
   min-height: 0;
 }
+
+/* Cockpit footer — pinned below the scrolling strikes, always visible */
+.chain-cockpit-footer {
+  flex-shrink: 0;
+  overflow-y: auto;
+  max-height: 320px;
+  padding: 0.5rem;
+  border-top: 1px solid var(--border);
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+.chain-cockpit-footer:empty { display: none; }
 
 /* Chain controls row (bias + expiry selectors + refresh button) */
 .chain-controls {
@@ -778,7 +792,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .chain-table tr.chain-selected td:first-child { border-left: 2px solid var(--accent); }
 .chain-table tr.chain-atm td { color: var(--accent); font-weight: 500; }
-.chain-table tr.chain-atm td:first-child { border-left: 2px solid rgba(74,222,128,0.4); }
+.chain-table tr.chain-atm td:first-child { border-left: 2px solid var(--border-bright); }
 
 .chain-badge {
   display: inline-block;
@@ -796,10 +810,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
 /* Armed open panel (appears below chain table when a contract is selected) */
 .chain-armed {
-  margin-top: 0.5rem;
   padding: 0.5rem 0.6rem;
-  background: rgba(74,222,128,0.04);
-  border: 1px solid rgba(74,222,128,0.2);
+  background: var(--bg-card);
   border-radius: var(--radius-sm);
 }
 .chain-armed-row {
@@ -814,7 +826,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 0.7rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   flex: 1;
 }
 .chain-qty-row {
@@ -915,7 +927,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   text-transform: uppercase;
   letter-spacing: 0.04em;
 }
-.pos-target-badge.system { background: rgba(74,222,128,0.1); color: var(--accent); }
+.pos-target-badge.system { background: var(--bg-elevated); color: var(--text-muted); }
 .pos-target-badge.user   { background: rgba(251,191,36,0.1);  color: var(--gold);   }
 
 /* Stub action buttons */
@@ -1120,7 +1132,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .hist-ticker {
   font-family: var(--font-display);
   font-weight: 600;
-  color: var(--accent);
+  color: var(--text-secondary);
 }
 
 .hist-uid { font-size: 0.58rem; color: var(--text-muted); }
@@ -1281,7 +1293,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 0.72rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
