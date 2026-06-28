@@ -8,25 +8,35 @@
 
 /* ── Variables ─────────────────────────────────────────────────── */
 :root {
-  --bg-base:          #070d0b;
-  --bg-surface:       #0b1510;
-  --bg-card:          #0f1d14;
-  --bg-card-hover:    #14261a;
-  --bg-elevated:      #172b1e;
+  /* Backgrounds — neutral cool charcoal, no green hue */
+  --bg-base:          #0b0e14;
+  --bg-surface:       #121620;
+  --bg-card:          #121620;
+  --bg-card-hover:    #1a1f2b;
+  --bg-elevated:      #1a1f2b;
 
-  --border:           #1e3a28;
-  --border-bright:    #2d5a3d;
-  --border-glow:      rgba(74, 222, 128, 0.25);
+  /* Borders — subtle cool gray */
+  --border:           rgba(148,163,184,0.12);
+  --border-bright:    rgba(148,163,184,0.25);
+  --border-glow:      rgba(59,130,246,0.25);
 
+  /* Green — positive / bullish / live / go states only */
   --accent:           #4ade80;
   --accent-dim:       #22c55e;
   --accent-dark:      #16a34a;
-  --accent-glow:      rgba(74, 222, 128, 0.12);
-  --accent-glow-lg:   rgba(74, 222, 128, 0.25);
+  --accent-glow:      rgba(74, 222, 128, 0.10);
+  --accent-glow-lg:   rgba(74, 222, 128, 0.20);
 
+  /* Blue — primary actions, selections, informational accents */
+  --blue:             #60a5fa;
+  --blue-dim:         #3b82f6;
+  --blue-glow:        rgba(59, 130, 246, 0.12);
+
+  /* Text — neutral white/gray; color is semantic only */
+  --text:             #e2e8f0;
   --text-primary:     #e2e8f0;
   --text-secondary:   #94a3b8;
-  --text-muted:       #4b5563;
+  --text-muted:       #64748b;
 
   --danger:           #ef4444;
   --danger-dim:       rgba(239, 68, 68, 0.15);
@@ -43,11 +53,11 @@
   --radius-lg:        16px;
   --radius-xl:        24px;
 
-  --shadow-sm:        0 2px 8px rgba(0,0,0,0.3);
-  --shadow:           0 4px 24px rgba(0,0,0,0.4);
-  --shadow-lg:        0 8px 48px rgba(0,0,0,0.5);
-  --shadow-glow:      0 0 40px rgba(74,222,128,0.08);
-  --shadow-glow-card: 0 0 60px rgba(74,222,128,0.06);
+  --shadow-sm:        0 2px 8px rgba(0,0,0,0.4);
+  --shadow:           0 4px 24px rgba(0,0,0,0.5);
+  --shadow-lg:        0 8px 48px rgba(0,0,0,0.6);
+  --shadow-glow:      0 0 40px rgba(0,0,0,0.2);
+  --shadow-glow-card: 0 0 60px rgba(0,0,0,0.25);
 
   --transition:       0.2s ease;
   --transition-slow:  0.4s ease;
@@ -83,8 +93,8 @@ ul   { list-style: none; }
   z-index:    0;
   pointer-events: none;
   background-image:
-    linear-gradient(rgba(74,222,128,0.03) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(74,222,128,0.03) 1px, transparent 1px);
+    linear-gradient(rgba(148,163,184,0.025) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(148,163,184,0.025) 1px, transparent 1px);
   background-size: 64px 64px;
   mask-image: radial-gradient(ellipse 100% 100% at 50% 0%, black 40%, transparent 100%);
 }
@@ -137,8 +147,8 @@ ul   { list-style: none; }
 .nav-logo-mark {
   width:           36px;
   height:          36px;
-  background:      var(--accent-glow);
-  border:          1px solid var(--accent-dim);
+  background:      var(--bg-elevated);
+  border:          1px solid var(--border-bright);
   border-radius:   8px;
   display:         flex;
   align-items:     center;
@@ -146,8 +156,8 @@ ul   { list-style: none; }
   font-family:     var(--font-display);
   font-size:       14px;
   font-weight:     700;
-  color:           var(--accent);
-  box-shadow:      0 0 20px rgba(74,222,128,0.15);
+  color:           var(--text-primary);
+  box-shadow:      0 0 20px rgba(0,0,0,0.3);
 }
 
 .nav-logo-img {
@@ -155,7 +165,7 @@ ul   { list-style: none; }
   height:        36px;
   border-radius: 8px;
   object-fit:    contain;
-  box-shadow:    0 0 20px rgba(74,222,128,0.15);
+  box-shadow:    0 0 20px rgba(0,0,0,0.3);
 }
 
 .price-was {
@@ -225,7 +235,7 @@ ul   { list-style: none; }
   object-fit:    contain;
   display:       block;
   margin:        0 auto;
-  box-shadow:    0 0 80px rgba(74,222,128,0.30), 0 0 160px rgba(74,222,128,0.12);
+  box-shadow:    0 0 80px rgba(59,130,246,0.15), 0 0 160px rgba(0,0,0,0.3);
 }
 
 .hero-edu-note {

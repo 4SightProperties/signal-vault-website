@@ -22,16 +22,15 @@
     <span class="dash-pnl-value" id="totalCost">—</span>
   </div>
   <div class="dash-header-right">
+    <span class="ws-dot" id="wsDot"></span>
+    <span class="dash-user" id="wsStatus" style="font-size:0.68rem">Connecting…</span>
     <span class="dash-user" id="dashUser">···</span>
     <button class="dash-logout-btn" id="logoutBtn">Logout</button>
   </div>
 </header>
 
-<!-- ── WS status bar ──────────────────────────────────────────────────────── -->
-<div class="dash-ws-bar" id="wsBar">
-  <span class="ws-dot" id="wsDot"></span>
-  <span id="wsStatus">Connecting…</span>
-</div>
+<!-- ws-bar kept in DOM (hidden) so no layout band is consumed -->
+<div class="dash-ws-bar" id="wsBar" aria-hidden="true"></div>
 
 <!-- ── Regime / Context Bar (placeholder — wired in follow-up task) ───────── -->
 <div class="cmd-regime-bar">

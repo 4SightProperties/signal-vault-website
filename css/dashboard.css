@@ -19,15 +19,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 
 .dash-ws-bar {
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-  padding: 0.2rem 1.25rem;
-  font-size: 0.72rem;
-  color: var(--text-muted);
-  background: var(--bg-base);
-  border-bottom: 1px solid var(--border);
-  flex-shrink: 0;
+  display: none;
 }
 
 .ws-dot {
@@ -63,7 +55,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 0.85rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   letter-spacing: 0.12em;
 }
 
@@ -87,9 +79,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .dash-pnl-label { color: var(--text-muted); }
 .dash-pnl-count { color: var(--text-primary); font-weight: 600; }
-.dash-pnl-value { color: var(--accent); font-weight: 600; font-family: var(--font-display); font-size: 0.78rem; }
+.dash-pnl-value { color: var(--text-secondary); font-weight: 600; font-family: var(--font-display); font-size: 0.78rem; }
 
 .dash-header-right { display: flex; align-items: center; gap: 0.75rem; }
+.dash-header-right .ws-dot { flex-shrink: 0; }
 .dash-user { font-size: 0.78rem; color: var(--text-secondary); }
 .dash-logout-btn {
   font-size: 0.72rem;
@@ -359,7 +352,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   letter-spacing: 0.05em;
   white-space: nowrap;
 }
-.wl-zone-armed       { background: rgba(148,163,184,0.12); color: var(--text-secondary); }
+.wl-zone-armed       { background: rgba(59,130,246,0.12); color: var(--blue); }
 .wl-zone-at-risk     { background: rgba(245,158,11,0.18);  color: var(--warning); }
 .wl-zone-fired       { background: rgba(74,222,128,0.18);  color: var(--accent); }
 .wl-zone-invalidated { background: rgba(75,85,99,0.2);     color: var(--text-muted); }
@@ -477,7 +470,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .dash-auth-overlay {
   position: fixed;
   inset: 0;
-  background: rgba(7,13,11,0.92);
+  background: rgba(11,14,20,0.92);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -497,7 +490,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-family: var(--font-display);
   font-size: 1rem;
   font-weight: 700;
-  color: var(--accent);
+  color: var(--text-primary);
   letter-spacing: 0.12em;
   margin-bottom: 1rem;
 }
@@ -814,10 +807,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .chain-table td:first-child { text-align: left; }
 .chain-table tr:hover td { background: var(--bg-elevated); }
 .chain-table tr.chain-selected td {
-  background: rgba(74,222,128,0.06);
-  border-color: var(--accent);
+  background: rgba(59,130,246,0.08);
+  border-color: var(--blue);
 }
-.chain-table tr.chain-selected td:first-child { border-left: 2px solid var(--accent); }
+.chain-table tr.chain-selected td:first-child { border-left: 2px solid var(--blue); }
 .chain-table tr.chain-atm td { color: var(--text-secondary); font-weight: 500; }
 .chain-table tr.chain-atm td:first-child { border-left: 2px solid var(--border-bright); }
 
@@ -884,10 +877,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .chain-open-btn {
   width: 100%;
   margin-top: 0.4rem;
-  background: rgba(74,222,128,0.1);
-  border: 1px solid rgba(74,222,128,0.3);
+  background: rgba(59,130,246,0.12);
+  border: 1px solid rgba(59,130,246,0.3);
   border-radius: var(--radius-sm);
-  color: var(--accent);
+  color: var(--blue);
   cursor: pointer;
   font-size: 0.68rem;
   font-weight: 700;
@@ -897,7 +890,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   letter-spacing: 0.04em;
   text-transform: uppercase;
 }
-.chain-open-btn:hover { background: rgba(74,222,128,0.18); border-color: var(--accent); }
+.chain-open-btn:hover { background: rgba(59,130,246,0.2); border-color: var(--blue); }
 .chain-open-btn:disabled { opacity: 0.4; cursor: not-allowed; }
 
 /* ════════════════════════════════════════════════════════════════
@@ -905,7 +898,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
    ════════════════════════════════════════════════════════════════ */
 
 .pos-card           { cursor: pointer; user-select: none; }
-.pos-card.expanded  { border-color: var(--accent); }
+.pos-card.expanded  { border-color: var(--blue); }
 
 /* Console expands inline at the bottom of the card */
 .pos-console {
@@ -1058,7 +1051,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   transition: color 0.15s, border-color 0.15s;
 }
 .dash-tab:hover       { color: var(--text-secondary); }
-.dash-tab.active      { border-color: var(--accent); color: var(--accent); }
+.dash-tab.active      { border-color: var(--blue); color: var(--blue); }
 
 /* ════════════════════════════════════════════════════════════════
    History view — period bar, summary, trade table
@@ -1082,7 +1075,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   transition: color 0.15s, border-color 0.15s;
 }
 .hist-period-btn:hover  { color: var(--text-secondary); }
-.hist-period-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(74,222,128,0.07); }
+.hist-period-btn.active { border-color: var(--blue); color: var(--blue); background: var(--blue-glow); }
 
 /* Summary row: Win Rate · Total P&L · Trades */
 .hist-summary-wrap { margin-bottom: 0.5rem; }
@@ -1213,7 +1206,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   transition: color 0.15s, border-color 0.15s, background 0.15s;
 }
 .hist-scope-btn:hover  { color: var(--text-secondary); }
-.hist-scope-btn.active { border-color: var(--accent); color: var(--accent); background: rgba(74,222,128,0.07); }
+.hist-scope-btn.active { border-color: var(--blue); color: var(--blue); background: var(--blue-glow); }
 
 .hist-user-select {
   font-size: 0.62rem;
@@ -1498,9 +1491,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .cockpit-level-btn:hover { border-color: var(--accent); color: var(--text-secondary); }
 .cockpit-level-btn.active {
-  border-color: rgba(74,222,128,0.4);
-  background: rgba(74,222,128,0.07);
-  color: var(--accent);
+  border-color: rgba(59,130,246,0.4);
+  background: rgba(59,130,246,0.08);
+  color: var(--blue);
 }
 
 /* Cockpit action buttons row */
