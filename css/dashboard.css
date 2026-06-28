@@ -1473,3 +1473,199 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   flex: 1;
   margin-top: 0;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Command Center layout extensions
+   Migrated from dashboard2.css — cmd- prefix avoids conflicts.
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Command Center 3-column grid ────────────────────────────── */
+.cmd-main {
+  display: grid;
+  grid-template-columns: 220px 1fr 260px;
+  gap: 0;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+.cmd-col {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  border-right: 1px solid var(--border);
+}
+.cmd-col:last-child { border-right: none; }
+.cmd-col-center { background: var(--bg-base); }
+
+/* ── Regime / Context Bar ────────────────────────────────────── */
+.cmd-regime-bar {
+  display: flex;
+  align-items: stretch;
+  flex-shrink: 0;
+  height: 46px;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  overflow: hidden;
+}
+
+.cmd-regime-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 0.85rem;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+  flex-shrink: 0;
+}
+.cmd-regime-cell:last-child { border-right: none; }
+.cmd-regime-cell.cmd-rc-directive { padding: 0 1rem; min-width: 130px; }
+.cmd-regime-cell.cmd-rc-grow { flex: 1; flex-shrink: 1; }
+
+.cmd-rc-label {
+  font-size: 0.54rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+  margin-bottom: 0.08rem;
+}
+
+.cmd-rc-value {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+.cmd-rc-value.cmd-rc-calls { color: var(--accent); }
+.cmd-rc-value.cmd-rc-puts  { color: var(--danger); }
+.cmd-rc-value.cmd-rc-cash  { color: var(--text-muted); }
+
+.cmd-rc-with-arrow { display: flex; align-items: center; gap: 0.25rem; }
+.cmd-rc-arrow      { font-size: 0.62rem; color: var(--text-muted); }
+.cmd-rc-arrow.up   { color: var(--danger); }
+.cmd-rc-arrow.down { color: var(--accent); }
+
+.cmd-rc-breadth-wrap { display: flex; flex-direction: column; gap: 0.18rem; }
+.cmd-breadth-bar-track {
+  width: 68px; height: 4px;
+  background: var(--bg-elevated);
+  border-radius: 2px;
+  overflow: hidden;
+}
+.cmd-breadth-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  background: var(--text-muted);
+  transition: width 0.4s;
+}
+.cmd-breadth-bar-fill.bull { background: var(--accent); opacity: 0.7; }
+.cmd-breadth-bar-fill.bear { background: var(--danger);  opacity: 0.7; }
+
+/* ── MTF clouds row — 4 equal cells ─────────────────────────── */
+.cmd-mtf-row {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  height: 54px;
+}
+
+.cmd-mtf-cell {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 0.3rem;
+  border-right: 1px solid var(--border);
+  gap: 0.15rem;
+}
+.cmd-mtf-cell:last-child { border-right: none; }
+
+.cmd-mtf-tf {
+  font-size: 0.56rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: var(--text-muted);
+}
+.cmd-mtf-badge {
+  font-size: 0.58rem;
+  font-weight: 700;
+  padding: 0.1rem 0.32rem;
+  border-radius: 3px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.cmd-mtf-badge.bull    { background: rgba(74,222,128,0.15); color: var(--accent); }
+.cmd-mtf-badge.bear    { background: rgba(239,68,68,0.15);  color: var(--danger); }
+.cmd-mtf-badge.mixed   { background: rgba(245,158,11,0.12); color: var(--warning); }
+.cmd-mtf-badge.blocked {
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  font-style: italic;
+  font-weight: 400;
+  text-transform: none;
+}
+
+/* ── Analytics strip — 4 cells ──────────────────────────────── */
+.cmd-analytics-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  height: 48px;
+}
+
+.cmd-analytics-cell {
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0.3rem 0.55rem;
+  border-right: 1px solid var(--border);
+}
+.cmd-analytics-cell:last-child { border-right: none; }
+
+.cmd-ac-label {
+  font-size: 0.53rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-muted);
+  margin-bottom: 0.08rem;
+}
+.cmd-ac-value {
+  font-family: var(--font-display);
+  font-size: 0.66rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+}
+.cmd-ac-value.bull { color: var(--accent); }
+.cmd-ac-value.bear { color: var(--danger); }
+
+/* ── Bottom flow row — 3 equal cells ────────────────────────── */
+.cmd-bottom-row {
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  flex-shrink: 0;
+  border-top: 1px solid var(--border);
+  height: 94px;
+  overflow: hidden;
+}
+
+.cmd-bottom-cell {
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--border);
+  overflow: hidden;
+}
+.cmd-bottom-cell:last-child { border-right: none; }
+
+.cmd-bottom-body {
+  flex: 1;
+  padding: 0.3rem 0.6rem 0.35rem;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+}

@@ -3,13 +3,13 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Signal Vault — Dashboard</title>
+  <title>Signal Vault — Command Center</title>
   <link rel="stylesheet" href="css/style.css">
   <link rel="stylesheet" href="css/dashboard.css">
 </head>
 <body>
 
-<!-- ── Top bar ──────────────────────────────────────────────────────────── -->
+<!-- ── Header ────────────────────────────────────────────────────────────── -->
 <header class="dash-header">
   <div class="dash-header-left">
     <span class="dash-logo">SIGNAL VAULT</span>
@@ -27,17 +27,57 @@
   </div>
 </header>
 
-<!-- ── WS status bar ────────────────────────────────────────────────────── -->
+<!-- ── WS status bar ──────────────────────────────────────────────────────── -->
 <div class="dash-ws-bar" id="wsBar">
   <span class="ws-dot" id="wsDot"></span>
   <span id="wsStatus">Connecting…</span>
 </div>
 
-<!-- ── Three-column layout ──────────────────────────────────────────────── -->
-<main class="dash-grid">
+<!-- ── Regime / Context Bar (placeholder — wired in follow-up task) ───────── -->
+<div class="cmd-regime-bar">
 
-  <!-- Left: Watchlist + Signals -->
-  <aside class="dash-col dash-col-left">
+  <div class="cmd-regime-cell cmd-rc-directive">
+    <div class="cmd-rc-label">Directive</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">— awaiting —</div>
+  </div>
+
+  <div class="cmd-regime-cell">
+    <div class="cmd-rc-label">Regime</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+  </div>
+
+  <div class="cmd-regime-cell">
+    <div class="cmd-rc-label">Opening</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">posts at 9:50 ET</div>
+  </div>
+
+  <div class="cmd-regime-cell">
+    <div class="cmd-rc-label">VIX</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+  </div>
+
+  <div class="cmd-regime-cell">
+    <div class="cmd-rc-label">Breadth</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+  </div>
+
+  <div class="cmd-regime-cell cmd-rc-grow">
+    <div class="cmd-rc-label">Today P/L</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">— awaiting —</div>
+  </div>
+
+  <div class="cmd-regime-cell">
+    <div class="cmd-rc-label">Risk Left</div>
+    <div class="cmd-rc-value" style="color:var(--text-muted)">—</div>
+  </div>
+
+</div>
+
+<!-- ── Three-column main ──────────────────────────────────────────────────── -->
+<main class="cmd-main">
+
+  <!-- ══ LEFT: Watchlist + Signals ═════════════════════════════════════════ -->
+  <aside class="cmd-col">
 
     <section class="dash-panel">
       <div class="dash-panel-header">
@@ -61,10 +101,10 @@
 
   </aside>
 
-  <!-- Center: Ticker focus — chart, levels, chain -->
-  <section class="dash-col dash-col-center">
+  <!-- ══ CENTER: Ticker focus ═══════════════════════════════════════════════ -->
+  <section class="cmd-col cmd-col-center">
 
-    <!-- Title + ticker search bar -->
+    <!-- Search + focus topbar -->
     <div class="dash-center-topbar">
       <div class="dash-panel-header">
         <span class="dash-panel-title">Ticker Focus</span>
@@ -79,7 +119,7 @@
       </div>
     </div>
 
-    <!-- Price-reference strip (TradingView chart demoted — use the link for real analysis) -->
+    <!-- Price-reference strip -->
     <div class="dash-price-strip" id="priceStrip">
       <div class="price-strip-placeholder" id="priceStripPlaceholder">Select a ticker to load</div>
       <div class="price-strip-data" id="priceStripData" style="display:none">
@@ -91,6 +131,26 @@
         <a class="price-strip-tv-btn" id="priceStripTvBtn" href="#" target="_blank" rel="noopener">
           Open 10m chart in TradingView ↗
         </a>
+      </div>
+    </div>
+
+    <!-- MTF clouds row (placeholder — wired in follow-up task) -->
+    <div class="cmd-mtf-row">
+      <div class="cmd-mtf-cell">
+        <span class="cmd-mtf-tf">10m</span>
+        <span class="cmd-mtf-badge blocked">— awaiting —</span>
+      </div>
+      <div class="cmd-mtf-cell">
+        <span class="cmd-mtf-tf">30m</span>
+        <span class="cmd-mtf-badge blocked">blocked</span>
+      </div>
+      <div class="cmd-mtf-cell">
+        <span class="cmd-mtf-tf">1H</span>
+        <span class="cmd-mtf-badge blocked">— awaiting —</span>
+      </div>
+      <div class="cmd-mtf-cell">
+        <span class="cmd-mtf-tf">Daily</span>
+        <span class="cmd-mtf-badge blocked">— awaiting —</span>
       </div>
     </div>
 
@@ -123,10 +183,30 @@
       </div>
     </div>
 
+    <!-- Analytics strip (placeholder — wired in follow-up task) -->
+    <div class="cmd-analytics-strip">
+      <div class="cmd-analytics-cell">
+        <div class="cmd-ac-label">IV Rank</div>
+        <div class="cmd-ac-value" style="color:var(--text-muted)">— awaiting —</div>
+      </div>
+      <div class="cmd-analytics-cell">
+        <div class="cmd-ac-label">Implied Move</div>
+        <div class="cmd-ac-value" style="color:var(--text-muted)">—</div>
+      </div>
+      <div class="cmd-analytics-cell">
+        <div class="cmd-ac-label">GEX Flip</div>
+        <div class="cmd-ac-value" style="color:var(--text-muted)">—</div>
+      </div>
+      <div class="cmd-analytics-cell">
+        <div class="cmd-ac-label">P/C Flow</div>
+        <div class="cmd-ac-value" style="color:var(--text-muted)">—</div>
+      </div>
+    </div>
+
   </section>
 
-  <!-- Right: Positions + History -->
-  <aside class="dash-col dash-col-right">
+  <!-- ══ RIGHT: Positions + History ════════════════════════════════════════ -->
+  <aside class="cmd-col">
 
     <section class="dash-panel">
       <div class="dash-panel-header">
@@ -167,7 +247,42 @@
 
 </main>
 
-<!-- ── Confirmation modal (close + open) ─────────────────────────────── -->
+<!-- ── Bottom flow row (placeholder — wired in follow-up task) ───────────── -->
+<div class="cmd-bottom-row">
+
+  <div class="cmd-bottom-cell">
+    <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
+      <span class="dash-panel-title">Market Tide</span>
+      <span class="dash-panel-meta">net flow · wiring pending</span>
+    </div>
+    <div class="cmd-bottom-body">
+      <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
+    </div>
+  </div>
+
+  <div class="cmd-bottom-cell">
+    <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
+      <span class="dash-panel-title">Sector Strength</span>
+      <span class="dash-panel-meta">wiring pending</span>
+    </div>
+    <div class="cmd-bottom-body">
+      <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
+    </div>
+  </div>
+
+  <div class="cmd-bottom-cell">
+    <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
+      <span class="dash-panel-title">Flow + GEX</span>
+      <span class="dash-panel-meta">sweeps · dark pool · gamma</span>
+    </div>
+    <div class="cmd-bottom-body">
+      <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
+    </div>
+  </div>
+
+</div>
+
+<!-- ── Confirmation modal (close + open orders) ───────────────────────────── -->
 <div id="confirmModal" class="dash-modal-overlay" style="display:none">
   <div class="dash-modal-card">
     <div class="dash-modal-title" id="confirmTitle">Confirm Action</div>
@@ -180,7 +295,7 @@
   </div>
 </div>
 
-<!-- ── Auth gate overlay ──────────────────────────────────────────────── -->
+<!-- ── Auth gate overlay ───────────────────────────────────────────────────── -->
 <div id="authOverlay" class="dash-auth-overlay" style="display:none">
   <div class="dash-auth-card">
     <div class="dash-auth-logo">SIGNAL VAULT</div>
