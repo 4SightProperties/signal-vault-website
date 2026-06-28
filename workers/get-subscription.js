@@ -39,6 +39,8 @@ const ACTIVE_STATUSES = new Set(['active', 'trialing', 'past_due']);
 const ALLOWED_ORIGINS = new Set([
   'https://4sightproperties.github.io',
   'https://pay.signalvault.com',
+  'https://the-signalvault.com',          // production custom domain
+  'https://www.the-signalvault.com',      // belt-and-suspenders (www → apex 301, inert if redirect holds)
 ]);
 
 // ── CORS ──────────────────────────────────────────────────────────────────────

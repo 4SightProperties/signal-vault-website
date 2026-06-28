@@ -23,6 +23,8 @@ const STRIPE_API  = 'https://api.stripe.com/v1';
 const ALLOWED_ORIGINS = new Set([
   'https://4sightproperties.github.io',
   'https://pay.signalvault.com',
+  'https://the-signalvault.com',          // production custom domain
+  'https://www.the-signalvault.com',      // belt-and-suspenders (www → apex 301, inert if redirect holds)
 ]);
 
 // ── Price IDs (not secrets — safe to hardcode) ───────────────────────────────

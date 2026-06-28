@@ -30,6 +30,8 @@ const DISCORD_API = 'https://discord.com/api/v10';
 const ALLOWED_ORIGINS = new Set([
   'https://4sightproperties.github.io',  // GitHub Pages deployment
   'https://pay.signalvault.com',          // future custom domain
+  'https://the-signalvault.com',          // production custom domain
+  'https://www.the-signalvault.com',      // belt-and-suspenders (www → apex 301, inert if redirect holds)
 ]);
 
 const CORS = (origin) => ({
