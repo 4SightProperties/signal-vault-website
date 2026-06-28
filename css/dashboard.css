@@ -1682,6 +1682,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-weight: 400;
   text-transform: none;
 }
+.cmd-mtf-cell.stale .cmd-mtf-badge { opacity: 0.5; }
 
 /* ── Analytics strip — 4 cells ──────────────────────────────── */
 .cmd-analytics-strip {

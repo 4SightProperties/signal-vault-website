@@ -689,6 +689,71 @@
     if (controls) controls.style.display = 'flex';
 
     loadChainExpirations(t, price);
+    loadMtf(t);
+  }
+
+  // ── MTF cloud alignment — fetches /api/mtf for the focused ticker ────────
+
+  const _MTF_TF_IDS = {
+    '10m':   { badge: 'mtfBadge10m',   cell: 'mtfCell10m'   },
+    '30m':   { badge: 'mtfBadge30m',   cell: 'mtfCell30m'   },
+    '1h':    { badge: 'mtfBadge1h',    cell: 'mtfCell1h'    },
+    'daily': { badge: 'mtfBadgeDaily', cell: 'mtfCellDaily' },
+  };
+
+  function _setMtfCell(tf, cellData) {
+    const ids     = _MTF_TF_IDS[tf];
+    if (!ids) return;
+    const badgeEl = document.getElementById(ids.badge);
+    const cellEl  = document.getElementById(ids.cell);
+    if (!badgeEl) return;
+
+    const state = cellData && cellData.state;
+
+    if (!cellData || state === 'error') {
+      badgeEl.className   = 'cmd-mtf-badge blocked';
+      badgeEl.textContent = '—';
+      if (cellEl) cellEl.classList.remove('stale');
+      return;
+    }
+    if (state === 'empty') {
+      badgeEl.className   = 'cmd-mtf-badge blocked';
+      badgeEl.textContent = '— awaiting —';
+      if (cellEl) cellEl.classList.remove('stale');
+      return;
+    }
+
+    const v    = cellData.value || {};
+    const bias = v.bias || 'neutral';   // 'bull' | 'bear' | 'neutral'
+    const arrow = v.arrow || '—';
+    const cssClass = { bull: 'bull', bear: 'bear', neutral: 'mixed' }[bias] || 'blocked';
+
+    badgeEl.className   = `cmd-mtf-badge ${cssClass}`;
+    badgeEl.textContent = `${arrow} ${bias}`;
+    if (cellEl) cellEl.classList.toggle('stale', state === 'stale');
+  }
+
+  function _resetMtfCells() {
+    for (const tf of Object.keys(_MTF_TF_IDS)) {
+      const ids = _MTF_TF_IDS[tf];
+      const badgeEl = document.getElementById(ids.badge);
+      const cellEl  = document.getElementById(ids.cell);
+      if (badgeEl) { badgeEl.className = 'cmd-mtf-badge blocked'; badgeEl.textContent = '···'; }
+      if (cellEl)  cellEl.classList.remove('stale');
+    }
+  }
+
+  async function loadMtf(ticker) {
+    _resetMtfCells();
+    try {
+      const data = await apiFetch(`/api/mtf?ticker=${encodeURIComponent(ticker)}`);
+      if (!data || !data.timeframes) return;
+      for (const [tf, cellData] of Object.entries(data.timeframes)) {
+        _setMtfCell(tf, cellData);
+      }
+    } catch (_) {
+      // Leave cells as reset (···) — silent fail, not worth surfacing
+    }
   }
 
   // Price-reference strip — replaces the TradingView embed.
