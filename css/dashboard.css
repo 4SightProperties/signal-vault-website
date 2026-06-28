@@ -1744,3 +1744,86 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   display: flex;
   align-items: center;
 }
+
+/* stale dimming — matches MTF pattern */
+.cmd-bottom-cell.stale  .cmd-bottom-body  { opacity: 0.5; }
+.cmd-analytics-cell.stale .cmd-ac-value   { opacity: 0.5; }
+
+/* ── Flow row inner layout ───────────────────────────── */
+.flow-empty { font-size: 0.63rem; color: var(--text-muted); }
+
+.flow-tide-row {
+  display: flex;
+  align-items: center;
+  gap: 0.45rem;
+  flex-wrap: wrap;
+  font-size: 0.63rem;
+}
+.flow-bias {
+  font-family: var(--font-display);
+  font-size: 0.65rem;
+  font-weight: 700;
+  min-width: 4.5rem;
+}
+.flow-bias.bull  { color: var(--accent); }
+.flow-bias.bear  { color: var(--danger); }
+.flow-tide-nums  { display: flex; gap: 0.35rem; flex-wrap: wrap; color: var(--text-secondary); }
+.flow-pc, .flow-vol { color: var(--text-muted); }
+
+/* shared bull / bear span classes used by flow cells */
+.bull { color: var(--accent); }
+.bear { color: var(--danger); }
+
+/* sweeps + dark pool rows */
+.flow-stat-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.62rem;
+  line-height: 1.4;
+  flex-wrap: wrap;
+}
+.flow-stat-label { color: var(--text-muted); min-width: 5rem; flex-shrink: 0; }
+.flow-sep        { color: var(--text-muted); }
+
+/* ── Sector bars ─────────────────────────────────────── */
+.sector-bar-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+  font-size: 0.58rem;
+  line-height: 1.55;
+}
+.sector-name {
+  color: var(--text-muted);
+  min-width: 4.2rem;
+  flex-shrink: 0;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.sector-bar-track {
+  flex: 1;
+  height: 3px;
+  background: var(--border);
+  border-radius: 2px;
+  overflow: hidden;
+  min-width: 20px;
+}
+.sector-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.3s ease;
+}
+.sector-bar-fill.bull { background: var(--accent); }
+.sector-bar-fill.bear { background: var(--danger); }
+.sector-val {
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  font-weight: 700;
+  min-width: 3rem;
+  text-align: right;
+  flex-shrink: 0;
+}
+.sector-val.bull { color: var(--accent); }
+.sector-val.bear { color: var(--danger); }

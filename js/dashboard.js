@@ -23,6 +23,7 @@
   let signalTimer  = null;
   let watchTimer   = null;
   let regimeTimer  = null;
+  let flowTimer    = null;
 
   // Center panel + console state
   let currentPositions   = [];   // last positions array from WS — used by console delegation
@@ -180,9 +181,11 @@
     loadRegime();
     loadSignals();
     loadWatchlist();
+    loadFlow();
     regimeTimer = setInterval(loadRegime,    60_000);
     signalTimer = setInterval(loadSignals,   30_000);
     watchTimer  = setInterval(loadWatchlist, 60_000);
+    flowTimer   = setInterval(loadFlow,      90_000);
 
     setupCenterPanel();
     setupConsoleHandlers();
@@ -690,6 +693,7 @@
 
     loadChainExpirations(t, price);
     loadMtf(t);
+    loadAnalytics(t);
   }
 
   // ── MTF cloud alignment — fetches /api/mtf for the focused ticker ────────
@@ -753,6 +757,205 @@
       }
     } catch (_) {
       // Leave cells as reset (···) — silent fail, not worth surfacing
+    }
+  }
+
+  // ── Bottom flow row — fetches /api/flow on load + every 90s ─────────────────
+
+  function _flowStateClass(state) {
+    return state === 'stale' ? 'stale' : '';
+  }
+
+  function _renderTide(cell) {
+    const bodyEl = document.getElementById('flowTideBody');
+    const metaEl = document.getElementById('flowTideMeta');
+    const cellEl = document.getElementById('flowCellTide');
+    if (!bodyEl) return;
+
+    if (!cell || cell.state === 'error') {
+      bodyEl.innerHTML = '<span class="flow-empty">—</span>';
+      return;
+    }
+    if (cell.state === 'empty') {
+      bodyEl.innerHTML = '<span class="flow-empty">— awaiting market hours —</span>';
+      return;
+    }
+
+    const v   = cell.value || {};
+    const bias = (v.bias || 'neutral').toUpperCase();
+    const biasCls = v.bias === 'bullish' ? 'bull' : v.bias === 'bearish' ? 'bear' : '';
+    const pc  = v.pc_ratio != null ? `P/C ${v.pc_ratio}×` : '';
+    const vol = v.net_volume != null ? `vol ${v.net_volume > 0 ? '+' : ''}${(v.net_volume / 1000).toFixed(0)}k` : '';
+
+    bodyEl.innerHTML = `
+      <div class="flow-tide-row">
+        <span class="flow-bias ${biasCls}">${bias}</span>
+        <span class="flow-tide-nums">
+          <span class="bull">▲ $${v.net_call_m != null ? v.net_call_m.toFixed(1) : '—'}M</span>
+          <span class="bear">▼ $${v.net_put_m  != null ? Math.abs(v.net_put_m).toFixed(1) : '—'}M</span>
+          ${pc   ? `<span class="flow-pc">${pc}</span>` : ''}
+          ${vol  ? `<span class="flow-vol">${vol}</span>` : ''}
+        </span>
+      </div>`;
+    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : 'live';
+    if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
+  }
+
+  function _renderSector(cell) {
+    const bodyEl = document.getElementById('flowSectorBody');
+    const metaEl = document.getElementById('flowSectorMeta');
+    const cellEl = document.getElementById('flowCellSector');
+    if (!bodyEl) return;
+
+    if (!cell || cell.state === 'error') {
+      bodyEl.innerHTML = '<span class="flow-empty">—</span>';
+      return;
+    }
+    if (cell.state === 'empty' || !Array.isArray(cell.value) || !cell.value.length) {
+      bodyEl.innerHTML = '<span class="flow-empty">— awaiting market hours —</span>';
+      return;
+    }
+
+    const rows = cell.value
+      .map(s => {
+        const chg = parseFloat(String(s.change).replace('%', '')) || 0;
+        const cls = chg > 0 ? 'bull' : chg < 0 ? 'bear' : '';
+        const barW = Math.min(Math.abs(chg) * 20, 100).toFixed(0);
+        const sign = chg >= 0 ? '+' : '';
+        const name = String(s.name).replace(/^Information /i, 'IT ').replace(/^Communication /i, 'Comm ');
+        return `<div class="sector-bar-row">
+          <span class="sector-name">${name}</span>
+          <span class="sector-bar-track"><span class="sector-bar-fill ${cls}" style="width:${barW}%"></span></span>
+          <span class="sector-val ${cls}">${sign}${chg.toFixed(1)}%</span>
+        </div>`;
+      })
+      .join('');
+    bodyEl.innerHTML = rows;
+    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : '% 1d';
+    if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
+  }
+
+  function _renderFlowGex(cell) {
+    const bodyEl = document.getElementById('flowFlowBody');
+    const metaEl = document.getElementById('flowFlowMeta');
+    const cellEl = document.getElementById('flowCellFlow');
+    if (!bodyEl) return;
+
+    if (!cell || cell.state === 'error') {
+      bodyEl.innerHTML = '<span class="flow-empty">—</span>';
+      return;
+    }
+    if (cell.state === 'empty') {
+      bodyEl.innerHTML = '<span class="flow-empty">— awaiting market hours —</span>';
+      return;
+    }
+
+    const v  = cell.value || {};
+    const sw = v.sweeps  || {};
+    const dp = v.darkpool || {};
+    const winMin = Math.round((sw.window_secs || 600) / 60);
+
+    const sweepLine = sw.bull_count != null
+      ? `<div class="flow-stat-row"><span class="flow-stat-label">Sweeps (${winMin}m)</span>
+           <span class="bull">▲${sw.bull_count} $${(sw.bull_premium_m || 0).toFixed(1)}M</span>
+           <span class="flow-sep">·</span>
+           <span class="bear">▼${sw.bear_count} $${(sw.bear_premium_m || 0).toFixed(1)}M</span>
+         </div>`
+      : '';
+
+    const dpLine = (dp.bull_count != null || dp.bear_count != null)
+      ? `<div class="flow-stat-row"><span class="flow-stat-label">Dark Pool</span>
+           <span class="bull">▲${dp.bull_count || 0} $${(dp.bull_premium_m || 0).toFixed(1)}M</span>
+           <span class="flow-sep">·</span>
+           <span class="bear">▼${dp.bear_count || 0} $${(dp.bear_premium_m || 0).toFixed(1)}M</span>
+         </div>`
+      : '';
+
+    bodyEl.innerHTML = sweepLine + (dpLine || '<div class="flow-stat-row"><span class="flow-empty">dark pool: no data</span></div>');
+    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : 'sweeps · dark pool';
+    if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
+  }
+
+  async function loadFlow() {
+    try {
+      const data = await apiFetch('/api/flow');
+      if (!data) return;
+      _renderTide(data.tide);
+      _renderSector(data.sector);
+      _renderFlowGex(data.flow);
+    } catch (_) {
+      // Silent fail — flow row shows stale state from last render
+    }
+  }
+
+  // ── Analytics strip — fetches /api/analytics on ticker focus ─────────────
+
+  function _setAcCell(valueId, cellId, cellData, formatFn) {
+    const valueEl = document.getElementById(valueId);
+    const cellEl  = document.getElementById(cellId);
+    if (!valueEl) return;
+
+    const state = cellData && cellData.state;
+    if (!cellData || state === 'error') {
+      valueEl.textContent = '—';
+      valueEl.style.color = 'var(--text-muted)';
+      if (cellEl) cellEl.classList.remove('stale');
+      return;
+    }
+    if (state === 'empty') {
+      valueEl.textContent = cellData._emptyLabel || '— awaiting —';
+      valueEl.style.color = 'var(--text-muted)';
+      if (cellEl) cellEl.classList.remove('stale');
+      return;
+    }
+    valueEl.textContent = formatFn(cellData.value);
+    valueEl.style.color = '';
+    if (cellEl) cellEl.classList.toggle('stale', state === 'stale');
+  }
+
+  function _resetAnalyticsCells() {
+    const ids = ['acIvRank', 'acImpliedMove', 'acGexFlip', 'acPcFlow'];
+    ids.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) { el.textContent = '···'; el.style.color = 'var(--text-muted)'; }
+    });
+    ['acCellIvRank', 'acCellImpliedMove', 'acCellGexFlip', 'acCellPcFlow'].forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.classList.remove('stale');
+    });
+  }
+
+  async function loadAnalytics(ticker) {
+    _resetAnalyticsCells();
+    try {
+      const data = await apiFetch(`/api/analytics?ticker=${encodeURIComponent(ticker)}`);
+      if (!data) return;
+
+      // IV Rank — always empty (no 52-week history); label it honestly
+      const ivCell = data.iv_rank || {};
+      ivCell._emptyLabel = '— no history —';
+      _setAcCell('acIvRank', 'acCellIvRank', ivCell, () => '— no history —');
+
+      // Implied Move
+      _setAcCell('acImpliedMove', 'acCellImpliedMove', data.implied_move, v =>
+        v && v.pct != null ? `±${v.pct.toFixed(1)}%` : '—'
+      );
+
+      // GEX Flip
+      _setAcCell('acGexFlip', 'acCellGexFlip', data.gex_flip, v => {
+        if (!v || v.gamma_flip == null) return 'N/A';
+        const envIcon = v.environment === 'positive' ? '▲' : v.environment === 'negative' ? '▼' : '';
+        return `$${parseFloat(v.gamma_flip).toFixed(2)} ${envIcon}`.trim();
+      });
+
+      // P/C Flow
+      _setAcCell('acPcFlow', 'acCellPcFlow', data.pc_flow, v => {
+        if (!v || v.ratio == null) return '—';
+        const label = v.direction === 'call-heavy' ? 'calls' : v.direction === 'put-heavy' ? 'puts' : 'neutral';
+        return `${v.ratio}× ${label}`;
+      });
+    } catch (_) {
+      // Silent fail — cells stay as reset (···)
     }
   }
 

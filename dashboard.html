@@ -178,23 +178,23 @@
       <div id="chainCockpit" class="chain-cockpit-footer"></div>
     </div>
 
-    <!-- Analytics strip (placeholder — wired in follow-up task) -->
+    <!-- Analytics strip — wired to /api/analytics on ticker focus -->
     <div class="cmd-analytics-strip">
-      <div class="cmd-analytics-cell">
+      <div class="cmd-analytics-cell" id="acCellIvRank">
         <div class="cmd-ac-label">IV Rank</div>
-        <div class="cmd-ac-value" style="color:var(--text-muted)">— awaiting —</div>
+        <div class="cmd-ac-value" id="acIvRank" style="color:var(--text-muted)">— awaiting —</div>
       </div>
-      <div class="cmd-analytics-cell">
+      <div class="cmd-analytics-cell" id="acCellImpliedMove">
         <div class="cmd-ac-label">Implied Move</div>
-        <div class="cmd-ac-value" style="color:var(--text-muted)">—</div>
+        <div class="cmd-ac-value" id="acImpliedMove" style="color:var(--text-muted)">—</div>
       </div>
-      <div class="cmd-analytics-cell">
+      <div class="cmd-analytics-cell" id="acCellGexFlip">
         <div class="cmd-ac-label">GEX Flip</div>
-        <div class="cmd-ac-value" style="color:var(--text-muted)">—</div>
+        <div class="cmd-ac-value" id="acGexFlip" style="color:var(--text-muted)">—</div>
       </div>
-      <div class="cmd-analytics-cell">
+      <div class="cmd-analytics-cell" id="acCellPcFlow">
         <div class="cmd-ac-label">P/C Flow</div>
-        <div class="cmd-ac-value" style="color:var(--text-muted)">—</div>
+        <div class="cmd-ac-value" id="acPcFlow" style="color:var(--text-muted)">—</div>
       </div>
     </div>
 
@@ -242,35 +242,35 @@
 
 </main>
 
-<!-- ── Bottom flow row (placeholder — wired in follow-up task) ───────────── -->
+<!-- ── Bottom flow row — wired to /api/flow ─────────────────────────────── -->
 <div class="cmd-bottom-row">
 
-  <div class="cmd-bottom-cell">
+  <div class="cmd-bottom-cell" id="flowCellTide">
     <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
       <span class="dash-panel-title">Market Tide</span>
-      <span class="dash-panel-meta">net flow · wiring pending</span>
+      <span class="dash-panel-meta" id="flowTideMeta">net flow</span>
     </div>
-    <div class="cmd-bottom-body">
+    <div class="cmd-bottom-body" id="flowTideBody">
       <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
     </div>
   </div>
 
-  <div class="cmd-bottom-cell">
+  <div class="cmd-bottom-cell" id="flowCellSector">
     <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
       <span class="dash-panel-title">Sector Strength</span>
-      <span class="dash-panel-meta">wiring pending</span>
+      <span class="dash-panel-meta" id="flowSectorMeta">% performance</span>
     </div>
-    <div class="cmd-bottom-body">
+    <div class="cmd-bottom-body" id="flowSectorBody">
       <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
     </div>
   </div>
 
-  <div class="cmd-bottom-cell">
+  <div class="cmd-bottom-cell" id="flowCellFlow">
     <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
-      <span class="dash-panel-title">Flow + GEX</span>
-      <span class="dash-panel-meta">sweeps · dark pool · gamma</span>
+      <span class="dash-panel-title">Flow + Dark Pool</span>
+      <span class="dash-panel-meta" id="flowFlowMeta">sweeps · dark pool</span>
     </div>
-    <div class="cmd-bottom-body">
+    <div class="cmd-bottom-body" id="flowFlowBody">
       <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
     </div>
   </div>
