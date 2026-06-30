@@ -660,7 +660,7 @@
     if (ticker) focusOn(ticker);
   }
 
-  function focusOn(ticker) {
+  async function focusOn(ticker) {
     if (!ticker) return;
     const t = ticker.toUpperCase();
     focusedTicker = t;
@@ -672,8 +672,16 @@
 
     // Derive price and bias from watchlist cache
     const wlRow = watchlistDataCache.find(r => r.ticker === t);
-    const price = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
-    const bias  = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
+    let price    = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
+    const bias   = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
+
+    // Live-price fallback for off-watchlist tickers (watchlist cache miss → price=0)
+    if (!price) {
+      try {
+        const q = await apiFetch(`/api/quote?ticker=${encodeURIComponent(t)}`);
+        if (q && q.last) price = parseFloat(q.last) || 0;
+      } catch (_) { /* leave price=0 — chain guard will show the honest message */ }
+    }
 
     // Update price-ref strip (merged focus header)
     buildPriceStrip(t, price);
