@@ -186,7 +186,7 @@
     loadPanelHealth();
     regimeTimer      = setInterval(loadRegime,      60_000);
     signalTimer      = setInterval(loadSignals,     30_000);
-    watchTimer       = setInterval(loadWatchlist,   60_000);
+    watchTimer       = setInterval(loadWatchlist,   10_000);
     flowTimer        = setInterval(loadFlow,        90_000);
     panelHealthTimer = setInterval(loadPanelHealth, 90_000);
 
