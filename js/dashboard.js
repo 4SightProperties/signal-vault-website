@@ -25,6 +25,7 @@
   let regimeTimer      = null;
   let flowTimer        = null;
   let panelHealthTimer = null;
+  let positionsTimer   = null;
 
   // Center panel + console state
   let currentPositions   = [];   // last positions array from WS — used by console delegation
@@ -184,11 +185,13 @@
     loadWatchlist();
     loadFlow();
     loadPanelHealth();
+    loadPositions();
     regimeTimer      = setInterval(loadRegime,      60_000);
     signalTimer      = setInterval(loadSignals,     30_000);
     watchTimer       = setInterval(loadWatchlist,   10_000);
     flowTimer        = setInterval(loadFlow,        90_000);
     panelHealthTimer = setInterval(loadPanelHealth, 90_000);
+    positionsTimer   = setInterval(loadPositions,    5_000);
 
     setupCenterPanel();
     setupConsoleHandlers();
@@ -358,6 +361,13 @@
         openConsoleId = null;
       }
     }
+  }
+
+  async function loadPositions() {
+    try {
+      const data = await apiFetch('/api/positions');
+      renderPositions(data.positions || []);
+    } catch (_) {}
   }
 
   // ── Signals ────────────────────────────────────────────────────────────────
