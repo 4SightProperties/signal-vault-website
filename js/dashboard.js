@@ -618,8 +618,8 @@
 </div>`;
       }).join('');
 
-      // If we already have a ticker focused, refresh its levels from the new data.
-      if (focusedTicker) renderLevels(focusedTicker);
+      // If we already have a ticker focused, refresh its levels and header price.
+      if (focusedTicker) { renderLevels(focusedTicker); _refreshFocusedPriceStrip(); }
 
     } catch (err) {
       meta.textContent = 'error';
@@ -680,21 +680,22 @@
 
     renderLevels(t);
 
-    // Derive price and bias from watchlist cache
-    const wlRow = watchlistDataCache.find(r => r.ticker === t);
-    let price    = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
-    const bias   = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
+    // Derive live price, trigger, and bias from watchlist cache
+    const wlRow   = watchlistDataCache.find(r => r.ticker === t);
+    const trigger  = wlRow && wlRow.trigger     ? parseFloat(wlRow.trigger)      : 0;
+    let livePrice  = wlRow && wlRow.current_price ? parseFloat(wlRow.current_price) : 0;
+    const bias     = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
 
-    // Live-price fallback for off-watchlist tickers (watchlist cache miss → price=0)
-    if (!price) {
+    // Live-price fallback: off-watchlist tickers or cache missing current_price
+    if (!livePrice) {
       try {
         const q = await apiFetch(`/api/quote?ticker=${encodeURIComponent(t)}`);
-        if (q && q.last) price = parseFloat(q.last) || 0;
-      } catch (_) { /* leave price=0 — chain guard will show the honest message */ }
+        if (q && q.last) livePrice = parseFloat(q.last) || 0;
+      } catch (_) { /* leave livePrice=0 — chain guard will show the honest message */ }
     }
 
-    // Update price-ref strip (merged focus header)
-    buildPriceStrip(t, price);
+    // Update price-ref strip — live stock price as headline, trigger as secondary label
+    buildPriceStrip(t, livePrice, trigger, null);
 
     // Seed bias selector from watchlist direction
     const biasEl = document.getElementById('chainBias');
@@ -704,7 +705,7 @@
     const controls = document.getElementById('chainControls');
     if (controls) controls.style.display = 'flex';
 
-    loadChainExpirations(t, price);
+    loadChainExpirations(t, livePrice || trigger);
     loadMtf(t);
     loadAnalytics(t);
   }
@@ -972,13 +973,14 @@
     }
   }
 
-  // Price-reference strip — replaces the TradingView embed.
-  // Shows the watchlist trigger price + a prominent TV link-out. Read-only.
-  function buildPriceStrip(ticker, price) {
+  // Price-reference strip — live stock price as the headline, trigger as secondary label.
+  // changePct: day change % (float) if available from the quote payload, else null.
+  function buildPriceStrip(ticker, livePrice, trigger, changePct) {
     const placeholder = document.getElementById('priceStripPlaceholder');
     const dataEl      = document.getElementById('priceStripData');
     const tickerEl    = document.getElementById('priceStripTicker');
     const priceEl     = document.getElementById('priceStripPrice');
+    const changeEl    = document.getElementById('priceStripChange');
     const noteEl      = document.getElementById('priceStripNote');
     const tvBtn       = document.getElementById('priceStripTvBtn');
 
@@ -987,9 +989,73 @@
     dataEl.style.display = 'flex';
 
     if (tickerEl) tickerEl.textContent = ticker;
-    if (priceEl)  priceEl.textContent  = price > 0 ? fmtPrice(price) : '—';
-    if (noteEl)   noteEl.textContent   = price > 0 ? 'watchlist trigger' : 'price unavailable';
-    if (tvBtn)    tvBtn.href = `https://www.tradingview.com/chart/?symbol=${ticker}&interval=10`;
+
+    // Live price — colored by day change when available
+    if (priceEl) {
+      priceEl.textContent = livePrice > 0 ? fmtPrice(livePrice) : '—';
+      const colorCls = changePct !== null ? (changePct >= 0 ? ' bull' : ' bear') : '';
+      priceEl.className = 'price-strip-price' + colorCls;
+    }
+
+    // Day change % — hidden when not available
+    if (changeEl) {
+      if (changePct !== null) {
+        const arrow = changePct >= 0 ? '▲' : '▼';
+        const sign  = changePct >= 0 ? '+' : '';
+        changeEl.textContent = `${arrow} ${sign}${changePct.toFixed(2)}%`;
+        changeEl.className   = 'price-strip-change ' + (changePct >= 0 ? 'bull' : 'bear');
+        changeEl.style.display = '';
+      } else {
+        changeEl.textContent   = '';
+        changeEl.style.display = 'none';
+      }
+    }
+
+    // Trigger secondary label with distance relationship
+    if (noteEl) {
+      if (livePrice > 0 && trigger > 0) {
+        const diff    = livePrice - trigger;
+        const absDiff = Math.abs(diff);
+        let rel;
+        if (absDiff < 0.01) {
+          rel = 'at trigger';
+        } else if (diff > 0) {
+          rel = `+$${absDiff.toFixed(2)} above`;
+        } else {
+          rel = `−$${absDiff.toFixed(2)} below`;
+        }
+        noteEl.textContent = `trigger ${fmtPrice(trigger)} · ${rel}`;
+      } else if (trigger > 0) {
+        noteEl.textContent = `trigger ${fmtPrice(trigger)}`;
+      } else if (livePrice > 0) {
+        noteEl.textContent = 'live price';
+      } else {
+        noteEl.textContent = 'price unavailable';
+      }
+    }
+
+    if (tvBtn) tvBtn.href = `https://www.tradingview.com/chart/?symbol=${ticker}&interval=10`;
+  }
+
+  // Refresh the focused header price on the watchlist poll cadence (~10s).
+  // For watchlist tickers reads the freshly-updated cache; for off-watchlist
+  // tickers fetches /api/quote (one call per poll, same Tradier load already incurred).
+  async function _refreshFocusedPriceStrip() {
+    if (!focusedTicker) return;
+    const t      = focusedTicker;
+    const wlRow  = watchlistDataCache.find(r => r.ticker === t);
+    const trigger = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
+
+    if (wlRow) {
+      const livePrice = wlRow.current_price ? parseFloat(wlRow.current_price) : 0;
+      buildPriceStrip(t, livePrice, trigger, null);
+    } else {
+      try {
+        const q = await apiFetch(`/api/quote?ticker=${encodeURIComponent(t)}`);
+        const livePrice = q && q.last ? parseFloat(q.last) || 0 : 0;
+        buildPriceStrip(t, livePrice, 0, null);
+      } catch (_) { /* leave the header as-is on fetch failure */ }
+    }
   }
 
   // Levels panel: shows watchlist-derived context for the focused ticker.
