@@ -1779,13 +1779,11 @@
     const header   = `
 <div class="hist-row hist-header">
   ${userHdr}
-  <span class="hist-cell hist-col-date  hist-hdr">Date</span>
-  <span class="hist-cell hist-col-tkr   hist-hdr">Ticker</span>
-  <span class="hist-cell hist-col-dir   hist-hdr">Dir</span>
-  <span class="hist-cell hist-col-entry hist-hdr">Entry</span>
-  <span class="hist-cell hist-col-exit  hist-hdr">Exit</span>
-  <span class="hist-cell hist-col-pnl   hist-hdr">P&amp;L</span>
-  <span class="hist-cell hist-col-pct   hist-hdr">%</span>
+  <span class="hist-cell hist-col-date hist-hdr">Date</span>
+  <span class="hist-cell hist-col-tkr  hist-hdr">Ticker</span>
+  <span class="hist-cell hist-col-dir  hist-hdr">Dir</span>
+  <span class="hist-cell hist-col-pnl  hist-hdr">P&amp;L</span>
+  <span class="hist-cell hist-col-pct  hist-hdr">%</span>
 </div>`;
 
     const rows = trades.map(t => {
@@ -1803,8 +1801,6 @@
   <span class="hist-cell hist-col-date">${dt}</span>
   <span class="hist-cell hist-col-tkr hist-ticker">${t.ticker || '?'}</span>
   <span class="hist-cell hist-col-dir"><span class="hist-dir ${dir}">${dir === 'put' ? 'P' : 'C'}</span></span>
-  <span class="hist-cell hist-col-entry">${fmtPrice(t.entry_premium)}</span>
-  <span class="hist-cell hist-col-exit">${fmtPrice(t.exit_premium)}</span>
   <span class="hist-cell hist-col-pnl ${pnlCls}">${fmtPnl$(t.realized_pnl)}</span>
   <span class="hist-cell hist-col-pct ${pnlCls}">${fmtPct(t.pnl_pct)}</span>
 </div>`;

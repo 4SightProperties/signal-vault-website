@@ -1159,13 +1159,11 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
 .hist-cell       { flex-shrink: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .hist-col-user   { width: 42px; color: var(--text-muted); font-size: 0.58rem; }
-.hist-col-date   { width: 46px; color: var(--text-muted); }
-.hist-col-tkr    { width: 40px; }
-.hist-col-dir    { width: 22px; }
-.hist-col-entry  { width: 36px; color: var(--text-secondary); text-align: right; }
-.hist-col-exit   { width: 36px; color: var(--text-secondary); text-align: right; }
-.hist-col-pnl    { width: 52px; font-family: var(--font-display); font-weight: 600; text-align: right; }
-.hist-col-pct    { width: 40px; font-family: var(--font-display); text-align: right; }
+.hist-col-date   { width: 52px; color: var(--text-muted); }
+.hist-col-tkr    { width: 60px; }
+.hist-col-dir    { width: 24px; }
+.hist-col-pnl    { width: 70px; font-family: var(--font-display); font-weight: 600; text-align: right; }
+.hist-col-pct    { width: 52px; font-family: var(--font-display); text-align: right; }
 .hist-col-wl     { width: 22px; text-align: center; }
 
 .hist-ticker {
