@@ -680,22 +680,24 @@
 
     renderLevels(t);
 
-    // Derive live price, trigger, and bias from watchlist cache
-    const wlRow   = watchlistDataCache.find(r => r.ticker === t);
-    const trigger  = wlRow && wlRow.trigger     ? parseFloat(wlRow.trigger)      : 0;
-    let livePrice  = wlRow && wlRow.current_price ? parseFloat(wlRow.current_price) : 0;
+    // Derive live price, trigger, bias, and day change from watchlist cache
+    const wlRow    = watchlistDataCache.find(r => r.ticker === t);
+    const trigger  = wlRow && wlRow.trigger       ? parseFloat(wlRow.trigger)       : 0;
+    let livePrice  = wlRow && wlRow.current_price  ? parseFloat(wlRow.current_price) : 0;
+    let changePct  = wlRow && wlRow.change_pct != null ? parseFloat(wlRow.change_pct) : null;
     const bias     = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
 
     // Live-price fallback: off-watchlist tickers or cache missing current_price
     if (!livePrice) {
       try {
         const q = await apiFetch(`/api/quote?ticker=${encodeURIComponent(t)}`);
-        if (q && q.last) livePrice = parseFloat(q.last) || 0;
+        if (q && q.last)       livePrice = parseFloat(q.last)       || 0;
+        if (q && q.change_pct != null) changePct = parseFloat(q.change_pct);
       } catch (_) { /* leave livePrice=0 — chain guard will show the honest message */ }
     }
 
     // Update price-ref strip — live stock price as headline, trigger as secondary label
-    buildPriceStrip(t, livePrice, trigger, null);
+    buildPriceStrip(t, livePrice, trigger, changePct);
 
     // Seed bias selector from watchlist direction
     const biasEl = document.getElementById('chainBias');
@@ -1047,13 +1049,15 @@
     const trigger = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
 
     if (wlRow) {
-      const livePrice = wlRow.current_price ? parseFloat(wlRow.current_price) : 0;
-      buildPriceStrip(t, livePrice, trigger, null);
+      const livePrice = wlRow.current_price  ? parseFloat(wlRow.current_price) : 0;
+      const changePct = wlRow.change_pct != null ? parseFloat(wlRow.change_pct) : null;
+      buildPriceStrip(t, livePrice, trigger, changePct);
     } else {
       try {
-        const q = await apiFetch(`/api/quote?ticker=${encodeURIComponent(t)}`);
-        const livePrice = q && q.last ? parseFloat(q.last) || 0 : 0;
-        buildPriceStrip(t, livePrice, 0, null);
+        const q         = await apiFetch(`/api/quote?ticker=${encodeURIComponent(t)}`);
+        const livePrice = q && q.last       ? parseFloat(q.last)       || 0  : 0;
+        const changePct = q && q.change_pct != null ? parseFloat(q.change_pct) : null;
+        buildPriceStrip(t, livePrice, 0, changePct);
       } catch (_) { /* leave the header as-is on fetch failure */ }
     }
   }
