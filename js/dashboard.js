@@ -843,21 +843,28 @@
       return;
     }
 
-    const rows = cell.value
+    const SECTOR_ABBREV = {
+      'Technology': 'Tech', 'Financials': 'Fin', 'Energy': 'Energy',
+      'Consumer Disc': 'Cons', 'Comm Services': 'Comm', 'Biotech': 'Bio',
+      'Information Technology': 'IT', 'Communication Services': 'Comm',
+      'Consumer Discretionary': 'Cons', 'Industrials': 'Ind',
+      'Materials': 'Mat', 'Utilities': 'Util', 'Real Estate': 'RE',
+      'Health Care': 'HC',
+    };
+    const chips = cell.value
       .map(s => {
         const chg = parseFloat(s.pct) || 0;
         const cls = s.bias === 'bull' ? 'bull' : s.bias === 'bear' ? 'bear' : '';
-        const barW = Math.min(Math.abs(chg) * 20, 100).toFixed(0);
         const sign = chg >= 0 ? '+' : '';
-        const name = String(s.name).replace(/^Information /i, 'IT ').replace(/^Communication /i, 'Comm ');
-        return `<div class="sector-bar-row">
-          <span class="sector-name">${name}</span>
-          <span class="sector-bar-track"><span class="sector-bar-fill ${cls}" style="width:${barW}%"></span></span>
-          <span class="sector-val ${cls}">${sign}${chg.toFixed(1)}%</span>
-        </div>`;
+        const raw = String(s.name).replace(/^Information /i, 'IT ').replace(/^Communication /i, 'Comm ');
+        const abbr = SECTOR_ABBREV[s.name] || raw;
+        return `<div class="sector-chip">`
+          + `<span class="sector-chip-name">${abbr}</span>`
+          + `<span class="sector-chip-val ${cls}">${sign}${chg.toFixed(1)}%</span>`
+          + `</div>`;
       })
       .join('');
-    bodyEl.innerHTML = rows;
+    bodyEl.innerHTML = `<div class="sector-strip">${chips}</div>`;
     if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : '% 1d';
     if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
   }

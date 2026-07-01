@@ -1858,44 +1858,37 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .flow-stat-label { color: var(--text-muted); min-width: 5rem; flex-shrink: 0; }
 .flow-sep        { color: var(--text-muted); }
 
-/* ── Sector bars ─────────────────────────────────────── */
-.sector-bar-row {
+/* ── Sector chips (3×2 grid) ─────────────────────────── */
+.sector-strip {
   display: flex;
-  align-items: center;
-  gap: 0.25rem;
-  font-size: 0.58rem;
-  line-height: 1.55;
+  flex-wrap: wrap;
+  width: 100%;
+  align-content: center;
 }
-.sector-name {
+.sector-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  flex: 0 0 33.333%;
+  box-sizing: border-box;
+  padding: 0.05rem 0.1rem;
+}
+.sector-chip-name {
+  font-size: 0.53rem;
   color: var(--text-muted);
-  min-width: 4.2rem;
-  flex-shrink: 0;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  max-width: 100%;
+  line-height: 1.35;
 }
-.sector-bar-track {
-  flex: 1;
-  height: 3px;
-  background: var(--border);
-  border-radius: 2px;
-  overflow: hidden;
-  min-width: 20px;
-}
-.sector-bar-fill {
-  height: 100%;
-  border-radius: 2px;
-  transition: width 0.3s ease;
-}
-.sector-bar-fill.bull { background: var(--accent); }
-.sector-bar-fill.bear { background: var(--danger); }
-.sector-val {
+.sector-chip-val {
   font-family: var(--font-display);
-  font-size: 0.6rem;
+  font-size: 0.59rem;
   font-weight: 700;
-  min-width: 3rem;
-  text-align: right;
-  flex-shrink: 0;
+  white-space: nowrap;
+  line-height: 1.35;
+  color: var(--text-secondary);
 }
-.sector-val.bull { color: var(--accent); }
-.sector-val.bear { color: var(--danger); }
+.sector-chip-val.bull { color: var(--accent); }
+.sector-chip-val.bear { color: var(--danger); }
