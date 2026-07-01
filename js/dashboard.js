@@ -845,8 +845,8 @@
 
     const rows = cell.value
       .map(s => {
-        const chg = parseFloat(String(s.change).replace('%', '')) || 0;
-        const cls = chg > 0 ? 'bull' : chg < 0 ? 'bear' : '';
+        const chg = parseFloat(s.pct) || 0;
+        const cls = s.bias === 'bull' ? 'bull' : s.bias === 'bear' ? 'bear' : '';
         const barW = Math.min(Math.abs(chg) * 20, 100).toFixed(0);
         const sign = chg >= 0 ? '+' : '';
         const name = String(s.name).replace(/^Information /i, 'IT ').replace(/^Communication /i, 'Comm ');
