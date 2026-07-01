@@ -589,6 +589,17 @@
         const zoneLabel = { armed: 'armed', at_risk: 'at risk', fired: 'fired', invalidated: 'invalid', deactivated: 'inactive' }[zoneKey] || zoneKey;
         const zoneCls   = 'wl-zone wl-zone-' + zoneKey.replace('_', '-');
 
+        // ATR reachability pill — WATCHING rows only, live-computed against current_price
+        let reachPillHtml = '';
+        const isWatching = (zoneKey === 'armed' || zoneKey === 'at_risk');
+        if (isWatching && r.daily_atr > 0 && r.current_price > 0 && r.trigger > 0) {
+          const atrDist = (r.trigger - r.current_price) / r.daily_atr;
+          if (atrDist > 0) {
+            const reachCls = atrDist <= 0.3 ? 'reach-green' : atrDist <= 0.5 ? 'reach-amber' : 'reach-red';
+            reachPillHtml = `<span class="reach-pill ${reachCls}">${atrDist.toFixed(2)} ATR</span>`;
+          }
+        }
+
         // Level gauge: for calls → low=vs, high=trigger; for puts → low=trigger, high=vs
         const low  = isLong ? (r.vs || 0) : (r.trigger || 0);
         const high = isLong ? (r.trigger || 0) : (r.vs || 0);
@@ -613,7 +624,7 @@
   <div class="wl-row-header">
     <span class="wl-ticker">${r.ticker || '?'}</span>
     <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
-    <span class="${zoneCls}">${zoneLabel}</span>
+    <span class="${zoneCls}">${zoneLabel}</span>${reachPillHtml}
   </div>${gaugeHtml}
 </div>`;
       }).join('');

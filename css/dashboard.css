@@ -358,6 +358,19 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .wl-zone-invalidated { background: rgba(75,85,99,0.2);     color: var(--text-muted); }
 .wl-zone-deactivated { background: rgba(75,85,99,0.12);    color: var(--text-muted); }
 
+/* ATR reachability pill */
+.reach-pill {
+  font-size: 0.55rem;
+  font-weight: 700;
+  padding: 0.08rem 0.28rem;
+  border-radius: 3px;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+.reach-green { background: rgba(74,222,128,0.15); color: #4ade80; }
+.reach-amber { background: rgba(245,158,11,0.18); color: var(--warning); }
+.reach-red   { background: rgba(239,68,68,0.18);  color: var(--danger); }
+
 /* Level gauge */
 .wl-gauge {
   display: flex;
