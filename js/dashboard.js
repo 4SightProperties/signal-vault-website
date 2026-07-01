@@ -1779,7 +1779,6 @@
   <span class="hist-cell hist-col-exit  hist-hdr">Exit</span>
   <span class="hist-cell hist-col-pnl   hist-hdr">P&amp;L</span>
   <span class="hist-cell hist-col-pct   hist-hdr">%</span>
-  <span class="hist-cell hist-col-wl    hist-hdr">W/L</span>
 </div>`;
 
     const rows = trades.map(t => {
@@ -1791,7 +1790,6 @@
       const userCell = showUser
         ? `<span class="hist-cell hist-col-user hist-uid hist-uid-link" data-uid="${t.user_id || ''}">${(t.user_id || '').slice(-6) || '—'}</span>`
         : '';
-      const wlLabel = t.outcome === 'win' ? 'W' : t.outcome === 'loss' ? 'L' : '~';
       return `
 <div class="hist-row">
   ${userCell}
@@ -1802,7 +1800,6 @@
   <span class="hist-cell hist-col-exit">${fmtPrice(t.exit_premium)}</span>
   <span class="hist-cell hist-col-pnl ${pnlCls}">${fmtPnl$(t.realized_pnl)}</span>
   <span class="hist-cell hist-col-pct ${pnlCls}">${fmtPct(t.pnl_pct)}</span>
-  <span class="hist-cell hist-col-wl"><span class="hist-outcome ${t.outcome}">${wlLabel}</span></span>
 </div>`;
     }).join('');
 

@@ -33,7 +33,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
 .dash-grid {
   display: grid;
-  grid-template-columns: 280px minmax(0, 1fr) 390px;
+  grid-template-columns: 280px minmax(0, 1fr) 360px;
   gap: 0;
   flex: 1;
   overflow: hidden;
