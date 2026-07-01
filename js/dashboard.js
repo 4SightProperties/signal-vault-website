@@ -1795,8 +1795,11 @@
       const userCell = showUser
         ? `<span class="hist-cell hist-col-user hist-uid hist-uid-link" data-uid="${t.user_id || ''}">${(t.user_id || '').slice(-6) || '—'}</span>`
         : '';
+      const posId    = t.position_id || '';
+      const extraCls = posId ? ' hist-row-clickable' : '';
+      const extraDat = posId ? ` data-position-id="${posId}" data-ticker="${t.ticker || ''}"` : '';
       return `
-<div class="hist-row">
+<div class="hist-row${extraCls}"${extraDat}>
   ${userCell}
   <span class="hist-cell hist-col-date">${dt}</span>
   <span class="hist-cell hist-col-tkr hist-ticker">${t.ticker || '?'}</span>
@@ -1816,6 +1819,13 @@
         });
       });
     }
+
+    histBody.querySelectorAll('.hist-row-clickable').forEach(row => {
+      row.addEventListener('click', e => {
+        if (e.target.classList.contains('hist-uid-link')) return;
+        openCardModal(row.dataset.positionId, row.dataset.ticker);
+      });
+    });
   }
 
   function setHistScope(scope, userId) {
@@ -1892,6 +1902,70 @@
   // Close modal when clicking the overlay backdrop
   document.getElementById('confirmModal').addEventListener('click', e => {
     if (e.target === document.getElementById('confirmModal')) closeModal();
+  });
+
+  // ── Trade card modal ──────────────────────────────────────────────────────
+
+  async function openCardModal(positionId, ticker) {
+    const modal = document.getElementById('cardModal');
+    const img   = document.getElementById('cardModalImg');
+    const err   = document.getElementById('cardModalErr');
+    const dl    = document.getElementById('cardModalDownload');
+    const spin  = document.getElementById('cardModalSpinner');
+
+    img.style.display   = 'none';
+    err.style.display   = 'none';
+    dl.style.display    = 'none';
+    spin.style.display  = 'block';
+    err.textContent     = '';
+    modal.style.display = 'flex';
+
+    try {
+      const resp = await fetch(
+        API + '/api/trade-card?position_id=' + encodeURIComponent(positionId),
+        { headers: authHeaders() },
+      );
+      if (!resp.ok) {
+        spin.style.display = 'none';
+        err.textContent    = resp.status === 403 ? 'Not available' : "Couldn't generate card";
+        err.style.display  = 'block';
+        return;
+      }
+      const blob = await resp.blob();
+      const url  = URL.createObjectURL(blob);
+      if (img._cardUrl) URL.revokeObjectURL(img._cardUrl);
+      img._cardUrl       = url;
+      img.src            = url;
+      spin.style.display = 'none';
+      img.style.display  = 'block';
+      dl.style.display   = 'inline-block';
+      dl.onclick = () => {
+        const a    = document.createElement('a');
+        a.href     = url;
+        a.download = (ticker || 'trade') + '_card.png';
+        a.click();
+      };
+    } catch {
+      spin.style.display = 'none';
+      err.textContent    = "Couldn't generate card";
+      err.style.display  = 'block';
+    }
+  }
+
+  function closeCardModal() {
+    const modal = document.getElementById('cardModal');
+    const img   = document.getElementById('cardModalImg');
+    modal.style.display = 'none';
+    if (img._cardUrl) {
+      URL.revokeObjectURL(img._cardUrl);
+      img._cardUrl = null;
+      img.src = '';
+    }
+  }
+
+  document.getElementById('cardModalClose').addEventListener('click', closeCardModal);
+  document.getElementById('cardModal').addEventListener('click', e => {
+    if (e.target === document.getElementById('cardModal')) closeCardModal();
   });
 
   // ── Panel health ──────────────────────────────────────────────────────────
