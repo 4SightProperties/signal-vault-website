@@ -33,6 +33,12 @@
   let focusedTicker      = null; // ticker currently loaded in center column
   let openConsoleId      = null; // position_id of the currently expanded management console
 
+  // GEX analysis modal state
+  let gexModalPos  = null;  // position object for the open GEX pop-out
+  let gexData      = null;  // fetched /api/gex result for the current modal ticker
+  let gexModalIv   = null;  // IV fetched once from /api/chain/quote for projection reuse
+  let gexProjTimer = null;  // debounce timer for projection fetch on target input
+
   // Chain state
   let chainTicker       = null;  // ticker for which chain is loaded
   let chainCurrentPrice = 0.0;   // stock price at chain load time
@@ -197,6 +203,7 @@
     setupConsoleHandlers();
     setupHistoryTab();
     setupModal();
+    setupGexModal();
     setupHealthPopover();
   }
 
@@ -346,6 +353,7 @@
       <span class="pos-level-value">${fmtRelTime(pos.opened_at)}</span>
     </div>
   </div>
+  ${isAdmin ? '<button class="pos-gex-btn" title="GEX terrain + option projection">GEX ▸</button>' : ''}
 </div>`;
     }).join('');
 
@@ -975,12 +983,8 @@
         v && v.pct != null ? `±${v.pct.toFixed(1)}%` : '—'
       );
 
-      // GEX Flip
-      _setAcCell('acGexFlip', 'acCellGexFlip', data.gex_flip, v => {
-        if (!v || v.gamma_flip == null) return 'N/A';
-        const envIcon = v.environment === 'positive' ? '▲' : v.environment === 'negative' ? '▼' : '';
-        return `$${parseFloat(v.gamma_flip).toFixed(2)} ${envIcon}`.trim();
-      });
+      // GEX stat row — fetch /api/gex separately for full terrain data; fire-and-forget
+      loadGexFlipCell(ticker).catch(() => {});
 
       // P/C Flow
       _setAcCell('acPcFlow', 'acCellPcFlow', data.pc_flow, v => {
@@ -1525,6 +1529,8 @@
     document.getElementById('positionsBody').addEventListener('click', e => {
       // Clicks inside the console itself should not re-toggle the card.
       if (e.target.closest('.pos-console')) return;
+      // GEX button handled by its own delegated listener in setupGexModal.
+      if (e.target.closest('.pos-gex-btn')) return;
       const card = e.target.closest('.pos-card');
       if (!card) return;
       const posId = card.dataset.posId;
@@ -2067,6 +2073,414 @@
         hidePopover();
       }
     });
+  }
+
+  // ── GEX analysis modal ────────────────────────────────────────────────────
+  // Surface 1: per-position pop-out with GEX terrain + projection calculator.
+  // Surface 2: bottom-strip GEX FLIP cell populated by loadGexFlipCell().
+
+  function setupGexModal() {
+    document.getElementById('gexModalClose').addEventListener('click', closeGexModal);
+    document.getElementById('gexModal').addEventListener('click', e => {
+      if (e.target === document.getElementById('gexModal')) closeGexModal();
+    });
+
+    // Level quick-fill buttons
+    ['gexBtnPutWall', 'gexBtnMagnet', 'gexBtnCallWall'].forEach(id => {
+      document.getElementById(id).addEventListener('click', () => {
+        if (!gexData || !gexData.available) return;
+        const level = id === 'gexBtnPutWall'  ? gexData.put_wall
+                    : id === 'gexBtnMagnet'    ? gexData.gamma_magnet
+                    :                             gexData.call_wall;
+        if (level == null) return;
+        const inp = document.getElementById('gexTargetInput');
+        if (inp) { inp.value = level.toFixed(2); scheduleGexProjection(); }
+      });
+    });
+
+    // Target input: debounced projection refresh
+    document.getElementById('gexTargetInput').addEventListener('input', scheduleGexProjection);
+
+    // Delegated click handler for GEX button on each pos-card
+    document.getElementById('positionsBody').addEventListener('click', e => {
+      const btn = e.target.closest('.pos-gex-btn');
+      if (!btn) return;
+      e.stopPropagation();
+      const card  = btn.closest('.pos-card');
+      if (!card) return;
+      const posId = card.dataset.posId;
+      const pos   = currentPositions.find(p => p.position_id === posId);
+      if (pos) openGexModal(pos);
+    });
+  }
+
+  function openGexModal(pos) {
+    gexModalPos = pos;
+    gexData     = null;
+    gexModalIv  = null;
+
+    // Header
+    const dir = pos.direction.toLowerCase().includes('put') ? 'put' : 'call';
+    const sym = pos.option_symbol || `${pos.ticker} $${pos.strike}${dir === 'call' ? 'C' : 'P'}`;
+    document.getElementById('gexModalTitle').textContent =
+      `${pos.ticker} ${sym.includes('$') ? '' : '— '}${pos.expiry || ''} · GEX Analysis`;
+
+    // Stat row — entry / current opt / DTE / P&L%
+    const dte      = _computeDteNum(pos.expiry);
+    const curOpt   = pos.current_price != null ? fmtPrice(pos.current_price) : '—';
+    const pnlPct   = pos.unrealized_pnl_pct != null ? fmtPct(pos.unrealized_pnl_pct) : '—';
+    const pnlCls   = pos.unrealized_pnl_pct == null ? '' : pos.unrealized_pnl_pct >= 0 ? 'positive' : 'negative';
+    document.getElementById('gexModalStats').innerHTML = `
+<div class="gex-stat-item">
+  <span class="gex-stat-label">Entry</span>
+  <span class="gex-stat-val">${fmtPrice(pos.entry_price)}</span>
+</div>
+<div class="gex-stat-item">
+  <span class="gex-stat-label">Current opt</span>
+  <span class="gex-stat-val">${curOpt}</span>
+</div>
+<div class="gex-stat-item">
+  <span class="gex-stat-label">DTE</span>
+  <span class="gex-stat-val">${dte >= 0 ? dte + 'd' : 'exp'}</span>
+</div>
+<div class="gex-stat-item">
+  <span class="gex-stat-label">P&amp;L</span>
+  <span class="gex-stat-val ${pnlCls}">${pnlPct}</span>
+</div>`;
+
+    // Pre-fill target with TP1 stock price if available
+    const inp = document.getElementById('gexTargetInput');
+    if (inp) inp.value = pos.tp1_stock_price ? parseFloat(pos.tp1_stock_price).toFixed(2) : '';
+
+    // Reset terrain + projection areas
+    document.getElementById('gexTerrain').innerHTML =
+      '<div class="gex-unavailable" style="padding:0.5rem 0">Loading GEX data…</div>';
+    document.getElementById('gexTerrainCaption').textContent = '';
+    document.getElementById('gexProjResult').innerHTML = '';
+    document.getElementById('gexProjVerdict').style.display = 'none';
+    document.getElementById('gexProjFootnote').textContent = '';
+    _updateGexLevelBtns(null);  // disable level buttons until data arrives
+
+    document.getElementById('gexModal').style.display = 'flex';
+    _loadGexModalData(pos.ticker);
+  }
+
+  function closeGexModal() {
+    document.getElementById('gexModal').style.display = 'none';
+    if (gexProjTimer) { clearTimeout(gexProjTimer); gexProjTimer = null; }
+    gexModalPos = null;
+    gexData     = null;
+    gexModalIv  = null;
+  }
+
+  async function _loadGexModalData(ticker) {
+    try {
+      const gex = await apiFetch(`/api/gex?ticker=${encodeURIComponent(ticker)}`);
+      gexData = gex;
+      _renderGexTerrain(gex);
+      _updateGexLevelBtns(gex);
+      // Fetch IV from chain/quote in parallel so the projection is ready when user sets a target
+      await _fetchGexModalIv(ticker, gex);
+      // If target already set (from TP1 prefill), kick off projection now
+      const inp = document.getElementById('gexTargetInput');
+      if (inp && parseFloat(inp.value) > 0) scheduleGexProjection();
+    } catch (_) {
+      document.getElementById('gexTerrain').innerHTML =
+        '<div class="gex-unavailable">GEX data unavailable</div>';
+    }
+  }
+
+  async function _fetchGexModalIv(ticker, gex) {
+    const pos = gexModalPos;
+    if (!pos) return;
+    const spot = gex && gex.available && gex.spot ? gex.spot : null;
+    if (!spot) return;
+    const optionType = pos.direction.toLowerCase().includes('put') ? 'put' : 'call';
+    try {
+      const q = await apiFetch(
+        `/api/chain/quote?ticker=${encodeURIComponent(ticker)}&strike=${pos.strike}` +
+        `&expiry=${encodeURIComponent(pos.expiry)}&option_type=${optionType}&price=${spot}`
+      );
+      gexModalIv = (q && q.iv && q.iv > 0) ? q.iv : null;
+    } catch (_) {
+      gexModalIv = null;
+    }
+  }
+
+  function _renderGexTerrain(gex) {
+    const terrainEl = document.getElementById('gexTerrain');
+    const captionEl = document.getElementById('gexTerrainCaption');
+
+    if (!gex || !gex.available) {
+      terrainEl.innerHTML = '<div class="gex-unavailable">GEX unavailable</div>';
+      captionEl.textContent = '';
+      return;
+    }
+
+    const spot     = gex.spot;
+    const callWall = gex.call_wall;
+    const putWall  = gex.put_wall;
+    const magnet   = gex.gamma_magnet;
+
+    const validLevels = [spot, callWall, putWall, magnet].filter(v => v != null);
+    if (!validLevels.length) {
+      terrainEl.innerHTML = '<div class="gex-unavailable">GEX unavailable — no structural levels</div>';
+      captionEl.textContent = '';
+      return;
+    }
+
+    const minL = Math.min(...validLevels);
+    const maxL = Math.max(...validLevels);
+    const rawSpan = maxL - minL;
+    const pad  = rawSpan > 0 ? rawSpan * 0.12 : minL * 0.05;
+    const lo   = minL - pad;
+    const hi   = maxL + pad;
+    const span = hi - lo;
+
+    const W = 460, TY = 36;
+    function xOf(price) { return ((price - lo) / span) * W; }
+
+    const parts = [];
+    const BARRIER_PX = Math.max(10, W * 0.024);
+
+    // Track line
+    parts.push(`<line x1="4" y1="${TY}" x2="${W - 4}" y2="${TY}" stroke="var(--border-bright)" stroke-width="1.5" stroke-linecap="round"/>`);
+
+    // Barrier zones
+    if (putWall != null) {
+      const px = xOf(putWall);
+      parts.push(`<rect x="${(px - BARRIER_PX).toFixed(1)}" y="${TY - 18}" width="${(BARRIER_PX * 2).toFixed(1)}" height="36" fill="rgba(239,68,68,0.12)" rx="2"/>`);
+      parts.push(`<line x1="${px.toFixed(1)}" y1="${TY - 20}" x2="${px.toFixed(1)}" y2="${TY + 20}" stroke="var(--danger)" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.75"/>`);
+    }
+    if (callWall != null) {
+      const cx = xOf(callWall);
+      parts.push(`<rect x="${(cx - BARRIER_PX).toFixed(1)}" y="${TY - 18}" width="${(BARRIER_PX * 2).toFixed(1)}" height="36" fill="rgba(74,222,128,0.10)" rx="2"/>`);
+      parts.push(`<line x1="${cx.toFixed(1)}" y1="${TY - 20}" x2="${cx.toFixed(1)}" y2="${TY + 20}" stroke="var(--accent)" stroke-width="1.5" stroke-dasharray="3,2" opacity="0.75"/>`);
+    }
+
+    // Magnet: dashed amber line (no barrier zone; NOT gamma_flip)
+    if (magnet != null) {
+      const mx = xOf(magnet);
+      parts.push(`<line x1="${mx.toFixed(1)}" y1="${TY - 14}" x2="${mx.toFixed(1)}" y2="${TY + 14}" stroke="var(--warning)" stroke-width="1.5" stroke-dasharray="4,3"/>`);
+    }
+
+    // Spot: filled circle + downward arrow above track
+    if (spot != null) {
+      const sx = xOf(spot);
+      parts.push(`<polygon points="${sx - 5},${TY - 26} ${sx + 5},${TY - 26} ${sx},${TY - 12}" fill="var(--text-primary)"/>`);
+      parts.push(`<circle cx="${sx.toFixed(1)}" cy="${TY}" r="4" fill="var(--text-primary)" stroke="var(--bg-card)" stroke-width="1.5"/>`);
+    }
+
+    // Labels below track — collision detection by staggering y
+    const LY1 = TY + 30, LY2 = TY + 44;
+    const lbls = [];
+    if (putWall  != null) lbls.push({ x: xOf(putWall),  text: `PW $${putWall.toFixed(0)}`,   fill: 'var(--danger)',  y: LY1 });
+    if (magnet   != null) lbls.push({ x: xOf(magnet),   text: `MAG $${magnet.toFixed(0)}`,   fill: 'var(--warning)', y: LY1 });
+    if (callWall != null) lbls.push({ x: xOf(callWall), text: `CW $${callWall.toFixed(0)}`,  fill: 'var(--accent)',  y: LY1 });
+    lbls.sort((a, b) => a.x - b.x);
+    // Stagger: if two adjacent labels would overlap (approx 7px per char), shift second down
+    for (let i = 1; i < lbls.length; i++) {
+      const prev = lbls[i - 1];
+      const curr = lbls[i];
+      const prevRight = prev.x + prev.text.length * 3.8;
+      if (curr.y === prev.y && curr.x < prevRight + 5) curr.y = LY2;
+    }
+    lbls.forEach(l => {
+      parts.push(`<text x="${l.x.toFixed(1)}" y="${l.y}" text-anchor="middle" font-size="9" fill="${l.fill}" font-family="monospace">${l.text}</text>`);
+    });
+
+    // Spot label above (clamped to SVG bounds)
+    if (spot != null) {
+      const sx  = xOf(spot);
+      const ax  = Math.max(28, Math.min(W - 28, sx));
+      const hasBelowLbl = lbls.some(l => l.y === LY2);
+      parts.push(`<text x="${ax.toFixed(1)}" y="${TY - 32}" text-anchor="middle" font-size="9" fill="var(--text-primary)" font-weight="bold" font-family="monospace">$${spot.toFixed(2)}</text>`);
+    }
+
+    const svgH = (lbls.some(l => l.y === LY2) ? LY2 : LY1) + 10;
+    terrainEl.innerHTML =
+      `<svg viewBox="0 0 ${W} ${svgH}" preserveAspectRatio="xMidYMid meet" width="100%" style="overflow:visible;display:block">` +
+      parts.join('') + `</svg>`;
+
+    // Caption: regime + flip note + net gamma
+    const capParts = [];
+    const regime = gex.regime;
+    if (regime === 'POS-gamma')      capParts.push('POS-γ (pin)');
+    else if (regime === 'NEG-gamma') capParts.push('NEG-γ (amplify)');
+    capParts.push(gex.gamma_flip != null ? `flip $${gex.gamma_flip.toFixed(2)}` : 'flip n/a (guarded)');
+    if (gex.net_gex_dir != null) {
+      const ng = gex.net_gex_dir;
+      capParts.push(`net γ ${ng >= 0 ? '+' : ''}${ng.toFixed(1)}/1%`);
+    }
+    captionEl.textContent = capParts.join(' · ');
+  }
+
+  function _updateGexLevelBtns(gex) {
+    const avail = gex && gex.available;
+    const pwBtn  = document.getElementById('gexBtnPutWall');
+    const mgBtn  = document.getElementById('gexBtnMagnet');
+    const cwBtn  = document.getElementById('gexBtnCallWall');
+    if (!pwBtn) return;
+
+    pwBtn.disabled  = !avail || gex.put_wall     == null;
+    mgBtn.disabled  = !avail || gex.gamma_magnet == null;
+    cwBtn.disabled  = !avail || gex.call_wall    == null;
+
+    if (avail) {
+      if (gex.put_wall     != null) pwBtn.textContent = `PW $${gex.put_wall.toFixed(0)}`;
+      if (gex.gamma_magnet != null) mgBtn.textContent = `MAG $${gex.gamma_magnet.toFixed(0)}`;
+      if (gex.call_wall    != null) cwBtn.textContent = `CW $${gex.call_wall.toFixed(0)}`;
+    }
+  }
+
+  function scheduleGexProjection() {
+    if (gexProjTimer) clearTimeout(gexProjTimer);
+    gexProjTimer = setTimeout(() => {
+      const inp = document.getElementById('gexTargetInput');
+      const val = inp && parseFloat(inp.value);
+      if (val && val > 0) _loadGexProjection(val);
+    }, 600);
+  }
+
+  async function _loadGexProjection(target) {
+    const pos    = gexModalPos;
+    const wrapEl = document.getElementById('gexProjResult');
+    const verdEl = document.getElementById('gexProjVerdict');
+    const noteEl = document.getElementById('gexProjFootnote');
+    if (!pos || !wrapEl) return;
+
+    if (!gexModalIv || gexModalIv <= 0) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.35rem 0;font-size:0.68rem">IV unavailable — chain data needed (market hours)</div>';
+      if (verdEl) verdEl.style.display = 'none';
+      if (noteEl) noteEl.textContent = '';
+      return;
+    }
+
+    wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.35rem 0;font-size:0.68rem">Loading projection…</div>';
+    if (verdEl) verdEl.style.display = 'none';
+
+    const dte        = _computeDteNum(pos.expiry);
+    const optionType = pos.direction.toLowerCase().includes('put') ? 'put' : 'call';
+
+    try {
+      const params = new URLSearchParams({
+        ticker:      pos.ticker,
+        strike:      pos.strike,
+        expiry:      pos.expiry,
+        target,
+        option_type: optionType,
+        iv:          gexModalIv,
+        premium:     pos.entry_price,
+        dte,
+        iv_crush:    0,
+      });
+      const proj = await apiFetch(`/api/projection?${params}`);
+      _renderGexProjection(proj, wrapEl, verdEl, noteEl);
+    } catch (err) {
+      const msg = String(err).includes('403') ? 'Admin access required' : 'Projection unavailable';
+      wrapEl.innerHTML = `<div class="dash-placeholder" style="padding:0.35rem 0;font-size:0.68rem">${msg}</div>`;
+    }
+  }
+
+  function _renderGexProjection(proj, wrapEl, verdEl, noteEl) {
+    const rows = proj.rows || [];
+    if (!rows.length) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.35rem 0;font-size:0.68rem">No projection data</div>';
+      return;
+    }
+    const rowsHtml = rows.map(r => {
+      const gainCls = r.gain_pct >= 0 ? 'positive' : 'negative';
+      const dolSign = r.dollars  >= 0 ? '+' : '';
+      return `<div class="proj-strip-cell">
+  <div class="proj-strip-when">${r.horizon_label}</div>
+  <div class="proj-strip-val">$${r.value.toFixed(2)}</div>
+  <div class="proj-strip-gain ${gainCls}">${r.gain_pct >= 0 ? '+' : ''}${r.gain_pct.toFixed(1)}%</div>
+  <div class="proj-strip-dol ${gainCls}">${dolSign}$${Math.abs(Math.round(r.dollars))}</div>
+</div>`;
+    }).join('');
+    wrapEl.innerHTML = `<div class="cockpit-proj-strip">${rowsHtml}</div>`;
+
+    if (verdEl) {
+      const verdictMap = {
+        worthless_at_expiry: { cls: 'verdict-red',   icon: '✗', text: 'Worthless at expiry — expires OTM even if stock hits target' },
+        theta_dominated:     { cls: 'verdict-amber',  icon: '⚡', text: 'Theta dominated — most value lost by expiry; move must happen soon' },
+        survives_slow_move:  { cls: 'verdict-green',  icon: '✓', text: 'Survives slow move — retains value at target even near expiry' },
+      };
+      const v = verdictMap[proj.verdict] || { cls: '', icon: '?', text: proj.verdict };
+      verdEl.innerHTML  = `${v.icon} ${v.text}`;
+      verdEl.className  = `cockpit-verdict ${v.cls}`;
+      verdEl.style.display = '';
+    }
+    if (noteEl) {
+      noteEl.textContent =
+        `Black-Scholes reprice at target · IV ${(gexModalIv * 100).toFixed(1)}% · analysis only, not an order`;
+    }
+  }
+
+  function _computeDteNum(expiry) {
+    if (!expiry) return 0;
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const exp  = new Date(expiry + 'T00:00:00');
+    return Math.max(0, Math.round((exp - today) / 86_400_000));
+  }
+
+  // ── Analytics strip GEX stat row ──────────────────────────────────────────
+  // Replaces the single gamma_flip value with a compact 2-line terrain summary.
+
+  async function loadGexFlipCell(ticker) {
+    const valueEl = document.getElementById('acGexFlip');
+    const cellEl  = document.getElementById('acCellGexFlip');
+    if (!valueEl) return;
+
+    if (!ticker) {
+      valueEl.textContent = '—';
+      valueEl.style.color = 'var(--text-muted)';
+      if (cellEl) cellEl.classList.remove('stale');
+      return;
+    }
+
+    try {
+      const gex = await apiFetch(`/api/gex?ticker=${encodeURIComponent(ticker)}`);
+
+      if (!gex || !gex.available) {
+        valueEl.textContent = '—';
+        valueEl.style.color = 'var(--text-muted)';
+        if (cellEl) cellEl.classList.remove('stale');
+        return;
+      }
+
+      const regime = gex.regime;
+      const regimeCls  = regime === 'POS-gamma' ? 'pos' : regime === 'NEG-gamma' ? 'neg' : '';
+      const regimeText = regime === 'POS-gamma' ? 'POS-γ pin'
+                       : regime === 'NEG-gamma' ? 'NEG-γ amplify'
+                       : '—';
+
+      const fmtLvl = (price, distPct) => {
+        if (price == null) return '—';
+        const d = distPct != null
+          ? `(${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%)`
+          : '';
+        return `$${price.toFixed(0)}${d}`;
+      };
+
+      const pw  = fmtLvl(gex.put_wall,     gex.dist_to_put_wall_pct);
+      const mag = fmtLvl(gex.gamma_magnet, gex.dist_to_magnet_pct);
+      const cw  = fmtLvl(gex.call_wall,    gex.dist_to_call_wall_pct);
+      const ng  = gex.net_gex_dir != null
+        ? (gex.net_gex_dir >= 0 ? '+' : '') + gex.net_gex_dir.toFixed(1)
+        : '—';
+
+      valueEl.style.color = '';
+      valueEl.innerHTML =
+        `<span class="gex-ac-regime gex-ac-regime-${regimeCls}">${regimeText}</span>` +
+        `<span class="gex-ac-levels">PW ${pw} · MG ${mag} · CW ${cw} · γ${ng}</span>`;
+      if (cellEl) cellEl.classList.toggle('stale', !!gex.stale_exposure);
+
+    } catch (_) {
+      valueEl.textContent = '—';
+      valueEl.style.color = 'var(--text-muted)';
+    }
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────

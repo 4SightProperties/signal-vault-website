@@ -317,6 +317,38 @@
   </div>
 </div>
 
+<!-- ── GEX Analysis Modal (per-position pop-out) ───────────────────────────── -->
+<div id="gexModal" class="gex-modal-overlay" style="display:none">
+  <div class="gex-modal-card">
+    <div class="gex-modal-hd">
+      <span class="gex-modal-title" id="gexModalTitle">GEX Analysis</span>
+      <button class="gex-modal-close" id="gexModalClose">&#x2715;</button>
+    </div>
+    <!-- 4-stat row: entry premium / current premium / DTE / P&L% -->
+    <div class="gex-modal-stats" id="gexModalStats"></div>
+    <!-- GEX Terrain — number line with zones -->
+    <div class="gex-modal-section">
+      <div class="gex-section-label">GEX Terrain</div>
+      <div id="gexTerrain"></div>
+      <div class="gex-terrain-caption" id="gexTerrainCaption"></div>
+    </div>
+    <!-- Option Projection Calculator — reuses /api/projection (existing BS engine) -->
+    <div class="gex-modal-section">
+      <div class="gex-section-label">Option Projection</div>
+      <div class="gex-proj-controls">
+        <input type="number" id="gexTargetInput" class="gex-target-input"
+               placeholder="Target stock price…" step="0.5" min="0">
+        <button class="gex-level-btn" id="gexBtnPutWall" disabled>Put Wall</button>
+        <button class="gex-level-btn" id="gexBtnMagnet" disabled>Magnet</button>
+        <button class="gex-level-btn" id="gexBtnCallWall" disabled>Call Wall</button>
+      </div>
+      <div id="gexProjResult"></div>
+      <div class="cockpit-verdict" id="gexProjVerdict" style="display:none"></div>
+      <div class="gex-proj-footnote" id="gexProjFootnote"></div>
+    </div>
+  </div>
+</div>
+
 <script src="js/config.js"></script>
 <script src="js/discord-auth.js"></script>
 <script src="js/dashboard.js"></script>

@@ -1938,3 +1938,140 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
 .hist-row-clickable { cursor: pointer; }
 .hist-row-clickable:hover { background: rgba(255,255,255,0.04); }
+
+/* ════════════════════════════════════════════════════════════════
+   GEX Analysis Modal — position pop-out + analytics strip stat row
+   ════════════════════════════════════════════════════════════════ */
+
+/* ── Modal overlay + card ────────────────────────────────────── */
+.gex-modal-overlay {
+  position: fixed; inset: 0; z-index: 500;
+  background: rgba(0,0,0,0.75);
+  display: flex; align-items: center; justify-content: center;
+}
+.gex-modal-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius);
+  width: min(540px, 94vw);
+  max-height: 88vh;
+  overflow-y: auto;
+  padding: 1rem 1.1rem 1.25rem;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+  box-shadow: 0 8px 40px rgba(0,0,0,0.55);
+}
+.gex-modal-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  margin-bottom: 0.8rem;
+}
+.gex-modal-title {
+  font-family: var(--font-display);
+  font-size: 0.82rem; font-weight: 700;
+  color: var(--text-primary); letter-spacing: 0.04em;
+}
+.gex-modal-close {
+  background: none; border: none; cursor: pointer;
+  color: var(--text-muted); font-size: 0.9rem;
+  padding: 0.1rem 0.4rem; border-radius: var(--radius-sm);
+  transition: color 0.15s;
+  line-height: 1;
+}
+.gex-modal-close:hover { color: var(--text-primary); }
+
+/* ── 4-stat row: entry / current opt / DTE / P&L% ───────────── */
+.gex-modal-stats {
+  display: grid; grid-template-columns: repeat(4, 1fr);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  margin-bottom: 0.85rem; overflow: hidden;
+}
+.gex-stat-item {
+  display: flex; flex-direction: column;
+  padding: 0.32rem 0.5rem;
+  border-right: 1px solid var(--border);
+}
+.gex-stat-item:last-child { border-right: none; }
+.gex-stat-label {
+  font-size: 0.54rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.07em; color: var(--text-muted); margin-bottom: 0.08rem;
+}
+.gex-stat-val {
+  font-family: var(--font-display);
+  font-size: 0.7rem; font-weight: 700; color: var(--text-secondary);
+}
+.gex-stat-val.positive { color: var(--accent); }
+.gex-stat-val.negative { color: var(--danger); }
+
+/* ── Section divider + label ─────────────────────────────────── */
+.gex-modal-section { margin-bottom: 0.95rem; }
+.gex-section-label {
+  font-size: 0.58rem; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.1em; color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  padding-bottom: 0.2rem; margin-bottom: 0.5rem;
+}
+
+/* ── GEX Terrain (SVG) ───────────────────────────────────────── */
+#gexTerrain { overflow: visible; }
+.gex-unavailable {
+  font-size: 0.72rem; color: var(--text-muted);
+  padding: 0.7rem 0; text-align: center;
+}
+.gex-terrain-caption {
+  font-size: 0.6rem; color: var(--text-muted);
+  margin-top: 0.35rem; line-height: 1.45;
+}
+
+/* ── Projection calculator ───────────────────────────────────── */
+.gex-proj-controls {
+  display: flex; align-items: center; flex-wrap: wrap;
+  gap: 0.35rem; margin-bottom: 0.5rem;
+}
+.gex-target-input {
+  flex: 1; min-width: 90px; max-width: 130px;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-primary); font-size: 0.72rem; font-family: var(--font-display);
+  padding: 0.28rem 0.5rem;
+}
+.gex-target-input:focus { outline: none; border-color: var(--accent); }
+.gex-level-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-muted); font-size: 0.62rem; font-weight: 600;
+  padding: 0.26rem 0.5rem; cursor: pointer; white-space: nowrap;
+  transition: border-color 0.15s, color 0.15s;
+}
+.gex-level-btn:not(:disabled):hover { border-color: var(--accent); color: var(--accent); }
+.gex-level-btn:disabled { opacity: 0.35; cursor: default; }
+.gex-proj-footnote {
+  font-size: 0.58rem; color: var(--text-muted);
+  margin-top: 0.5rem; line-height: 1.45; font-style: italic;
+}
+
+/* ── GEX analysis button on pos-card ────────────────────────── */
+.pos-gex-btn {
+  display: block; width: 100%; margin-top: 0.38rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  color: var(--text-muted); font-size: 0.62rem; font-weight: 600;
+  padding: 0.22rem 0; cursor: pointer; text-align: center;
+  letter-spacing: 0.05em;
+  transition: border-color 0.15s, color 0.15s;
+}
+.pos-gex-btn:hover { border-color: var(--border-bright); color: var(--text-secondary); }
+
+/* ── Analytics strip GEX stat row ───────────────────────────── */
+/* Allow the GEX cell to expand beyond the fixed 40px strip height */
+.cmd-analytics-strip { height: auto; min-height: 40px; }
+.gex-ac-regime {
+  display: block; font-size: 0.6rem; font-weight: 700; line-height: 1.25;
+}
+.gex-ac-regime-pos { color: var(--accent); }
+.gex-ac-regime-neg { color: var(--danger); }
+.gex-ac-levels {
+  display: block; font-size: 0.52rem; font-weight: 500;
+  color: var(--text-muted); font-family: var(--font-display);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  margin-top: 0.04rem;
+}
