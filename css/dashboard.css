@@ -451,6 +451,15 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-size: 0.72rem;
   margin-left: 0.15rem;
 }
+.sig-saty {
+  font-size: 0.68rem;
+  margin-left: 0.25rem;
+  vertical-align: middle;
+  cursor: default;
+}
+.sig-saty.above-call { color: var(--accent); }
+.sig-saty.below-put  { color: var(--danger); }
+.sig-saty.neutral    { color: var(--text-muted); }
 
 /* ── Utility ─────────────────────────────────────────────────── */
 .dash-placeholder {

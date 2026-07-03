@@ -535,10 +535,21 @@
           const score     = s.conviction_score || 0;
           const scorePct  = Math.min(100, score * 10);
           const setupStr  = s.setup_type ? `<span class="sig-setup">${s.setup_type}</span>` : '';
+          // Saty ATR badge — fire-time snapshot; updated live by _updateSatyBadges()
+          const satyCall  = s.saty_call_trigger != null ? String(s.saty_call_trigger) : '';
+          const satyPut   = s.saty_put_trigger  != null ? String(s.saty_put_trigger)  : '';
+          const satySt    = s.saty_cross_state  || '';
+          let satyHtml = '';
+          if (satyCall) {
+            const scls  = satySt === 'above_call' ? 'above-call' : satySt === 'below_put' ? 'below-put' : 'neutral';
+            const stxt  = satySt === 'above_call' ? '▲' : satySt === 'below_put' ? '▼' : '—';
+            const stitle = `Saty ATR (at fire-time): call $${parseFloat(satyCall).toFixed(2)} / put $${parseFloat(satyPut).toFixed(2)}`;
+            satyHtml = `<span class="sig-saty ${scls}" title="${stitle}">${stxt}</span>`;
+          }
           return `
-<div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}">
+<div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}"${satyCall ? ` data-saty-call="${satyCall}" data-saty-put="${satyPut}"` : ''}>
   <div class="sig-card-top">
-    <span class="sig-ticker">${dirStr} ${s.ticker || '?'}${starHtml}</span>
+    <span class="sig-ticker">${dirStr} ${s.ticker || '?'}${starHtml}${satyHtml}</span>
     <span class="sig-tier ${tier}">${tier || '—'}</span>
   </div>
   <div class="sig-score-row">
@@ -557,6 +568,8 @@
       }
 
       body.innerHTML = bannerHtml + cardsHtml;
+      // Seed live Saty badges from watchlist cache immediately after render
+      _updateSatyBadges();
     } catch (err) {
       meta.textContent = 'error';
       body.innerHTML   = '<div class="dash-placeholder">Could not load signals</div>';
@@ -639,11 +652,48 @@
 
       // If we already have a ticker focused, refresh its levels and header price.
       if (focusedTicker) { renderLevels(focusedTicker); _refreshFocusedPriceStrip(); }
+      // Update Saty badges on signal cards using fresh live prices
+      _updateSatyBadges();
 
     } catch (err) {
       meta.textContent = 'error';
       body.innerHTML   = '<div class="dash-placeholder">Could not load watchlist</div>';
     }
+  }
+
+  // ── Saty ATR live badge updater ────────────────────────────────────────────
+  // Runs after each watchlist load (10s tick). For each signal card that has
+  // data-saty-call/put attributes, looks up the current price from the watchlist
+  // cache and recomputes the ▲/▼/— badge in-place without re-rendering the card.
+  function _updateSatyBadges() {
+    document.querySelectorAll('.sig-card[data-saty-call]').forEach(card => {
+      const ticker   = card.dataset.ticker;
+      const callTrig = parseFloat(card.dataset.satyCall) || 0;
+      const putTrig  = parseFloat(card.dataset.satyPut)  || 0;
+      if (!callTrig || !putTrig || !ticker) return;
+
+      const wlRow     = (watchlistDataCache || []).find(r => r.ticker === ticker);
+      const livePrice = wlRow && wlRow.current_price ? parseFloat(wlRow.current_price) : 0;
+      if (!livePrice) return;
+
+      const badge = card.querySelector('.sig-saty');
+      if (!badge) return;
+
+      let cls, txt, lbl;
+      if (livePrice > callTrig) {
+        cls = 'above-call'; txt = '▲';
+        lbl = `▲ above call $${callTrig.toFixed(2)} | put $${putTrig.toFixed(2)} · live $${livePrice.toFixed(2)}`;
+      } else if (livePrice < putTrig) {
+        cls = 'below-put'; txt = '▼';
+        lbl = `▼ below put $${putTrig.toFixed(2)} | call $${callTrig.toFixed(2)} · live $${livePrice.toFixed(2)}`;
+      } else {
+        cls = 'neutral'; txt = '—';
+        lbl = `— neutral · call $${callTrig.toFixed(2)} / put $${putTrig.toFixed(2)} · live $${livePrice.toFixed(2)}`;
+      }
+      badge.className = `sig-saty ${cls}`;
+      badge.textContent = txt;
+      badge.title = lbl;
+    });
   }
 
   // ── Center panel — chart, levels, chain ───────────────────────────────────
