@@ -1110,6 +1110,17 @@
         };
       }
     } catch (_) { /* degrade to no news */ }
+
+    // Wire collapse toggle — safe to re-assign onclick each poll cycle.
+    const mktColBtn = document.getElementById('newsMarketCollapseBtn');
+    if (mktColBtn) {
+      mktColBtn.onclick = () => {
+        const cell = document.getElementById('newsCellMarket');
+        if (!cell) return;
+        const isCollapsed = cell.classList.toggle('news-panel-collapsed');
+        mktColBtn.textContent = isCollapsed ? '▸' : '▾';
+      };
+    }
   }
 
   async function loadTickerNews(ticker) {
@@ -1135,6 +1146,17 @@
     } catch (_) {
       // Quiet failure — panel stays hidden so the focus view is uncluttered.
       return;
+    }
+
+    // Reset to expanded and wire collapse — runs after every successful ticker load.
+    const collapseBtn = document.getElementById('tickerNewsCollapseBtn');
+    if (collapseBtn) {
+      panel.classList.remove('news-panel-collapsed');
+      collapseBtn.textContent = '▾';
+      collapseBtn.onclick = () => {
+        const isCollapsed = panel.classList.toggle('news-panel-collapsed');
+        collapseBtn.textContent = isCollapsed ? '▸' : '▾';
+      };
     }
 
     if (digBtn) {

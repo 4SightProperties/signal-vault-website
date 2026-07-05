@@ -1801,7 +1801,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── Bottom flow row — 3 equal cells ────────────────────────── */
 .cmd-bottom-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr 1fr;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   height: 94px;
@@ -2111,9 +2111,14 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   line-height: 1.35; margin-top: 0.1rem;
 }
 
-/* Market news bottom cell — scrollable body */
+/* Market news bottom cell — scrollable body standing inside the 94px row */
 .news-market-body {
-  overflow-y: auto; scrollbar-width: thin;
+  flex: 1;
+  display: block;           /* override .cmd-bottom-body flex so list stacks vertically */
+  overflow-y: auto;
+  overflow-x: hidden;
+  scrollbar-width: thin;
+  padding: 0;               /* rows carry their own padding */
 }
 .news-more-toggle {
   padding: 0.25rem 0.5rem;
@@ -2122,6 +2127,24 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .news-more-toggle:hover { color: var(--text-secondary); }
 .news-more-body { display: none; }
+
+/* Market panel header right group (meta + collapse btn) */
+.news-market-hd-right {
+  display: flex; align-items: center; gap: 0.45rem;
+}
+
+/* Shared collapse toggle button — both panels */
+.news-collapse-btn {
+  font-size: 0.7rem; line-height: 1;
+  background: none; border: none; color: var(--text-muted);
+  cursor: pointer; padding: 0; flex-shrink: 0;
+}
+.news-collapse-btn:hover { color: var(--text-secondary); }
+
+/* Collapsed state — hide body/freshness, leave header visible */
+.news-panel-collapsed .news-market-body,
+.news-panel-collapsed .ticker-news-body,
+.news-panel-collapsed .ticker-news-freshness { display: none; }
 
 /* Per-ticker news panel — center column, below analytics strip */
 .ticker-news-panel {
@@ -2136,6 +2159,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   padding: 0.28rem 0.55rem;
   border-bottom: 1px solid rgba(148,163,184,0.08);
 }
+.ticker-news-hd-right {
+  display: flex; align-items: center; gap: 0.5rem;
+}
 .ticker-news-title {
   font-size: 0.62rem; font-weight: 600; color: var(--text-secondary);
   text-transform: uppercase; letter-spacing: 0.06em;
@@ -2143,6 +2169,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .ticker-news-dig {
   font-size: 0.55rem; color: var(--text-muted); background: none;
   border: none; cursor: pointer; padding: 0;
+  border-right: 1px solid rgba(148,163,184,0.15); padding-right: 0.5rem;
 }
 .ticker-news-dig:hover { color: var(--text-secondary); }
 .ticker-news-dig:disabled { opacity: 0.5; cursor: default; }
