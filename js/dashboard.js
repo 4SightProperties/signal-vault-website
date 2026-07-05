@@ -26,6 +26,7 @@
   let flowTimer        = null;
   let panelHealthTimer = null;
   let positionsTimer   = null;
+  let newsTimer        = null;
 
   // Center panel + console state
   let currentPositions   = [];   // last positions array from WS — used by console delegation
@@ -198,6 +199,8 @@
     flowTimer        = setInterval(loadFlow,        90_000);
     panelHealthTimer = setInterval(loadPanelHealth, 90_000);
     positionsTimer   = setInterval(loadPositions,    5_000);
+    loadMarketNews();
+    newsTimer        = setInterval(loadMarketNews,  10 * 60_000);
 
     setupCenterPanel();
     setupConsoleHandlers();
@@ -779,6 +782,7 @@
     loadChainExpirations(t, livePrice || trigger);
     loadMtf(t);
     loadAnalytics(t);
+    loadTickerNews(t);
   }
 
   // ── MTF cloud alignment — fetches /api/mtf for the focused ticker ────────
@@ -1044,6 +1048,114 @@
       });
     } catch (_) {
       // Silent fail — cells stay as reset (···)
+    }
+  }
+
+  // ── News helpers ──────────────────────────────────────────────────────────
+
+  function fmtNewsAge(isoStr) {
+    if (!isoStr) return '?';
+    try {
+      const diff = (Date.now() - new Date(isoStr).getTime()) / 1000;
+      if (diff <    60) return Math.round(diff)        + 's';
+      if (diff <  3600) return Math.round(diff / 60)   + 'm';
+      if (diff < 86400) return Math.round(diff / 3600) + 'h';
+      return Math.round(diff / 86400) + 'd';
+    } catch (_) { return '?'; }
+  }
+
+  function _newsRow(it) {
+    const age = fmtNewsAge(it.created_at);
+    const src = it.source
+      ? `<span class="news-row-src">${it.source}</span>`
+      : '';
+    const hl = (it.headline || '')
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+    const inner =
+      `${src}<span class="news-row-age">${age}</span>` +
+      `<span class="news-row-hl">${hl}</span>`;
+    // Belt-and-suspenders: only allow http/https even though the backend already
+    // requires startswith("http"). Rejects javascript:, data:, etc. from third-party text.
+    const safeUrl = it.url && /^https?:\/\//i.test(it.url) ? it.url : null;
+    if (safeUrl) {
+      return `<a class="news-row" href="${safeUrl}" target="_blank" rel="noopener noreferrer">${inner}</a>`;
+    }
+    return `<div class="news-row">${inner}</div>`;
+  }
+
+  async function loadMarketNews() {
+    const body = document.getElementById('newsMarketBody');
+    if (!body) return;
+    try {
+      const data  = await apiFetch('/api/news/market');
+      const items = (data && data.items) || [];
+      if (!items.length) {
+        body.innerHTML = '<span style="font-size:0.62rem;color:var(--text-muted)">no major headlines</span>';
+        return;
+      }
+      const visible = items.slice(0, 8);
+      const rest    = items.slice(8);
+      let html = visible.map(_newsRow).join('');
+      if (rest.length) {
+        html +=
+          `<div class="news-more-toggle" id="newsMoreToggle">+ ${rest.length} more…</div>` +
+          `<div id="newsMoreBody" class="news-more-body">${rest.map(_newsRow).join('')}</div>`;
+      }
+      body.innerHTML = html;
+      const toggle = document.getElementById('newsMoreToggle');
+      if (toggle) {
+        toggle.onclick = () => {
+          document.getElementById('newsMoreBody').style.display = 'block';
+          toggle.style.display = 'none';
+        };
+      }
+    } catch (_) { /* degrade to no news */ }
+  }
+
+  async function loadTickerNews(ticker) {
+    const panel  = document.getElementById('tickerNewsPanel');
+    const body   = document.getElementById('tickerNewsBody');
+    const title  = document.getElementById('tickerNewsTitle');
+    const digBtn = document.getElementById('tickerNewsDigBtn');
+    if (!panel || !body) return;
+
+    if (title) title.textContent = `News — ${ticker}`;
+    panel.style.display = 'none';
+    body.innerHTML = '';
+
+    try {
+      const data  = await apiFetch(`/api/news/ticker/${encodeURIComponent(ticker)}`);
+      const items = (data && data.items) || [];
+      if (items.length) {
+        body.innerHTML = items.map(_newsRow).join('');
+      } else {
+        body.innerHTML = '<span style="font-size:0.62rem;color:var(--text-muted)">no recent major news</span>';
+      }
+      panel.style.display = 'block';
+    } catch (_) {
+      // Quiet failure — panel stays hidden so the focus view is uncluttered.
+      return;
+    }
+
+    if (digBtn) {
+      digBtn.onclick = async () => {
+        const prev = digBtn.textContent;
+        digBtn.textContent = 'searching…';
+        digBtn.disabled = true;
+        try {
+          const d    = await apiFetch(`/api/news/search/${encodeURIComponent(ticker)}`);
+          const its  = (d && d.items) || [];
+          if (its.length) {
+            body.innerHTML = its.map(_newsRow).join('');
+            panel.style.display = 'block';
+          } else {
+            body.insertAdjacentHTML('beforeend',
+              '<div style="font-size:0.62rem;color:var(--text-muted);margin-top:4px">no additional results</div>');
+          }
+        } catch (_) {}
+        digBtn.textContent = prev;
+        digBtn.disabled = false;
+      };
     }
   }
 

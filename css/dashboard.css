@@ -2084,3 +2084,74 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   margin-top: 0.04rem;
 }
+
+/* ── News panels ─────────────────────────────────────────────────── */
+
+/* Shared news row (link or div) */
+.news-row {
+  display: block; padding: 0.28rem 0.5rem;
+  border-bottom: 1px solid rgba(148,163,184,0.06);
+  text-decoration: none; color: inherit;
+  cursor: default;
+}
+.news-row[href] { cursor: pointer; }
+.news-row[href]:hover { background: rgba(148,163,184,0.05); }
+
+.news-row-src {
+  display: inline-block; font-size: 0.52rem; font-weight: 600;
+  color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.05em;
+  margin-right: 0.35rem;
+}
+.news-row-age {
+  display: inline-block; font-size: 0.52rem; font-family: var(--font-display);
+  color: var(--text-muted); margin-right: 0.45rem;
+}
+.news-row-hl {
+  display: block; font-size: 0.62rem; color: var(--text-primary);
+  line-height: 1.35; margin-top: 0.1rem;
+}
+
+/* Market news bottom cell — scrollable body */
+.news-market-body {
+  overflow-y: auto; scrollbar-width: thin;
+}
+.news-more-toggle {
+  padding: 0.25rem 0.5rem;
+  font-size: 0.58rem; color: var(--text-muted);
+  cursor: pointer;
+}
+.news-more-toggle:hover { color: var(--text-secondary); }
+.news-more-body { display: none; }
+
+/* Per-ticker news panel — center column, below analytics strip */
+.ticker-news-panel {
+  margin: 0.35rem 0 0;
+  border: 1px solid rgba(148,163,184,0.10);
+  border-radius: var(--radius-sm);
+  background: var(--bg-surface);
+  overflow: hidden;
+}
+.ticker-news-hd {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 0.28rem 0.55rem;
+  border-bottom: 1px solid rgba(148,163,184,0.08);
+}
+.ticker-news-title {
+  font-size: 0.62rem; font-weight: 600; color: var(--text-secondary);
+  text-transform: uppercase; letter-spacing: 0.06em;
+}
+.ticker-news-dig {
+  font-size: 0.55rem; color: var(--text-muted); background: none;
+  border: none; cursor: pointer; padding: 0;
+}
+.ticker-news-dig:hover { color: var(--text-secondary); }
+.ticker-news-dig:disabled { opacity: 0.5; cursor: default; }
+.ticker-news-body {
+  max-height: 9rem; overflow-y: auto; scrollbar-width: thin;
+}
+.ticker-news-freshness {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.5rem; color: rgba(100,116,139,0.6);
+  border-top: 1px solid rgba(148,163,184,0.06);
+  font-style: italic;
+}
