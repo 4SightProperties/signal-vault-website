@@ -39,6 +39,7 @@
   let gexData      = null;  // fetched /api/gex result for the current modal ticker
   let gexModalIv   = null;  // IV fetched once from /api/chain/quote for projection reuse
   let gexProjTimer = null;  // debounce timer for projection fetch on target input
+  let gexLastProj  = null;  // last projection result, drives exit-section auto-fill
 
   // Chain state
   let chainTicker       = null;  // ticker for which chain is loaded
@@ -2285,6 +2286,20 @@
     // Target input: debounced projection refresh
     document.getElementById('gexTargetInput').addEventListener('input', scheduleGexProjection);
 
+    // Exit bracket section
+    ['gexExitBracket', 'gexExitLimit'].forEach(id => {
+      document.getElementById(id).addEventListener('change', () => {
+        const isBracket = document.getElementById('gexExitBracket').checked;
+        const stopRow   = document.getElementById('gexExitStopRow');
+        if (stopRow) stopRow.style.display = isBracket ? '' : 'none';
+        _renderExitSummary();
+      });
+    });
+    ['gexExitTp', 'gexExitStop'].forEach(id => {
+      document.getElementById(id).addEventListener('input', _renderExitSummary);
+    });
+    document.getElementById('gexExitStageBtn').addEventListener('click', _stageExitBracket);
+
     // Delegated click handler for GEX button on each pos-card
     document.getElementById('positionsBody').addEventListener('click', e => {
       const btn = e.target.closest('.pos-gex-btn');
@@ -2345,6 +2360,15 @@
     document.getElementById('gexProjFootnote').textContent = '';
     _updateGexLevelBtns(null);  // disable level buttons until data arrives
 
+    // Reset estimator outputs + exit section
+    gexLastProj = null;
+    document.getElementById('gexEstOptPrice').innerHTML   = '';
+    document.getElementById('gexTargetRef').textContent   = '';
+    document.getElementById('gexExitSection').style.display = 'none';
+    document.getElementById('gexExitResult').textContent  = '';
+    document.getElementById('gexExitTp').value            = '';
+    document.getElementById('gexExitStop').value          = '';
+
     document.getElementById('gexModal').style.display = 'flex';
     _loadGexModalData(pos.ticker);
   }
@@ -2355,6 +2379,7 @@
     gexModalPos = null;
     gexData     = null;
     gexModalIv  = null;
+    gexLastProj = null;
   }
 
   async function _loadGexModalData(ticker) {
@@ -2363,6 +2388,11 @@
       gexData = gex;
       _renderGexTerrain(gex);
       _updateGexLevelBtns(gex);
+      // Seed spot reference in target input once GEX data arrives
+      const spotRefEl = document.getElementById('gexTargetRef');
+      if (spotRefEl && gex && gex.available && gex.spot) {
+        spotRefEl.textContent = `spot $${gex.spot.toFixed(2)}`;
+      }
       // Fetch IV from chain/quote in parallel so the projection is ready when user sets a target
       await _fetchGexModalIv(ticker, gex);
       // If target already set (from TP1 prefill), kick off projection now
@@ -2567,22 +2597,61 @@
   }
 
   function _renderGexProjection(proj, wrapEl, verdEl, noteEl) {
+    gexLastProj = proj;
     const rows = proj.rows || [];
     if (!rows.length) {
       wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.35rem 0;font-size:0.68rem">No projection data</div>';
       return;
     }
+
+    // ── Estimated option price beside the target input ────────────────────
+    const todayRow = rows[0];  // "today (0d)": move happens now, full DTE
+    const pos      = gexModalPos;
+    const estEl    = document.getElementById('gexEstOptPrice');
+    if (estEl && todayRow) {
+      const estPrice = todayRow.value;
+      const curOpt   = pos && pos.current_price != null ? pos.current_price : (pos ? pos.entry_price : 0);
+      const delta    = curOpt > 0 ? estPrice - curOpt : null;
+      const deltaPct = (delta != null && curOpt > 0) ? (delta / curOpt * 100) : null;
+      const deltaCls = delta == null ? '' : delta >= 0 ? 'positive' : 'negative';
+      const deltaStr = delta != null
+        ? `<span class="gex-est-opt-delta ${deltaCls}">${delta >= 0 ? '+' : ''}$${Math.abs(delta).toFixed(2)} (${delta >= 0 ? '+' : ''}${deltaPct.toFixed(1)}% vs current)</span>`
+        : '';
+      estEl.innerHTML =
+        `<div class="gex-est-opt-label">Est. option</div>` +
+        `<div class="gex-est-opt-val">$${estPrice.toFixed(2)}</div>` +
+        deltaStr;
+    }
+
+    // ── Target reference: stock delta vs current spot ─────────────────────
+    const refEl = document.getElementById('gexTargetRef');
+    const spot  = gexData && gexData.spot;
+    if (refEl && spot && proj.target) {
+      const d   = proj.target - spot;
+      const dp  = spot > 0 ? (d / spot * 100) : 0;
+      const sgn = d >= 0 ? '+' : '';
+      refEl.textContent =
+        `${sgn}$${Math.abs(d).toFixed(2)} (${sgn}${dp.toFixed(1)}%) vs spot $${spot.toFixed(2)}`;
+    }
+
+    // ── Time-horizon strip ────────────────────────────────────────────────
+    // Shows how the estimate degrades over time if target is reached later.
+    // Gain/loss columns are vs entry price (premium param sent to API).
+    const labelMap = { 'today (0d)': 'now', '1d': '1d', '2d': '2d', 'at expiry': 'expiry' };
     const rowsHtml = rows.map(r => {
       const gainCls = r.gain_pct >= 0 ? 'positive' : 'negative';
       const dolSign = r.dollars  >= 0 ? '+' : '';
+      const lbl     = labelMap[r.horizon_label] || r.horizon_label;
       return `<div class="proj-strip-cell">
-  <div class="proj-strip-when">${r.horizon_label}</div>
+  <div class="proj-strip-when">${lbl}</div>
   <div class="proj-strip-val">$${r.value.toFixed(2)}</div>
   <div class="proj-strip-gain ${gainCls}">${r.gain_pct >= 0 ? '+' : ''}${r.gain_pct.toFixed(1)}%</div>
   <div class="proj-strip-dol ${gainCls}">${dolSign}$${Math.abs(Math.round(r.dollars))}</div>
 </div>`;
     }).join('');
-    wrapEl.innerHTML = `<div class="cockpit-proj-strip">${rowsHtml}</div>`;
+    wrapEl.innerHTML =
+      `<div class="gex-strip-hdr">Estimate if target reached at each horizon — theta erodes value whether or not the stock moves</div>` +
+      `<div class="cockpit-proj-strip">${rowsHtml}</div>`;
 
     if (verdEl) {
       const verdictMap = {
@@ -2596,8 +2665,116 @@
       verdEl.style.display = '';
     }
     if (noteEl) {
+      const tgtStr = proj.target != null ? `$${proj.target.toFixed(2)}` : '—';
       noteEl.textContent =
-        `Black-Scholes reprice at target · IV ${(gexModalIv * 100).toFixed(1)}% · analysis only, not an order`;
+        `Black-Scholes reprice at ${tgtStr} · IV ${(gexModalIv * 100).toFixed(1)}% · ` +
+        `gain/loss vs entry · analysis only, not an order`;
+    }
+
+    _updateExitSection(proj);
+  }
+
+  function _updateExitSection(proj) {
+    const pos    = gexModalPos;
+    const sectEl = document.getElementById('gexExitSection');
+    if (!pos || !sectEl) return;
+
+    sectEl.style.display = '';
+
+    // Auto-fill TP from the "now (0d)" estimated option price
+    const tpInput = document.getElementById('gexExitTp');
+    if (tpInput && proj.rows && proj.rows.length > 0) {
+      tpInput.value = proj.rows[0].value.toFixed(2);
+    }
+    const hintEl = document.getElementById('gexExitTpHint');
+    if (hintEl) {
+      const tgtInput = document.getElementById('gexTargetInput');
+      const tgtVal   = tgtInput ? parseFloat(tgtInput.value) : 0;
+      hintEl.textContent = tgtVal > 0 ? `from $${tgtVal.toFixed(2)} stock target` : '';
+    }
+
+    _renderExitSummary();
+  }
+
+  function _renderExitSummary() {
+    const pos       = gexModalPos;
+    const summaryEl = document.getElementById('gexExitSummary');
+    const stageBtn  = document.getElementById('gexExitStageBtn');
+    if (!pos || !summaryEl) return;
+
+    const bracketEl = document.getElementById('gexExitBracket');
+    const isBracket = bracketEl ? bracketEl.checked : true;
+    const tp        = parseFloat((document.getElementById('gexExitTp')   || {}).value) || 0;
+    const stop      = parseFloat((document.getElementById('gexExitStop') || {}).value) || 0;
+    const qty       = pos.contracts_open || 1;
+    const sym       = pos.option_symbol || `${pos.ticker} $${pos.strike}`;
+
+    const valid = tp > 0 && (!isBracket || (stop > 0 && stop < tp));
+
+    if (!valid) {
+      summaryEl.textContent = isBracket
+        ? 'Enter take-profit and stop prices — stop must be below take-profit'
+        : 'Enter a take-profit price';
+      if (stageBtn) stageBtn.disabled = true;
+      return;
+    }
+
+    summaryEl.textContent = isBracket
+      ? `${qty}× ${sym} · GTC · exit at $${tp.toFixed(2)} or stop $${stop.toFixed(2)} — first fill cancels the other`
+      : `${qty}× ${sym} · GTC limit · exit at $${tp.toFixed(2)}`;
+
+    if (stageBtn) stageBtn.disabled = false;
+  }
+
+  async function _stageExitBracket() {
+    const pos      = gexModalPos;
+    const resultEl = document.getElementById('gexExitResult');
+    const stageBtn = document.getElementById('gexExitStageBtn');
+    if (!pos || !resultEl) return;
+
+    if (stageBtn) stageBtn.disabled = true;
+    resultEl.className   = 'gex-exit-result';
+    resultEl.textContent = 'Staging…';
+
+    const bracketEl = document.getElementById('gexExitBracket');
+    const isBracket = bracketEl ? bracketEl.checked : true;
+    const tp   = parseFloat((document.getElementById('gexExitTp')   || {}).value) || 0;
+    const stop = parseFloat((document.getElementById('gexExitStop') || {}).value) || 0;
+    const qty  = pos.contracts_open || 1;
+
+    try {
+      const resp = await apiFetch('/api/trading/exit-bracket', {
+        method:  'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body:    JSON.stringify({
+          position_id:   pos.position_id,
+          option_symbol: pos.option_symbol,
+          contracts:     qty,
+          tp_price:      tp,
+          stop_price:    stop,
+          bracket:       isBracket,
+        }),
+      });
+      if (resp.dry_run) {
+        resultEl.className = 'gex-exit-result dry-run';
+        resultEl.innerHTML = `<strong>DRY-RUN</strong> (no order placed)<br>${resp.summary}`;
+      } else if (resp.order_id) {
+        resultEl.className   = 'gex-exit-result success';
+        resultEl.textContent = `✓ Staged — order ${resp.order_id}: ${resp.summary}`;
+      } else {
+        resultEl.className   = 'gex-exit-result error';
+        resultEl.textContent = `Error: ${resp.detail || 'Unknown error'}`;
+      }
+    } catch (err) {
+      const e   = String(err);
+      const msg = e.includes('503') ? 'Kill-switch is OFF — web trading disabled'
+                : e.includes('403') ? 'Admin access required'
+                : e.includes('422') ? 'Invalid order parameters — check prices'
+                : e;
+      resultEl.className   = 'gex-exit-result error';
+      resultEl.textContent = msg;
+    } finally {
+      if (stageBtn) stageBtn.disabled = false;
     }
   }
 

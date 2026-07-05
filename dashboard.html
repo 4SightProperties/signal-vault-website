@@ -358,12 +358,18 @@
       <div id="gexTerrain"></div>
       <div class="gex-terrain-caption" id="gexTerrainCaption"></div>
     </div>
-    <!-- Option Projection Calculator — reuses /api/projection (existing BS engine) -->
+    <!-- Stock → Option Estimator — reuses /api/projection (Black-Scholes engine) -->
     <div class="gex-modal-section">
-      <div class="gex-section-label">Option Projection</div>
+      <div class="gex-section-label">Stock → Option Estimator</div>
+      <div class="gex-estimator-row">
+        <div class="gex-target-col">
+          <input type="number" id="gexTargetInput" class="gex-target-input"
+                 placeholder="Anticipated stock price…" step="0.5" min="0">
+          <div class="gex-target-ref" id="gexTargetRef"></div>
+        </div>
+        <div class="gex-est-opt" id="gexEstOptPrice"></div>
+      </div>
       <div class="gex-proj-controls">
-        <input type="number" id="gexTargetInput" class="gex-target-input"
-               placeholder="Target stock price…" step="0.5" min="0">
         <button class="gex-level-btn" id="gexBtnPutWall" disabled>Put Wall</button>
         <button class="gex-level-btn" id="gexBtnMagnet" disabled>Magnet</button>
         <button class="gex-level-btn" id="gexBtnCallWall" disabled>Call Wall</button>
@@ -371,6 +377,43 @@
       <div id="gexProjResult"></div>
       <div class="cockpit-verdict" id="gexProjVerdict" style="display:none"></div>
       <div class="gex-proj-footnote" id="gexProjFootnote"></div>
+    </div>
+    <!-- Exit Order — admin-gated; EXIT_ORDERS_ENABLED=False on backend until sandbox validated -->
+    <div class="gex-modal-section" id="gexExitSection" style="display:none">
+      <div class="gex-section-label">
+        Exit Order
+        <span class="gex-dryrun-badge" id="gexExitDryrunBadge">DRY-RUN · orders disabled</span>
+      </div>
+      <div class="gex-exit-toggle-row">
+        <label class="gex-toggle-label">
+          <input type="radio" name="gexExitMode" id="gexExitBracket" value="bracket" checked>
+          Bracket (OCO)
+        </label>
+        <label class="gex-toggle-label">
+          <input type="radio" name="gexExitMode" id="gexExitLimit" value="limit">
+          Limit only
+        </label>
+      </div>
+      <div class="gex-exit-fields">
+        <div class="gex-exit-field-row">
+          <label class="gex-exit-label">Take-profit (sell-to-close limit)</label>
+          <div class="gex-exit-input-wrap">
+            <span class="gex-exit-prefix">$</span>
+            <input type="number" id="gexExitTp" class="gex-exit-input" step="0.05" min="0.01" placeholder="0.00">
+          </div>
+          <div class="gex-exit-field-hint" id="gexExitTpHint"></div>
+        </div>
+        <div class="gex-exit-field-row" id="gexExitStopRow">
+          <label class="gex-exit-label">Stop (structural floor)</label>
+          <div class="gex-exit-input-wrap">
+            <span class="gex-exit-prefix">$</span>
+            <input type="number" id="gexExitStop" class="gex-exit-input" step="0.05" min="0.01" placeholder="0.00">
+          </div>
+        </div>
+      </div>
+      <div class="gex-exit-summary" id="gexExitSummary"></div>
+      <button class="gex-exit-stage-btn" id="gexExitStageBtn" disabled>Stage Exit Order</button>
+      <div class="gex-exit-result" id="gexExitResult"></div>
     </div>
   </div>
 </div>
