@@ -1303,6 +1303,60 @@
   <span class="dash-level-cell-label">${c.label}</span>
   <span class="dash-level-cell-value${c.cls ? ' ' + c.cls : ''}">${c.value}</span>
 </div>`).join('');
+
+    // Structural levels — async fetch, graceful degradation
+    const structEl = document.getElementById('levelsStructural');
+    if (structEl) {
+      structEl.innerHTML = '';
+      const px = row.current_price || null;
+      const url = `/api/sr_levels?ticker=${encodeURIComponent(ticker)}${px ? '&price=' + px : ''}`;
+      apiFetch(url).then(d => {
+        if (!d || !d.available) return;
+        const fmtN = v => v != null ? '$' + Number(v).toFixed(2) : null;
+        const rows = [];
+
+        // Row 1: reference levels (ATH/52WH, ATL/52WL, PDH2/PDL2)
+        const refItems = [];
+        if (d.ath != null)      refItems.push({ label: 'ATH',   val: fmtN(d.ath),   cls: 'overhead' });
+        else if (d.high_52w != null) refItems.push({ label: '52WH', val: fmtN(d.high_52w), cls: 'overhead' });
+        if (d.atl != null)      refItems.push({ label: 'ATL',   val: fmtN(d.atl),   cls: 'underfoot' });
+        else if (d.low_52w != null)  refItems.push({ label: '52WL', val: fmtN(d.low_52w),  cls: 'underfoot' });
+        if (d.pdh2 != null)     refItems.push({ label: 'PDH2',  val: fmtN(d.pdh2),  cls: 'overhead' });
+        if (d.pdl2 != null)     refItems.push({ label: 'PDL2',  val: fmtN(d.pdl2),  cls: 'underfoot' });
+        if (refItems.length) rows.push({ title: 'Reference', items: refItems });
+
+        // Row 2: round numbers
+        const roundItems = [];
+        if (d.round_above != null) roundItems.push({ label: 'R↑', val: fmtN(d.round_above), cls: 'round' });
+        if (d.round_below != null) roundItems.push({ label: 'R↓', val: fmtN(d.round_below), cls: 'round' });
+        if (roundItems.length) rows.push({ title: 'Round', items: roundItems });
+
+        // Row 3: overhead/underfoot swings
+        const direction = (row.direction || '').toLowerCase();
+        const isBear = direction.startsWith('bear');
+        const swings = isBear
+          ? (d.underfoot_swings || []).slice(0, 3)
+          : (d.overhead_swings  || []).slice(0, 3);
+        const swingLabel = isBear ? 'UF' : 'OH';
+        const swingCls   = isBear ? 'underfoot' : 'overhead';
+        if (swings.length) {
+          rows.push({
+            title: isBear ? 'Underfoot' : 'Overhead',
+            items: swings.map((s, i) => ({ label: swingLabel + (i + 1), val: fmtN(s), cls: swingCls })),
+          });
+        }
+
+        if (!rows.length) return;
+        structEl.innerHTML = `<div class="sl-section-title">Structure</div>` +
+          rows.map(r =>
+            `<div class="sl-row">` +
+            r.items.map(it =>
+              `<span><span class="sl-label">${it.label} </span><span class="sl-val ${it.cls}">${it.val}</span></span>`
+            ).join('') +
+            `</div>`
+          ).join('');
+      }).catch(() => {});
+    }
   }
 
   // ── Chain — Part 2 ─────────────────────────────────────────────────────────

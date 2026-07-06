@@ -756,6 +756,40 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .dash-level-cell-value.bull { color: var(--accent); }
 .dash-level-cell-value.bear { color: var(--danger); }
 
+/* Structural levels section (below watchlist grid) */
+.dash-structural-levels {
+  padding: 0.25rem 0.5rem 0.3rem;
+  border-top: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+.sl-section-title {
+  font-size: 0.55rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  margin-bottom: 0.1rem;
+}
+.sl-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.25rem 0.5rem;
+  font-size: 0.65rem;
+  line-height: 1.4;
+}
+.sl-label {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+}
+.sl-val {
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.sl-val.overhead { color: var(--danger); }
+.sl-val.underfoot { color: var(--accent); }
+.sl-val.round { color: var(--text-secondary, var(--text-muted)); }
+
 /* Chain panel — grows to fill remaining center space after strip + levels */
 .dash-chain-panel {
   flex: 1;
