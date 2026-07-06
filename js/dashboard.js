@@ -321,13 +321,15 @@
   </div>`;
 
       const trailArmed = pos.trail_armed;
+      const isClosingPending = pos.state === 'closing_pending';
 
       return `
-<div class="pos-card" data-pos-id="${pos.position_id || ''}">
+<div class="pos-card${isClosingPending ? ' closing-pending' : ''}" data-pos-id="${pos.position_id || ''}">
   <div class="pos-card-top">
     <span class="pos-ticker">${pos.ticker || '?'}</span>
     <span class="pos-direction ${dir}">${dirLabel}</span>
   </div>
+  ${isClosingPending ? '<div class="pos-closing-pending-banner">Close pending — order placed, fill unconfirmed. GTC stop active.</div>' : ''}
   <div class="pos-contract">
     $${pos.strike} · ${pos.expiry || ''} · ${pos.contracts_open}x · entry ${fmtPrice(pos.entry_price)}
   </div>
@@ -1823,17 +1825,28 @@
           okLabel: `Close ${cts}x at market`,
           okClass: 'danger',
           onOk: async (setStatus) => {
+            const orderType  = document.getElementById('closeOrderType')?.value || 'market';
+            const limitPrice = parseFloat(document.getElementById('closeLimitPrice')?.value || '0');
+            const stopPrice  = parseFloat(document.getElementById('closeStopPrice')?.value  || '0');
             setStatus('Placing close order…');
             try {
-              const result = await apiPost('/api/v1/orders/close', { position_id: posId });
+              const payload = { position_id: posId, order_type: orderType };
+              if (orderType === 'limit' || orderType === 'bracket') payload.limit_price = limitPrice;
+              if (orderType === 'bracket') payload.stop_price = stopPrice;
+              const result = await apiPost('/api/v1/orders/close', payload);
               if (result.status === 'closed') {
                 setStatus(`Closed @ $${result.fill_price.toFixed(2)}`, 'ok');
               } else if (result.status === 'closing_pending') {
-                setStatus('Close order placed — fill pending. Verify in Tradier.', 'ok');
+                const msg = result.limit_price != null
+                  ? `Close resting at $${result.limit_price.toFixed(2)} — unfilled, GTC active. Reconciling.`
+                  : 'Close pending — order placed, fill unconfirmed. GTC stop active. Reconciling.';
+                setStatus(msg, 'warn');
+              } else if (result.status === 'dry_run') {
+                setStatus('Limit close not sent — order staging disabled (EXIT_ORDERS_ENABLED=False).', 'warn');
               } else if (result.status === 'pdt_protected') {
                 setStatus('PDT protected — close manually in your broker.', 'error');
               } else {
-                setStatus(`Status: ${result.status || JSON.stringify(result)}`, 'ok');
+                setStatus(`Close failed — position still open, GTC intact. (${result.status || 'unknown'})`, 'error');
               }
             } catch (err) {
               const detail = err.data && err.data.detail ? err.data.detail : err.message;
@@ -1910,9 +1923,10 @@
             data-pos-id="${pos.position_id}"
             data-contracts="${cts}"
             data-symbol="${sym}"
-            data-entry="${entry}">
+            data-entry="${entry}"
+            ${pos.state === 'closing_pending' ? 'disabled title="Close already pending — double-close blocked"' : ''}>
       Exit ${cts}x
-      <span class="pos-preview-tag">real · gated by kill-switch</span>
+      <span class="pos-preview-tag">${pos.state === 'closing_pending' ? 'close pending — blocked' : 'real · gated by kill-switch'}</span>
     </button>
   </div>
 </div>`;

@@ -962,6 +962,20 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .pos-card           { cursor: pointer; user-select: none; }
 .pos-card.expanded  { border-color: var(--blue); }
 
+.pos-card.closing-pending       { border-color: var(--warning); background: rgba(245,158,11,0.05); }
+.pos-card.closing-pending:hover { border-color: var(--warning); }
+
+.pos-closing-pending-banner {
+  font-size: 0.68rem;
+  color: var(--warning);
+  background: rgba(245,158,11,0.1);
+  border: 1px solid rgba(245,158,11,0.25);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.45rem;
+  margin-bottom: 0.35rem;
+  letter-spacing: 0.02em;
+}
+
 /* Console expands inline at the bottom of the card */
 .pos-console {
   margin-top: 0.5rem;
