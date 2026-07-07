@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>LIMIT LADDER — SIGNAL VAULT</title>
+  <link href="https://fonts.googleapis.com/css2?family=Share+Tech+Mono&family=Rajdhani:wght@400;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg:        #080c10;
+      --bg2:       #0d1117;
+      --bg3:       #161b22;
+      --border:    #21262d;
+      --bull:      #00ff88;
+      --bear:      #ff3355;
+      --amber:     #f0a500;
+      --neutral:   #8899aa;
+      --accent:    #00aaff;
+      --text:      #cdd9e5;
+      --text2:     #8899aa;
+      --font-mono: 'Share Tech Mono', monospace;
+      --font-ui:   'Rajdhani', sans-serif;
+    }
+    * { margin:0; padding:0; box-sizing:border-box; }
+    body { background:var(--bg); color:var(--text); font-family:var(--font-ui); min-height:100vh; }
+
+    /* auth overlay */
+    .auth-overlay {
+      position:fixed; inset:0; background:rgba(8,12,16,.97);
+      display:flex; align-items:center; justify-content:center; z-index:999;
+    }
+    .auth-box {
+      background:var(--bg2); border:1px solid var(--border);
+      padding:40px 48px; text-align:center; min-width:320px;
+    }
+    .auth-logo { font-family:var(--font-mono); font-size:18px; color:var(--accent); letter-spacing:4px; margin-bottom:24px; }
+    .auth-note { font-family:var(--font-mono); font-size:12px; color:var(--neutral); margin-bottom:20px; min-height:16px; }
+    .auth-btn {
+      background:transparent; border:1px solid var(--accent); color:var(--accent);
+      font-family:var(--font-mono); font-size:13px; letter-spacing:2px;
+      padding:10px 24px; cursor:pointer;
+    }
+    .auth-btn:hover { background:rgba(0,170,255,.1); }
+
+    /* header */
+    .ld-header {
+      display:flex; align-items:center; justify-content:space-between; gap:16px;
+      padding:12px 24px; background:var(--bg2); border-bottom:1px solid var(--border);
+      position:sticky; top:0; z-index:100;
+    }
+    .ld-back {
+      font-family:var(--font-mono); font-size:11px; color:var(--text2);
+      text-decoration:none; letter-spacing:1px; white-space:nowrap; flex-shrink:0;
+    }
+    .ld-back:hover { color:var(--accent); }
+    .ld-contract {
+      font-family:var(--font-mono); font-size:14px; color:var(--accent);
+      letter-spacing:2px; flex:1; text-align:center;
+    }
+    .ld-live-strip { display:flex; align-items:center; gap:20px; flex-shrink:0; }
+    .ld-live-item { display:flex; flex-direction:column; align-items:flex-end; }
+    .ld-live-lbl { font-family:var(--font-mono); font-size:9px; color:var(--text2); letter-spacing:1px; }
+    .ld-live-val { font-family:var(--font-mono); font-size:13px; color:var(--text); }
+    .ld-live-val.bull { color:var(--bull); }
+    .ld-live-val.bear { color:var(--bear); }
+
+    /* context bar */
+    .ld-ctx {
+      display:flex; align-items:stretch; padding:0 24px;
+      background:var(--bg3); border-bottom:1px solid var(--border);
+      font-family:var(--font-mono); font-size:12px; overflow-x:auto;
+    }
+    .ctx-cell {
+      display:flex; flex-direction:column; justify-content:center;
+      padding:10px 20px; border-right:1px solid var(--border); white-space:nowrap; gap:3px;
+    }
+    .ctx-lbl { font-size:9px; color:var(--text2); letter-spacing:2px; text-transform:uppercase; }
+    .ctx-val { font-size:13px; color:var(--text); }
+    .ctx-val.muted { color:var(--neutral); }
+    .iv-warn { font-size:11px; color:var(--bear); letter-spacing:1px; }
+
+    /* catalyst toggle */
+    .cat-cell {
+      display:flex; align-items:center; gap:8px;
+      padding:10px 20px; border-right:1px solid var(--border);
+    }
+    .cat-lbl {
+      display:flex; align-items:center; gap:8px; cursor:pointer;
+      font-size:11px; color:var(--amber); letter-spacing:1px; white-space:nowrap;
+    }
+    .cat-lbl input[type=checkbox] { display:none; }
+    .cat-pill {
+      width:34px; height:18px; background:var(--bg); border:1px solid var(--border);
+      border-radius:9px; position:relative; transition:background .2s;
+    }
+    .cat-pill::after {
+      content:''; position:absolute; top:2px; left:2px;
+      width:12px; height:12px; border-radius:50%;
+      background:var(--neutral); transition:transform .2s,background .2s;
+    }
+    .cat-lbl input:checked ~ .cat-pill { background:rgba(240,165,0,.15); border-color:var(--amber); }
+    .cat-lbl input:checked ~ .cat-pill::after { transform:translateX(16px); background:var(--amber); }
+    .crush-wrap { display:flex; align-items:center; gap:4px; }
+    .crush-input {
+      width:42px; background:var(--bg); border:1px solid var(--amber);
+      color:var(--amber); font-family:var(--font-mono); font-size:12px;
+      padding:2px 6px; text-align:right;
+    }
+    .crush-pct { font-size:11px; color:var(--amber); }
+
+    /* main */
+    .ld-main { padding:24px; max-width:1100px; }
+    .ld-msg { font-family:var(--font-mono); font-size:12px; color:var(--text2); text-align:center; padding:48px; letter-spacing:2px; }
+    .ld-error { font-family:var(--font-mono); font-size:12px; color:var(--bear); text-align:center; padding:48px; }
+
+    /* ladder table */
+    .ld-tbl { width:100%; border-collapse:collapse; font-family:var(--font-mono); font-size:12px; }
+    .ld-tbl th {
+      font-size:9px; color:var(--text2); letter-spacing:2px; text-transform:uppercase;
+      padding:0 12px 10px; border-bottom:1px solid var(--border); text-align:left;
+    }
+    .ld-tbl th.r { text-align:right; }
+    .ld-tbl td { padding:10px 12px; vertical-align:middle; }
+    .ld-tbl tr.lvl-row { border-bottom:1px solid rgba(33,38,45,.5); }
+    .ld-tbl tr.lvl-row:hover { background:rgba(255,255,255,.02); }
+    .td-lbl { color:var(--text2); font-size:11px; letter-spacing:1px; }
+    .td-stock { color:var(--text); text-align:right; }
+    .td-price { color:var(--text); text-align:right; }
+    .td-num   { text-align:right; }
+    .td-dash  { color:var(--neutral); text-align:right; }
+    .td-bull  { color:var(--bull); text-align:right; }
+    .td-bear  { color:var(--bear); text-align:right; }
+
+    /* ATR pill */
+    .pill {
+      display:inline-block; padding:2px 8px; border-radius:2px;
+      font-size:10px; font-weight:700; letter-spacing:1px; white-space:nowrap;
+    }
+    .pill-green  { background:rgba(0,255,136,.10); color:var(--bull);   border:1px solid rgba(0,255,136,.25); }
+    .pill-amber  { background:rgba(240,165,0,.10); color:var(--amber);  border:1px solid rgba(240,165,0,.25); }
+    .pill-red    { background:rgba(255,51,85,.10);  color:var(--bear);   border:1px solid rgba(255,51,85,.25); }
+    .pill-neutral{ background:var(--bg3);           color:var(--neutral); border:1px solid var(--border); }
+
+    /* copy button */
+    .copy-btn {
+      background:transparent; border:1px solid var(--border); color:var(--text2);
+      font-family:var(--font-mono); font-size:10px; padding:3px 8px;
+      cursor:pointer; letter-spacing:1px;
+    }
+    .copy-btn:hover { border-color:var(--accent); color:var(--accent); }
+
+    /* anticipated section */
+    .ant-section { margin-top:28px; border-top:1px solid var(--border); padding-top:20px; }
+    .ant-hdr { display:flex; align-items:center; justify-content:space-between; margin-bottom:16px; }
+    .ant-title { font-family:var(--font-mono); font-size:10px; letter-spacing:3px; color:var(--text2); }
+    .ant-btns  { display:flex; gap:8px; }
+    .ant-add {
+      background:transparent; border:1px solid var(--border); color:var(--text2);
+      font-family:var(--font-mono); font-size:10px; padding:4px 12px;
+      cursor:pointer; letter-spacing:1px;
+    }
+    .ant-add:hover { border-color:var(--amber); color:var(--amber); }
+    .ant-empty { font-family:var(--font-mono); font-size:11px; color:var(--text2); padding:12px 0; }
+
+    /* anticipated row */
+    .ld-tbl tr.ant-row { border-left:3px solid var(--amber); border-bottom:1px solid var(--border); background:var(--bg2); }
+    .ant-tag  { color:var(--amber); font-size:10px; letter-spacing:1px; }
+    .ant-inp  {
+      width:100%; background:var(--bg); border:1px solid var(--border);
+      color:var(--text); font-family:var(--font-mono); font-size:12px; padding:4px 8px;
+    }
+    .ant-inp:focus    { outline:none; border-color:var(--amber); background:rgba(240,165,0,.05); }
+    .ant-inp.anchor   { border-color:var(--amber); background:rgba(240,165,0,.05); }
+    .ant-computed     { color:var(--text); }
+    .ant-solving      { color:var(--neutral); font-size:11px; }
+    .ant-nofill       { color:var(--bear); font-size:11px; letter-spacing:1px; }
+    .ant-rm {
+      background:transparent; border:none; color:var(--text2);
+      font-size:18px; line-height:1; cursor:pointer; padding:0 4px;
+    }
+    .ant-rm:hover { color:var(--bear); }
+
+    /* toast */
+    .toast {
+      position:fixed; bottom:24px; right:24px;
+      background:var(--bg2); border:1px solid var(--bull); color:var(--bull);
+      font-family:var(--font-mono); font-size:11px; letter-spacing:1px;
+      padding:8px 16px; opacity:0; transition:opacity .2s; pointer-events:none; z-index:200;
+    }
+    .toast.show { opacity:1; }
+  </style>
+</head>
+<body>
+
+<!-- auth overlay -->
+<div id="authOverlay" class="auth-overlay">
+  <div class="auth-box">
+    <div class="auth-logo">SIGNAL VAULT</div>
+    <p class="auth-note" id="authNote"></p>
+    <button class="auth-btn" id="authBtn">Connect Discord</button>
+  </div>
+</div>
+
+<!-- header -->
+<header class="ld-header">
+  <a href="dashboard.html" class="ld-back">← COCKPIT</a>
+  <span class="ld-contract" id="hdContract">LIMIT LADDER</span>
+  <div class="ld-live-strip">
+    <div class="ld-live-item">
+      <span class="ld-live-lbl">SPOT</span>
+      <span class="ld-live-val" id="hdSpot">$—</span>
+    </div>
+    <div class="ld-live-item">
+      <span class="ld-live-lbl">OPT MID</span>
+      <span class="ld-live-val" id="hdMid">$—</span>
+    </div>
+    <div class="ld-live-item">
+      <span class="ld-live-lbl">OPEN P&amp;L</span>
+      <span class="ld-live-val" id="hdPnl">—</span>
+    </div>
+  </div>
+</header>
+
+<!-- context bar -->
+<div class="ld-ctx">
+  <div class="ctx-cell">
+    <span class="ctx-lbl">TICKER</span>
+    <span class="ctx-val" id="ctxTicker">—</span>
+  </div>
+  <div class="ctx-cell">
+    <span class="ctx-lbl">ENTRY</span>
+    <span class="ctx-val" id="ctxEntry">$—</span>
+  </div>
+  <div class="ctx-cell">
+    <span class="ctx-lbl">DTE</span>
+    <span class="ctx-val" id="ctxDte">—</span>
+  </div>
+  <div class="ctx-cell">
+    <span class="ctx-lbl">LIVE IV</span>
+    <span class="ctx-val" id="ctxIv">—</span>
+  </div>
+  <div class="ctx-cell">
+    <span class="ctx-lbl">ENTRY IV</span>
+    <span class="ctx-val muted" id="ctxEntryIv">—</span>
+  </div>
+  <div class="cat-cell">
+    <label class="cat-lbl">
+      <input type="checkbox" id="catToggle">
+      <div class="cat-pill"></div>
+      +CATALYST <small style="color:var(--text2);font-size:10px">(manual v1)</small>
+    </label>
+  </div>
+  <div class="ctx-cell" id="crushCell" style="display:none">
+    <span class="ctx-lbl">IV CRUSH</span>
+    <div class="crush-wrap">
+      <input class="crush-input" type="number" id="crushPct" value="20" min="0" max="80">
+      <span class="crush-pct">%</span>
+    </div>
+  </div>
+  <div class="ctx-cell" id="ivWarnCell" style="display:none">
+    <span class="ctx-lbl">&nbsp;</span>
+    <span class="iv-warn">⚠ IV UNAVAIL — PRICES DISABLED</span>
+  </div>
+</div>
+
+<!-- main -->
+<main class="ld-main">
+  <div id="ldLoading" class="ld-msg">LOADING LADDER…</div>
+  <div id="ldError"   class="ld-error"  style="display:none"></div>
+
+  <div id="ldContent" style="display:none">
+
+    <table class="ld-tbl" id="lvlTable">
+      <thead>
+        <tr>
+          <th>LEVEL</th>
+          <th class="r">STOCK</th>
+          <th>REACH</th>
+          <th class="r">OPT PRICE</th>
+          <th class="r">GAIN %</th>
+          <th class="r">GAIN $</th>
+          <th></th>
+        </tr>
+      </thead>
+      <tbody id="lvlBody"></tbody>
+    </table>
+
+    <!-- anticipated -->
+    <div class="ant-section">
+      <div class="ant-hdr">
+        <span class="ant-title">ANTICIPATED TARGETS</span>
+        <div class="ant-btns">
+          <button class="ant-add" id="addByLevel">+ BY LEVEL</button>
+          <button class="ant-add" id="addByPrice">+ BY LIMIT $</button>
+        </div>
+      </div>
+      <table class="ld-tbl">
+        <thead>
+          <tr>
+            <th>TYPE</th>
+            <th class="r">STOCK LEVEL</th>
+            <th>REACH</th>
+            <th class="r">LIMIT PRICE</th>
+            <th class="r">GAIN %</th>
+            <th class="r">GAIN $</th>
+            <th></th>
+          </tr>
+        </thead>
+        <tbody id="antBody"></tbody>
+      </table>
+      <p class="ant-empty" id="antEmpty">No anticipated targets — add one above.</p>
+    </div>
+
+  </div><!-- /ldContent -->
+</main>
+
+<div class="toast" id="toast">Copied</div>
+
+<script src="js/config.js"></script>
+<script src="js/discord-auth.js"></script>
+<script>
+(() => {
+  'use strict';
+
+  const API = CONFIG.backendUrl;
+
+  // ── State ────────────────────────────────────────────────────────────────
+  let authToken = null;
+  let data      = null;   // /api/ladder response
+  let rows      = [];     // anticipated: [{id, mode:'level'|'price', inputVal, solvedLevel, solving}]
+  let nextId    = 0;
+
+  const posId = new URLSearchParams(window.location.search).get('pos') || '';
+
+  // ── API ──────────────────────────────────────────────────────────────────
+  function authHdr() { return { Authorization: 'Bearer ' + authToken }; }
+
+  async function get(path) {
+    const r = await fetch(API + path, { headers: authHdr() });
+    if (!r.ok) throw new Error(r.status + ': ' + path);
+    return r.json();
+  }
+
+  // ── Formatters ───────────────────────────────────────────────────────────
+  function fmtP(n, d=2)  { return n == null ? '—' : '$' + n.toFixed(d); }
+  function fmtPct(n)     { return n == null ? '—' : (n>=0?'+':'')+n.toFixed(1)+'%'; }
+  function fmtG$(n)      { return n == null ? '—' : (n>=0?'+$':'-$')+Math.abs(n).toLocaleString('en-US',{maximumFractionDigits:0}); }
+  function gainCls(n)    { return n == null ? 'td-dash' : (n>=0 ? 'td-bull' : 'td-bear'); }
+
+  // ── Client-side Black-Scholes (mirrors projection.py exactly) ────────────
+  // Abramowitz & Stegun rational approximation — max error ~1.5e-7.
+  function normCdf(x) {
+    const p = 0.2316419, b = [0.319381530,-0.356563782,1.781477937,-1.821255978,1.330274429];
+    const t = 1/(1+p*Math.abs(x));
+    const poly = t*(b[0]+t*(b[1]+t*(b[2]+t*(b[3]+t*b[4]))));
+    const c = 1 - (1/Math.sqrt(2*Math.PI))*Math.exp(-0.5*x*x)*poly;
+    return x >= 0 ? c : 1-c;
+  }
+
+  function bsP(dir, S, K, T, sig, r) {
+    r = r ?? 0.04;
+    if (T <= 0) return dir==='call' ? Math.max(S-K,0) : Math.max(K-S,0);
+    const sq = Math.sqrt(T);
+    const d1 = (Math.log(S/K)+(r+0.5*sig*sig)*T)/(sig*sq);
+    const d2 = d1-sig*sq;
+    return dir==='call'
+      ? S*normCdf(d1)-K*Math.exp(-r*T)*normCdf(d2)
+      : K*Math.exp(-r*T)*normCdf(-d2)-S*normCdf(-d1);
+  }
+
+  // Client-side inverse: mirrors /api/ladder/solve bisection.
+  function clientSolve(dir, K, T, sig, r, target) {
+    if (!sig || T<=0 || target<=0) return null;
+    const sign = dir==='call' ? 1 : -1;
+    let lo=Math.max(K*0.1,0.01), hi=K*4;
+    if (sign*(bsP(dir,lo,K,T,sig,r)-target)>=0) return null;
+    if (sign*(bsP(dir,hi,K,T,sig,r)-target)<=0) return null;
+    for (let i=0; i<100; i++) {
+      const m=0.5*(lo+hi), pm=bsP(dir,m,K,T,sig,r);
+      if (Math.abs(pm-target)<0.005) return Math.round(m*10000)/10000;
+      if (sign*(pm-target)<0) lo=m; else hi=m;
+    }
+    return null;
+  }
+
+  // ── Effective sigma with optional catalyst crush ──────────────────────────
+  function effSig() {
+    if (!data || data.sigma == null) return null;
+    if (document.getElementById('catToggle').checked) {
+      const pct = Math.min(Math.max(parseFloat(document.getElementById('crushPct').value)||20, 0), 80);
+      return data.sigma * (1 - pct/100);
+    }
+    return data.sigma;
+  }
+
+  // ── ATR pill ─────────────────────────────────────────────────────────────
+  function pillHtml(dist) {
+    if (dist == null) return '<span class="pill pill-neutral">—</span>';
+    const cls = dist<=0.3 ? 'pill-green' : dist<=0.5 ? 'pill-amber' : 'pill-red';
+    return `<span class="pill ${cls}">${dist.toFixed(2)}×</span>`;
+  }
+
+  function atrDist(stockLevel) {
+    if (!data || data.atr == null || data.stock_live == null) return null;
+    return Math.round(Math.abs(stockLevel - data.stock_live) / data.atr * 100) / 100;
+  }
+
+  // ── Label map ─────────────────────────────────────────────────────────────
+  const LBL = {
+    '52WH':'52W HIGH','52WL':'52W LOW','ATH':'ALL-TIME HIGH','ATL':'ALL-TIME LOW',
+    'PDH2':'PDH-2','PDL2':'PDL-2','ROUND_ABOVE':'ROUND ↑','ROUND_BELOW':'ROUND ↓',
+  };
+  function lbl(s) {
+    if (LBL[s]) return LBL[s];
+    if (s.startsWith('SWING_UP_')) return 'SWING ↑'+s.slice(9);
+    if (s.startsWith('SWING_DN_')) return 'SWING ↓'+s.slice(9);
+    return s;
+  }
+
+  // ── Render header ────────────────────────────────────────────────────────
+  function renderHeader() {
+    const d = data;
+    const exp = d.expiry ? d.expiry.slice(2) : '—';
+    document.getElementById('hdContract').textContent =
+      `${d.ticker} · ${(d.direction||'').toUpperCase()} $${d.strike} ${exp}`;
+
+    document.getElementById('hdSpot').textContent = d.stock_live!=null ? fmtP(d.stock_live) : '$—';
+    document.getElementById('hdMid').textContent  = d.live_mid!=null   ? fmtP(d.live_mid)   : '$—';
+
+    const pnl = (d.live_mid!=null && d.entry_price)
+      ? (d.live_mid - d.entry_price) * (d.contracts_open||0) * 100 : null;
+    const el  = document.getElementById('hdPnl');
+    el.textContent = pnl==null ? '—' : (pnl>=0?'+$':'-$')+Math.abs(pnl).toFixed(0);
+    el.className   = 'ld-live-val' + (pnl==null?'':(pnl>=0?' bull':' bear'));
+  }
+
+  // ── Render context bar ───────────────────────────────────────────────────
+  function renderCtx() {
+    const d = data;
+    document.getElementById('ctxTicker').textContent  = d.ticker || '—';
+    document.getElementById('ctxEntry').textContent   = d.entry_price!=null ? fmtP(d.entry_price) : '$—';
+    document.getElementById('ctxDte').textContent     = d.days_remain!=null ? d.days_remain+'d' : '—';
+    document.getElementById('ctxEntryIv').textContent = d.entry_iv!=null ? (d.entry_iv*100).toFixed(1)+'%' : '—';
+
+    const sig = effSig();
+    document.getElementById('ctxIv').textContent = sig!=null ? (sig*100).toFixed(1)+'%' : '—';
+    document.getElementById('ivWarnCell').style.display = d.iv_ok ? 'none' : '';
+  }
+
+  // ── Render computed level rows ────────────────────────────────────────────
+  function renderComputed() {
+    const d    = data;
+    const sig  = effSig();
+    const T    = d.T_remain;
+    const dir  = d.direction;
+    const K    = d.strike;
+    const r    = 0.04;
+    const ent  = d.entry_price;
+    const c    = d.contracts_open || 0;
+
+    // Use server opt_price when no catalyst, re-price client-side when catalyst on.
+    const catOn = document.getElementById('catToggle').checked;
+
+    const html = d.levels.map(row => {
+      let optP = null;
+      if (d.iv_ok && T>0 && sig!=null) {
+        optP = catOn ? bsP(dir, row.level, K, T, sig, r) : row.opt_price;
+      }
+      const gPct = (optP!=null && ent) ? (optP-ent)/ent*100 : null;
+      const g$   = (optP!=null && ent) ? (optP-ent)*c*100   : null;
+
+      return `<tr class="lvl-row">
+  <td class="td-lbl">${lbl(row.label)}</td>
+  <td class="td-stock">$${row.level.toFixed(2)}</td>
+  <td>${pillHtml(row.atr_dist)}</td>
+  <td class="${optP!=null?'td-price':'td-dash'} td-num">${optP!=null?fmtP(optP):'—'}</td>
+  <td class="${gainCls(gPct)} td-num">${fmtPct(gPct)}</td>
+  <td class="${gainCls(g$)} td-num">${fmtG$(g$)}</td>
+  <td>${optP!=null?`<button class="copy-btn" data-copy="${optP.toFixed(2)}">↗</button>`:''}</td>
+</tr>`;
+    }).join('');
+
+    document.getElementById('lvlBody').innerHTML =
+      html || '<tr><td colspan="7" class="td-dash" style="text-align:center;padding:20px">No SR levels available</td></tr>';
+  }
+
+  // ── Render single anticipated row cells (no input re-render) ─────────────
+  // Targets specific tds by order so the focused input is never replaced.
+  function refreshAntRow(row) {
+    const tr = document.querySelector(`tr.ant-row[data-id="${row.id}"]`);
+    if (!tr) return;
+    const tds = tr.querySelectorAll('td');
+    if (!tds[1]) return;  // safety
+
+    const d    = data;
+    const sig  = effSig();
+    const T    = d.T_remain;
+    const dir  = d.direction;
+    const K    = d.strike;
+    const r    = 0.04;
+    const ent  = d.entry_price;
+    const c    = d.contracts_open || 0;
+
+    let stockDisp, priceDisp, atrVal, gPct, g$;
+
+    if (row.mode === 'level') {
+      const S   = parseFloat(row.inputVal) || null;
+      const optP = (S && sig && T>0 && d.iv_ok) ? bsP(dir, S, K, T, sig, r) : null;
+      gPct       = (optP!=null && ent) ? (optP-ent)/ent*100 : null;
+      g$         = (optP!=null && ent) ? (optP-ent)*c*100   : null;
+      atrVal     = S!=null ? atrDist(S) : null;
+      // tds[1] = input (don't touch), tds[2]=reach, tds[3]=price, tds[4]=%, tds[5]=$
+      tds[2].innerHTML = pillHtml(atrVal);
+      tds[3].innerHTML = optP!=null ? `<span class="ant-computed">${fmtP(optP)}</span>` : '<span class="td-dash">—</span>';
+
+    } else {
+      // price mode: tds[1]=solved level display, tds[3]=input (don't touch)
+      const target = parseFloat(row.inputVal) || null;
+      let S = row.solvedLevel;
+      // If catalyst active, re-solve client-side with crushed sigma
+      if (S!=null && sig!==d.sigma) {
+        S = clientSolve(dir, K, T, sig, r, target);
+      }
+      atrVal = S!=null ? atrDist(S) : null;
+      gPct   = (target!=null && ent) ? (target-ent)/ent*100 : null;
+      g$     = (target!=null && ent) ? (target-ent)*c*100   : null;
+
+      if (row.solving) {
+        tds[1].innerHTML = '<span class="ant-solving">solving…</span>';
+      } else if (S!=null) {
+        tds[1].innerHTML = `<span class="ant-computed">$${S.toFixed(2)}</span>`;
+      } else if (target!=null) {
+        tds[1].innerHTML = '<span class="ant-nofill">NO FILL</span>';
+      } else {
+        tds[1].innerHTML = '<span class="td-dash">—</span>';
+      }
+      tds[2].innerHTML = pillHtml(atrVal);
+    }
+
+    tds[4].innerHTML = `<span class="${gainCls(gPct)} td-num">${fmtPct(gPct)}</span>`;
+    tds[5].innerHTML = `<span class="${gainCls(g$)} td-num">${fmtG$(g$)}</span>`;
+  }
+
+  // ── Full re-render of anticipated tbody (add/remove only) ─────────────────
+  function renderAnt() {
+    const tbody = document.getElementById('antBody');
+    const empty = document.getElementById('antEmpty');
+    if (!rows.length) {
+      tbody.innerHTML = '';
+      empty.style.display = '';
+      return;
+    }
+    empty.style.display = 'none';
+
+    const d   = data;
+    const sig = effSig();
+    const T   = d.T_remain, dir=d.direction, K=d.strike, r=0.04;
+    const ent = d.entry_price, c=d.contracts_open||0;
+
+    tbody.innerHTML = rows.map(row => {
+      let colStock, colPrice, colAtr, gPct, g$;
+
+      if (row.mode === 'level') {
+        const S    = parseFloat(row.inputVal)||null;
+        const optP = (S&&sig&&T>0&&d.iv_ok) ? bsP(dir,S,K,T,sig,r) : null;
+        gPct       = (optP!=null&&ent) ? (optP-ent)/ent*100 : null;
+        g$         = (optP!=null&&ent) ? (optP-ent)*c*100   : null;
+        const ad   = S!=null ? atrDist(S) : null;
+        colStock = `<input class="ant-inp anchor" type="number" step="0.01"
+          value="${row.inputVal}" placeholder="stock $"
+          data-id="${row.id}" data-mode="level">`;
+        colPrice = optP!=null ? `<span class="ant-computed">${fmtP(optP)}</span>` : '<span class="td-dash">—</span>';
+        colAtr   = pillHtml(ad);
+
+      } else {
+        const target = parseFloat(row.inputVal)||null;
+        let S = row.solvedLevel;
+        if (S!=null && sig!==d.sigma) S = clientSolve(dir,K,T,sig,r,target);
+        gPct = (target!=null&&ent) ? (target-ent)/ent*100 : null;
+        g$   = (target!=null&&ent) ? (target-ent)*c*100   : null;
+        const ad = S!=null ? atrDist(S) : null;
+        colStock = row.solving
+          ? '<span class="ant-solving">solving…</span>'
+          : S!=null ? `<span class="ant-computed">$${S.toFixed(2)}</span>`
+          : target!=null ? '<span class="ant-nofill">NO FILL</span>'
+          : '<span class="td-dash">—</span>';
+        colPrice = `<input class="ant-inp anchor" type="number" step="0.01"
+          value="${row.inputVal}" placeholder="limit $"
+          data-id="${row.id}" data-mode="price">`;
+        colAtr = pillHtml(ad);
+      }
+
+      return `<tr class="ant-row" data-id="${row.id}">
+  <td class="td-lbl ant-tag">${row.mode==='level'?'BY LEVEL':'BY LIMIT $'}</td>
+  <td class="td-num">${colStock}</td>
+  <td>${colAtr}</td>
+  <td class="td-num">${colPrice}</td>
+  <td class="${gainCls(gPct)} td-num">${fmtPct(gPct)}</td>
+  <td class="${gainCls(g$)} td-num">${fmtG$(g$)}</td>
+  <td><button class="ant-rm" data-id="${row.id}" title="Remove">×</button></td>
+</tr>`;
+    }).join('');
+
+    wireAnt();
+  }
+
+  // ── Refresh all prices without rebuilding inputs ──────────────────────────
+  function refreshPrices() {
+    renderCtx();
+    renderComputed();
+    rows.forEach(row => refreshAntRow(row));
+    wireCopy();
+  }
+
+  // ── Solve endpoint (price→level) ─────────────────────────────────────────
+  const debounce = {};
+  async function solveRow(id) {
+    const row = rows.find(r => r.id===id);
+    if (!row || row.mode!=='price') return;
+    const target = parseFloat(row.inputVal);
+    if (!target || target<=0) { refreshAntRow(row); return; }
+
+    row.solving = true;
+    row.solvedLevel = null;
+    refreshAntRow(row);
+
+    try {
+      const res = await get(`/api/ladder/solve?position_id=${encodeURIComponent(posId)}&target_price=${target}`);
+      const r2  = rows.find(r => r.id===id);
+      if (!r2) return;
+      r2.solving     = false;
+      r2.solvedLevel = res.level;   // null → unreachable
+    } catch (_) {
+      const r2 = rows.find(r => r.id===id);
+      if (r2) { r2.solving=false; r2.solvedLevel=null; }
+    }
+    const r2 = rows.find(r => r.id===id);
+    if (r2) refreshAntRow(r2);
+  }
+
+  // ── Wire anticipated row inputs ───────────────────────────────────────────
+  function wireAnt() {
+    document.querySelectorAll('.ant-inp').forEach(inp => {
+      inp.addEventListener('input', function() {
+        const id   = parseInt(this.dataset.id);
+        const mode = this.dataset.mode;
+        const row  = rows.find(r => r.id===id);
+        if (!row) return;
+        row.inputVal = this.value;
+        if (mode==='level') {
+          refreshAntRow(row);
+        } else {
+          clearTimeout(debounce[id]);
+          debounce[id] = setTimeout(()=>solveRow(id), 500);
+        }
+      });
+    });
+    document.querySelectorAll('.ant-rm').forEach(btn => {
+      btn.addEventListener('click', function() {
+        const id = parseInt(this.dataset.id);
+        rows = rows.filter(r => r.id!==id);
+        renderAnt();
+      });
+    });
+    wireCopy();
+  }
+
+  // ── Wire copy buttons ─────────────────────────────────────────────────────
+  let toastTimer = null;
+  function wireCopy() {
+    document.querySelectorAll('.copy-btn').forEach(btn => {
+      btn.onclick = function() {
+        const v = this.dataset.copy;
+        if (navigator.clipboard) {
+          navigator.clipboard.writeText(v).catch(()=>{});
+        } else {
+          const t=document.createElement('textarea');
+          t.value=v; t.style.cssText='position:fixed;opacity:0';
+          document.body.appendChild(t); t.select(); document.execCommand('copy');
+          document.body.removeChild(t);
+        }
+        const el = document.getElementById('toast');
+        el.classList.add('show');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(()=>el.classList.remove('show'), 1800);
+      };
+    });
+  }
+
+  // ── Load ladder ───────────────────────────────────────────────────────────
+  async function loadLadder() {
+    if (!posId) { showErr('No ?pos= in URL. Open this page from the cockpit.'); return; }
+    try {
+      const d = await get(`/api/ladder?position_id=${encodeURIComponent(posId)}`);
+      if (!d.available) { showErr(d.error || 'Ladder unavailable for this position.'); return; }
+      data = d;
+      document.getElementById('ldLoading').style.display = 'none';
+      document.getElementById('ldContent').style.display = '';
+
+      renderHeader();
+      renderCtx();
+      renderComputed();
+      renderAnt();
+      wireCopy();
+      wireGlobal();
+    } catch (err) {
+      showErr('Failed to load: ' + err.message);
+    }
+  }
+
+  function showErr(msg) {
+    document.getElementById('ldLoading').style.display = 'none';
+    const el = document.getElementById('ldError');
+    el.textContent = msg; el.style.display = '';
+  }
+
+  // ── Wire global controls ──────────────────────────────────────────────────
+  function wireGlobal() {
+    document.getElementById('catToggle').addEventListener('change', function() {
+      document.getElementById('crushCell').style.display = this.checked ? '' : 'none';
+      refreshPrices();
+    });
+    document.getElementById('crushPct').addEventListener('input', ()=>refreshPrices());
+
+    document.getElementById('addByLevel').addEventListener('click', ()=>{
+      rows.push({id:nextId++, mode:'level', inputVal:'', solvedLevel:null, solving:false});
+      renderAnt();
+    });
+    document.getElementById('addByPrice').addEventListener('click', ()=>{
+      rows.push({id:nextId++, mode:'price', inputVal:'', solvedLevel:null, solving:false});
+      renderAnt();
+    });
+  }
+
+  // ── Auth + init ───────────────────────────────────────────────────────────
+  const overlay  = document.getElementById('authOverlay');
+  const authNote = document.getElementById('authNote');
+  const authBtn  = document.getElementById('authBtn');
+
+  authBtn.addEventListener('click', ()=>DiscordAuth.startOAuth(CONFIG.discord.dashboardRedirectUri));
+
+  async function init() {
+    const auth = await DiscordAuth.init();
+    if (auth.state !== 'authenticated') { overlay.style.display='flex'; return; }
+
+    const sub = CONFIG.discord.subscriptionRoles;
+    if (!auth.roles.includes(sub.pro) && !auth.roles.includes(sub.elite)) {
+      overlay.style.display = 'flex';
+      authNote.textContent  = 'Pro or Elite role required.';
+      authBtn.textContent   = 'Subscribe';
+      authBtn.onclick       = ()=>window.location.href='index.html';
+      return;
+    }
+
+    authToken = DiscordAuth.getToken();
+    try {
+      const me = await get('/api/me');
+      if (!me.is_admin) { showErr('This tool is admin-only in v1.'); return; }
+    } catch (e) { showErr('Auth error: '+e.message); return; }
+
+    overlay.style.display = 'none';
+    await loadLadder();
+  }
+
+  init();
+})();
+</script>
+</body>
+</html>
