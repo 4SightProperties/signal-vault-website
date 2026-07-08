@@ -37,7 +37,32 @@
   // Right-column drawer state
   let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
   let newsInnerTab   = 'ticker'; // 'ticker' | 'market' — active tab within news drawer
-  const _tvSymCache  = new Map(); // ticker → 'EXCHANGE:TICKER' resolved via TV symbol search
+  // Static exchange map — avoids CORS-blocked symbol_search API
+  const _TV_EXCHANGE = (() => {
+    const m = {};
+    const NASDAQ = [
+      'AAPL','NVDA','AMD','AVGO','ARM','SMCI','PLTR','MSFT','GOOGL','AMZN',
+      'META','NFLX','TSLA','MU','MRVL','COIN','MSTR','QQQ','CRWD','DDOG',
+      'SOFI','MARA','AFRM','IONQ','SNDK','CRDO','ENVX','ALAB','ASTS','IREN',
+      'ONDS','TTD','RKLB','PYPL','HOOD','SOXL',
+    ];
+    const NYSE = [
+      'LLY','DELL','NET','DKNG','NOW','CRM','GEV','NVO','UBER','ABNB',
+      'APP','HIMS','TSM','CAVA','VRT','TEM','VKTX','SE','NU','NBIS',
+      'AAOI','RBRK','DECK','RDDT','ANET','XYZ','GS','JPM','BAC','BE',
+      'U','PATH','OSCR','PL','MP','POET',
+    ];
+    const AMEX = ['SPY','IWM','XLE','GLD','XBI','XLK'];
+    NASDAQ.forEach(t => { m[t] = 'NASDAQ'; });
+    NYSE.forEach(t   => { m[t] = 'NYSE'; });
+    AMEX.forEach(t   => { m[t] = 'AMEX'; });
+    return m;
+  })();
+  function _tvSymbol(ticker) {
+    const t = ticker.toUpperCase();
+    const ex = _TV_EXCHANGE[t];
+    return ex ? `${ex}:${t}` : t;
+  }
 
   // GEX analysis modal state
   let gexModalPos  = null;  // position object for the open GEX pop-out
@@ -1308,27 +1333,7 @@
     drawerBody.appendChild(container);
   }
 
-  async function _resolveSymbol(ticker) {
-    if (_tvSymCache.has(ticker)) return _tvSymCache.get(ticker);
-    try {
-      const res  = await fetch(
-        `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(ticker)}&type=stock&exchange=&lang=en&hl=1&limit=5`
-      );
-      const data = await res.json();
-      const list = Array.isArray(data) ? data : (data.symbols || []);
-      const hit  = list.find(s => (s.symbol || '').toUpperCase() === ticker.toUpperCase()
-                              || (s.short_name || '').toUpperCase() === ticker.toUpperCase());
-      const full = (hit && hit.full_name) ? hit.full_name : (list[0] && list[0].full_name) || `NASDAQ:${ticker}`;
-      _tvSymCache.set(ticker, full);
-      return full;
-    } catch (_) {
-      const fallback = `NASDAQ:${ticker}`;
-      _tvSymCache.set(ticker, fallback);
-      return fallback;
-    }
-  }
-
-  async function renderTaDrawer() {
+  function renderTaDrawer() {
     const drawerBody = document.getElementById('drawerBody');
     if (!drawerBody) return;
     drawerBody.innerHTML = '';
@@ -1338,15 +1343,7 @@
       return;
     }
 
-    const ticker = focusedTicker;
-    drawerBody.innerHTML = '<div class="dash-placeholder">Resolving symbol…</div>';
-
-    const symbol = await _resolveSymbol(ticker);
-
-    // Guard: drawer closed or ticker changed while we awaited
-    if (drawerActive !== 'ta' || focusedTicker !== ticker) return;
-
-    drawerBody.innerHTML = '';
+    const symbol = _tvSymbol(focusedTicker);
 
     const container = document.createElement('div');
     container.className    = 'tradingview-widget-container';
@@ -1362,7 +1359,7 @@
     script.src       = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
     script.async     = true;
     script.textContent = JSON.stringify({
-      interval:         '60',
+      interval:         '1h',
       width:            '100%',
       isTransparent:    false,
       height:           '100%',
