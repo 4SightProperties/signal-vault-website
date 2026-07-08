@@ -35,7 +35,7 @@
   let openConsoleId      = null; // position_id of the currently expanded management console
 
   // Right-column drawer state
-  let drawerActive   = null;     // 'news' | 'ladder' | null
+  let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
   let newsInnerTab   = 'ticker'; // 'ticker' | 'market' — active tab within news drawer
 
   // GEX analysis modal state
@@ -791,6 +791,10 @@
       loadTickerNewsIntoDrawer(t);
       updateDrawerTitle();
     }
+    if (drawerActive === 'ta') {
+      renderTaDrawer();
+      updateDrawerTitle();
+    }
   }
 
   // ── MTF cloud alignment — fetches /api/mtf for the focused ticker ────────
@@ -1184,12 +1188,15 @@
 
     _drawerSetActive(which);
 
-    if (which === 'news')   renderNewsDrawer();
-    else                    renderLadderDrawer();
+    if (which === 'news')           renderNewsDrawer();
+    else if (which === 'ladder')    renderLadderDrawer();
+    else if (which === 'calendar')  renderCalendarDrawer();
+    else if (which === 'ta')        renderTaDrawer();
     updateDrawerTitle();
   }
 
   function closeDrawer() {
+    const wasActive   = drawerActive;
     const drawerPanel = document.getElementById('drawerPanel');
     const histPanel   = document.getElementById('rightHistPanel');
     if (drawerPanel) drawerPanel.style.display = 'none';
@@ -1197,10 +1204,15 @@
     if (newsTimer) { clearInterval(newsTimer); newsTimer = null; }
     drawerActive = null;
     _drawerSetActive(null);
+    // Remove TradingView iframes so they stop loading when drawer is hidden
+    if (wasActive === 'calendar' || wasActive === 'ta') {
+      const body = document.getElementById('drawerBody');
+      if (body) body.innerHTML = '';
+    }
   }
 
   function _drawerSetActive(which) {
-    ['drawerTabNews', 'drawerTabLadder', 'ribbonNews', 'ribbonLadder'].forEach(id => {
+    ['drawerTabNews', 'drawerTabLadder', 'ribbonNews', 'ribbonLadder', 'ribbonCalendar', 'ribbonTA'].forEach(id => {
       document.getElementById(id)?.classList.remove('active');
     });
     if (which === 'news') {
@@ -1209,6 +1221,10 @@
     } else if (which === 'ladder') {
       document.getElementById('drawerTabLadder')?.classList.add('active');
       document.getElementById('ribbonLadder')?.classList.add('active');
+    } else if (which === 'calendar') {
+      document.getElementById('ribbonCalendar')?.classList.add('active');
+    } else if (which === 'ta') {
+      document.getElementById('ribbonTA')?.classList.add('active');
     }
   }
 
@@ -1260,10 +1276,80 @@
     }
   }
 
+  function renderCalendarDrawer() {
+    const drawerBody = document.getElementById('drawerBody');
+    if (!drawerBody) return;
+    drawerBody.innerHTML = '';
+
+    const container = document.createElement('div');
+    container.className    = 'tradingview-widget-container';
+    container.style.cssText = 'height:100%;width:100%';
+
+    const inner = document.createElement('div');
+    inner.className    = 'tradingview-widget-container__widget';
+    inner.style.cssText = 'height:100%;width:100%';
+    container.appendChild(inner);
+
+    const script = document.createElement('script');
+    script.type      = 'text/javascript';
+    script.src       = 'https://s3.tradingview.com/external-embedding/embed-widget-events.js';
+    script.async     = true;
+    script.textContent = JSON.stringify({
+      colorTheme:       'dark',
+      isTransparent:    false,
+      width:            '100%',
+      height:           '100%',
+      locale:           'en',
+      importanceFilter: '0,1',
+      countryFilter:    'us',
+    });
+    container.appendChild(script);
+    drawerBody.appendChild(container);
+  }
+
+  function renderTaDrawer() {
+    const drawerBody = document.getElementById('drawerBody');
+    if (!drawerBody) return;
+    drawerBody.innerHTML = '';
+
+    if (!focusedTicker) {
+      drawerBody.innerHTML = '<div class="dash-placeholder">Select a ticker to load Technical Analysis</div>';
+      return;
+    }
+
+    const container = document.createElement('div');
+    container.className    = 'tradingview-widget-container';
+    container.style.cssText = 'height:100%;width:100%';
+
+    const inner = document.createElement('div');
+    inner.className    = 'tradingview-widget-container__widget';
+    inner.style.cssText = 'height:100%;width:100%';
+    container.appendChild(inner);
+
+    const script = document.createElement('script');
+    script.type      = 'text/javascript';
+    script.src       = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
+    script.async     = true;
+    script.textContent = JSON.stringify({
+      interval:         '10',
+      width:            '100%',
+      isTransparent:    false,
+      height:           '100%',
+      symbol:           focusedTicker,
+      showIntervalTabs: true,
+      locale:           'en',
+      colorTheme:       'dark',
+    });
+    container.appendChild(script);
+    drawerBody.appendChild(container);
+  }
+
   function updateDrawerTitle() {
     const el = document.getElementById('drawerTitle');
     if (!el) return;
-    if (drawerActive === 'ladder') { el.textContent = 'Ladder'; return; }
+    if (drawerActive === 'ladder')   { el.textContent = 'Ladder'; return; }
+    if (drawerActive === 'calendar') { el.textContent = 'Economic Calendar'; return; }
+    if (drawerActive === 'ta')       { el.textContent = focusedTicker ? `Technical Analysis — ${focusedTicker}` : 'Technical Analysis'; return; }
     if (drawerActive === 'news') {
       el.textContent = newsInnerTab === 'market'
         ? 'Market Headlines'
@@ -1367,8 +1453,10 @@
 
   function setupDrawer() {
     // Ribbon icon buttons on the right app edge
-    document.getElementById('ribbonNews')?.addEventListener('click', () => openDrawer('news'));
-    document.getElementById('ribbonLadder')?.addEventListener('click', () => openDrawer('ladder'));
+    document.getElementById('ribbonNews')?.addEventListener('click',     () => openDrawer('news'));
+    document.getElementById('ribbonLadder')?.addEventListener('click',   () => openDrawer('ladder'));
+    document.getElementById('ribbonCalendar')?.addEventListener('click', () => openDrawer('calendar'));
+    document.getElementById('ribbonTA')?.addEventListener('click',       () => openDrawer('ta'));
 
     // Drawer header tab buttons (visible when drawer is open)
     document.getElementById('drawerTabNews')?.addEventListener('click', () => openDrawer('news'));
