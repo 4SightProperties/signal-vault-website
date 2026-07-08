@@ -1200,15 +1200,15 @@
   }
 
   function _drawerSetActive(which) {
-    ['drawerTabNews', 'drawerTabLadder', 'triggerNews', 'triggerLadder'].forEach(id => {
+    ['drawerTabNews', 'drawerTabLadder', 'ribbonNews', 'ribbonLadder'].forEach(id => {
       document.getElementById(id)?.classList.remove('active');
     });
     if (which === 'news') {
       document.getElementById('drawerTabNews')?.classList.add('active');
-      document.getElementById('triggerNews')?.classList.add('active');
+      document.getElementById('ribbonNews')?.classList.add('active');
     } else if (which === 'ladder') {
       document.getElementById('drawerTabLadder')?.classList.add('active');
-      document.getElementById('triggerLadder')?.classList.add('active');
+      document.getElementById('ribbonLadder')?.classList.add('active');
     }
   }
 
@@ -1366,9 +1366,9 @@
   }
 
   function setupDrawer() {
-    // Trigger buttons in the hist panel header
-    document.getElementById('triggerNews')?.addEventListener('click', () => openDrawer('news'));
-    document.getElementById('triggerLadder')?.addEventListener('click', () => openDrawer('ladder'));
+    // Ribbon icon buttons on the right app edge
+    document.getElementById('ribbonNews')?.addEventListener('click', () => openDrawer('news'));
+    document.getElementById('ribbonLadder')?.addEventListener('click', () => openDrawer('ladder'));
 
     // Drawer header tab buttons (visible when drawer is open)
     document.getElementById('drawerTabNews')?.addEventListener('click', () => openDrawer('news'));

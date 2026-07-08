@@ -2413,27 +2413,57 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* Drawer body: no padding so inner tab bar/content fill edge-to-edge */
 #drawerBody { padding: 0; display: flex; flex-direction: column; }
 
-/* NEWS | LADDER trigger buttons in hist panel header */
-.drawer-trigger-btns {
+/* ── cmd-main-wrap: flex row holding the 3-col grid + right ribbon ─── */
+.cmd-main-wrap {
   display: flex;
-  gap: 0.2rem;
-  margin: 0 0.4rem;
+  flex-direction: row;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
-.drawer-trigger-btn {
+
+/* ── App ribbon — full-height icon rail on the far right ─────────── */
+.app-ribbon {
+  width: 40px;
+  flex-shrink: 0;
+  border-left: 1px solid var(--border);
+  background: var(--bg-surface);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 8px 0;
+}
+.ribbon-cluster {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 6px;
+  width: 100%;
+}
+.ribbon-cluster-bottom { margin-top: auto; }
+.ribbon-btn {
+  width: 28px;
+  height: 28px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
   background: transparent;
-  border: 1px solid var(--border);
+  border: 1px solid transparent;
   border-radius: var(--radius-sm);
   color: var(--text-muted);
   cursor: pointer;
-  font-size: 0.56rem;
-  font-weight: 700;
-  letter-spacing: 0.06em;
-  padding: 0.1rem 0.38rem;
-  text-transform: uppercase;
+  padding: 0;
   transition: color 0.15s, border-color 0.15s;
 }
-.drawer-trigger-btn:hover { color: var(--text-secondary); border-color: var(--border-bright); }
-.drawer-trigger-btn.active { border-color: var(--blue); color: var(--blue); }
+.ribbon-btn:hover { color: var(--text-secondary); border-color: var(--border-bright); }
+.ribbon-btn.active { border-color: var(--blue); color: var(--blue); }
+.ribbon-divider {
+  width: 20px;
+  height: 1px;
+  background: var(--border);
+  flex-shrink: 0;
+  margin: 6px 0;
+}
 
 /* News inner tab bar (rendered by JS into #drawerBody) */
 .drawer-news-tabbar {
