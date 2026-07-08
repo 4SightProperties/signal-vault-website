@@ -34,6 +34,10 @@
   let focusedTicker      = null; // ticker currently loaded in center column
   let openConsoleId      = null; // position_id of the currently expanded management console
 
+  // Right-column drawer state
+  let drawerActive   = null;     // 'news' | 'ladder' | null
+  let newsInnerTab   = 'ticker'; // 'ticker' | 'market' — active tab within news drawer
+
   // GEX analysis modal state
   let gexModalPos  = null;  // position object for the open GEX pop-out
   let gexData      = null;  // fetched /api/gex result for the current modal ticker
@@ -200,15 +204,13 @@
     flowTimer        = setInterval(loadFlow,        90_000);
     panelHealthTimer = setInterval(loadPanelHealth, 90_000);
     positionsTimer   = setInterval(loadPositions,    5_000);
-    loadMarketNews();
-    newsTimer        = setInterval(loadMarketNews,  10 * 60_000);
-
     setupCenterPanel();
     setupConsoleHandlers();
     setupHistoryTab();
     setupModal();
     setupGexModal();
     setupHealthPopover();
+    setupDrawer();
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -785,7 +787,10 @@
     loadChainExpirations(t, livePrice || trigger);
     loadMtf(t);
     loadAnalytics(t);
-    loadTickerNews(t);
+    if (drawerActive === 'news' && newsInnerTab === 'ticker') {
+      loadTickerNewsIntoDrawer(t);
+      updateDrawerTitle();
+    }
   }
 
   // ── MTF cloud alignment — fetches /api/mtf for the focused ticker ────────
@@ -1113,17 +1118,6 @@
         };
       }
     } catch (_) { /* degrade to no news */ }
-
-    // Wire collapse toggle — safe to re-assign onclick each poll cycle.
-    const mktColBtn = document.getElementById('newsMarketCollapseBtn');
-    if (mktColBtn) {
-      mktColBtn.onclick = () => {
-        const cell = document.getElementById('newsCellMarket');
-        if (!cell) return;
-        const isCollapsed = cell.classList.toggle('news-panel-collapsed');
-        mktColBtn.textContent = isCollapsed ? '▸' : '▾';
-      };
-    }
   }
 
   async function loadTickerNews(ticker) {
@@ -1151,17 +1145,6 @@
       return;
     }
 
-    // Reset to expanded and wire collapse — runs after every successful ticker load.
-    const collapseBtn = document.getElementById('tickerNewsCollapseBtn');
-    if (collapseBtn) {
-      panel.classList.remove('news-panel-collapsed');
-      collapseBtn.textContent = '▾';
-      collapseBtn.onclick = () => {
-        const isCollapsed = panel.classList.toggle('news-panel-collapsed');
-        collapseBtn.textContent = isCollapsed ? '▸' : '▾';
-      };
-    }
-
     if (digBtn) {
       digBtn.onclick = async () => {
         const prev = digBtn.textContent;
@@ -1181,6 +1164,236 @@
         digBtn.textContent = prev;
         digBtn.disabled = false;
       };
+    }
+  }
+
+  // ── Right-column drawer ─────────────────────────────────────────────────────
+
+  function openDrawer(which) {
+    const drawerPanel = document.getElementById('drawerPanel');
+    const histPanel   = document.getElementById('rightHistPanel');
+    if (!drawerPanel || !histPanel) return;
+
+    // Re-tap same slot → close
+    if (drawerActive === which) { closeDrawer(); return; }
+
+    drawerActive = which;
+    drawerPanel.style.display = '';
+    // Only set default split on first open; drag override persists until close
+    if (!histPanel.style.flexBasis) histPanel.style.flexBasis = '55%';
+
+    _drawerSetActive(which);
+
+    if (which === 'news')   renderNewsDrawer();
+    else                    renderLadderDrawer();
+    updateDrawerTitle();
+  }
+
+  function closeDrawer() {
+    const drawerPanel = document.getElementById('drawerPanel');
+    const histPanel   = document.getElementById('rightHistPanel');
+    if (drawerPanel) drawerPanel.style.display = 'none';
+    if (histPanel)   histPanel.style.flexBasis = '';
+    if (newsTimer) { clearInterval(newsTimer); newsTimer = null; }
+    drawerActive = null;
+    _drawerSetActive(null);
+  }
+
+  function _drawerSetActive(which) {
+    ['drawerTabNews', 'drawerTabLadder', 'triggerNews', 'triggerLadder'].forEach(id => {
+      document.getElementById(id)?.classList.remove('active');
+    });
+    if (which === 'news') {
+      document.getElementById('drawerTabNews')?.classList.add('active');
+      document.getElementById('triggerNews')?.classList.add('active');
+    } else if (which === 'ladder') {
+      document.getElementById('drawerTabLadder')?.classList.add('active');
+      document.getElementById('triggerLadder')?.classList.add('active');
+    }
+  }
+
+  function renderNewsDrawer() {
+    const drawerBody = document.getElementById('drawerBody');
+    if (!drawerBody) return;
+    drawerBody.innerHTML =
+      `<div class="drawer-news-tabbar">` +
+        `<button class="drawer-news-tab${newsInnerTab === 'ticker' ? ' active' : ''}" id="drawerNewsTabTicker">Ticker</button>` +
+        `<button class="drawer-news-tab${newsInnerTab === 'market' ? ' active' : ''}" id="drawerNewsTabMarket">Headlines</button>` +
+        `<button class="ticker-news-dig" id="drawerNewsDigBtn" style="display:none;margin-left:auto">dig deeper ↗</button>` +
+      `</div>` +
+      `<div id="drawerNewsContent" class="drawer-news-content"></div>` +
+      `<div class="drawer-news-freshness" id="drawerNewsFreshness" style="display:none">` +
+        `polled on scan clock · ≈10-min freshness · not real-time` +
+      `</div>`;
+
+    document.getElementById('drawerNewsTabTicker').addEventListener('click', () => {
+      if (newsInnerTab === 'ticker') return;
+      newsInnerTab = 'ticker';
+      document.getElementById('drawerNewsTabTicker').classList.add('active');
+      document.getElementById('drawerNewsTabMarket').classList.remove('active');
+      if (newsTimer) { clearInterval(newsTimer); newsTimer = null; }
+      loadNewsDrawerContent();
+      updateDrawerTitle();
+    });
+
+    document.getElementById('drawerNewsTabMarket').addEventListener('click', () => {
+      if (newsInnerTab === 'market') return;
+      newsInnerTab = 'market';
+      document.getElementById('drawerNewsTabMarket').classList.add('active');
+      document.getElementById('drawerNewsTabTicker').classList.remove('active');
+      if (newsTimer) { clearInterval(newsTimer); newsTimer = null; }
+      loadNewsDrawerContent();
+      updateDrawerTitle();
+    });
+
+    loadNewsDrawerContent();
+  }
+
+  function renderLadderDrawer() {
+    const drawerBody = document.getElementById('drawerBody');
+    if (!drawerBody) return;
+    if (openConsoleId) {
+      window.open(`ladder.html?pos=${encodeURIComponent(openConsoleId)}`, '_blank', 'noopener,noreferrer');
+      drawerBody.innerHTML = '<div class="dash-placeholder">Ladder opened in new tab</div>';
+    } else {
+      drawerBody.innerHTML = '<div class="dash-placeholder">Open a position first</div>';
+    }
+  }
+
+  function updateDrawerTitle() {
+    const el = document.getElementById('drawerTitle');
+    if (!el) return;
+    if (drawerActive === 'ladder') { el.textContent = 'Ladder'; return; }
+    if (drawerActive === 'news') {
+      el.textContent = newsInnerTab === 'market'
+        ? 'Market Headlines'
+        : (focusedTicker ? `News — ${focusedTicker}` : 'News');
+    }
+  }
+
+  function loadNewsDrawerContent() {
+    if (newsInnerTab === 'ticker') {
+      const c = document.getElementById('drawerNewsContent');
+      const dig = document.getElementById('drawerNewsDigBtn');
+      const fresh = document.getElementById('drawerNewsFreshness');
+      if (fresh) fresh.style.display = '';
+      if (dig)   dig.style.display   = '';
+      if (!focusedTicker) {
+        if (c) c.innerHTML = '<div class="dash-placeholder">Select a ticker to load news</div>';
+        if (dig) dig.style.display = 'none';
+        return;
+      }
+      loadTickerNewsIntoDrawer(focusedTicker);
+    } else {
+      const dig   = document.getElementById('drawerNewsDigBtn');
+      const fresh = document.getElementById('drawerNewsFreshness');
+      if (dig)   dig.style.display   = 'none';
+      if (fresh) fresh.style.display = 'none';
+      loadMarketNewsIntoDrawer();
+    }
+  }
+
+  async function loadTickerNewsIntoDrawer(ticker) {
+    const content = document.getElementById('drawerNewsContent');
+    if (!content) return;
+    content.innerHTML = '<div class="dash-placeholder">Loading…</div>';
+    try {
+      const data  = await apiFetch(`/api/news/ticker/${encodeURIComponent(ticker)}`);
+      const items = (data && data.items) || [];
+      content.innerHTML = items.length
+        ? items.map(_newsRow).join('')
+        : '<div class="dash-placeholder">No recent major news</div>';
+    } catch (_) {
+      content.innerHTML = '';
+    }
+    // Wire dig-deeper button (re-assign after every load)
+    const digBtn = document.getElementById('drawerNewsDigBtn');
+    if (digBtn) {
+      digBtn.disabled = false;
+      digBtn.textContent = 'dig deeper ↗';
+      digBtn.onclick = async () => {
+        const prev = digBtn.textContent;
+        digBtn.textContent = 'searching…';
+        digBtn.disabled = true;
+        try {
+          const d   = await apiFetch(`/api/news/search/${encodeURIComponent(ticker)}`);
+          const its = (d && d.items) || [];
+          if (its.length) {
+            content.innerHTML = its.map(_newsRow).join('');
+          } else {
+            content.insertAdjacentHTML('beforeend',
+              '<div style="font-size:0.62rem;color:var(--text-muted);padding:0.3rem 0.5rem">no additional results</div>');
+          }
+        } catch (_) {}
+        digBtn.textContent = prev;
+        digBtn.disabled = false;
+      };
+    }
+  }
+
+  async function loadMarketNewsIntoDrawer() {
+    const content = document.getElementById('drawerNewsContent');
+    if (!content) return;
+    content.innerHTML = '<div class="dash-placeholder">Loading…</div>';
+    try {
+      const data  = await apiFetch('/api/news/market');
+      const items = (data && data.items) || [];
+      if (!items.length) {
+        content.innerHTML = '<div class="dash-placeholder">No major headlines</div>';
+      } else {
+        const visible = items.slice(0, 8);
+        const rest    = items.slice(8);
+        let html = visible.map(_newsRow).join('');
+        if (rest.length) {
+          html +=
+            `<div class="news-more-toggle" id="newsMoreToggle">+ ${rest.length} more…</div>` +
+            `<div id="newsMoreBody" class="news-more-body">${rest.map(_newsRow).join('')}</div>`;
+        }
+        content.innerHTML = html;
+        const toggle = document.getElementById('newsMoreToggle');
+        if (toggle) toggle.onclick = () => {
+          document.getElementById('newsMoreBody').style.display = 'block';
+          toggle.style.display = 'none';
+        };
+      }
+    } catch (_) { /* degrade */ }
+    // Start 10-min poll only while market tab is active
+    if (!newsTimer) {
+      newsTimer = setInterval(() => {
+        if (drawerActive === 'news' && newsInnerTab === 'market') loadMarketNewsIntoDrawer();
+      }, 10 * 60_000);
+    }
+  }
+
+  function setupDrawer() {
+    // Trigger buttons in the hist panel header
+    document.getElementById('triggerNews')?.addEventListener('click', () => openDrawer('news'));
+    document.getElementById('triggerLadder')?.addEventListener('click', () => openDrawer('ladder'));
+
+    // Drawer header tab buttons (visible when drawer is open)
+    document.getElementById('drawerTabNews')?.addEventListener('click', () => openDrawer('news'));
+    document.getElementById('drawerTabLadder')?.addEventListener('click', () => openDrawer('ladder'));
+    document.getElementById('drawerCloseBtn')?.addEventListener('click', closeDrawer);
+
+    // Draggable resizer
+    const resizer   = document.getElementById('rightResizer');
+    const histPanel = document.getElementById('rightHistPanel');
+    if (resizer && histPanel) {
+      let startY = 0, startH = 0, onMove, onUp;
+      resizer.addEventListener('mousedown', e => {
+        startY = e.clientY;
+        startH = histPanel.getBoundingClientRect().height;
+        onMove = ev => {
+          histPanel.style.flexBasis = Math.max(120, startH + (ev.clientY - startY)) + 'px';
+        };
+        onUp = () => {
+          document.removeEventListener('mousemove', onMove);
+          document.removeEventListener('mouseup', onUp);
+        };
+        document.addEventListener('mousemove', onMove);
+        document.addEventListener('mouseup', onUp);
+        e.preventDefault();
+      });
     }
   }
 

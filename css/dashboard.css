@@ -105,6 +105,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-bottom: 1px solid var(--border);
 }
 .dash-panel:last-child { border-bottom: none; }
+/* Drawer is always the DOM last-child once inserted; keep its own border */
+.dash-drawer-panel { border-bottom: 1px solid var(--border); }
 .dash-panel-center { flex: 1; border: none; }
 
 .dash-panel-header {
@@ -1849,7 +1851,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── Bottom flow row — 3 equal cells ────────────────────────── */
 .cmd-bottom-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr 1fr;
+  grid-template-columns: 1fr 1fr 1fr;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   height: 94px;
@@ -2334,4 +2336,144 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-size: 0.5rem; color: rgba(100,116,139,0.6);
   border-top: 1px solid rgba(148,163,184,0.06);
   font-style: italic;
+}
+
+/* ════════════════════════════════════════════════════════════════
+   Right-column drawer: resizer handle + drawer panel
+   ════════════════════════════════════════════════════════════════ */
+
+.dash-resizer-h {
+  height: 4px;
+  cursor: ns-resize;
+  flex-shrink: 0;
+  background: var(--border);
+  transition: background 0.15s;
+}
+.dash-resizer-h:hover { background: var(--border-bright); }
+
+/* Drawer panel — always flex-column so header + body stack */
+.dash-drawer-panel {
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* Drawer header row */
+.drawer-header {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  padding: 0.28rem 0.5rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.drawer-header-tabs { display: flex; gap: 0.2rem; }
+
+.drawer-tab-btn {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  padding: 0.15rem 0.45rem;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.drawer-tab-btn:hover { color: var(--text-secondary); }
+.drawer-tab-btn.active { border-color: var(--blue); color: var(--blue); }
+
+.drawer-title {
+  flex: 1;
+  font-size: 0.62rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.drawer-close-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.78rem;
+  line-height: 1;
+  padding: 0.1rem 0.28rem;
+  border-radius: var(--radius-sm);
+  transition: color 0.15s;
+  flex-shrink: 0;
+}
+.drawer-close-btn:hover { color: var(--text-primary); }
+
+/* Drawer body: no padding so inner tab bar/content fill edge-to-edge */
+#drawerBody { padding: 0; display: flex; flex-direction: column; }
+
+/* NEWS | LADDER trigger buttons in hist panel header */
+.drawer-trigger-btns {
+  display: flex;
+  gap: 0.2rem;
+  margin: 0 0.4rem;
+}
+.drawer-trigger-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.56rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.38rem;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.drawer-trigger-btn:hover { color: var(--text-secondary); border-color: var(--border-bright); }
+.drawer-trigger-btn.active { border-color: var(--blue); color: var(--blue); }
+
+/* News inner tab bar (rendered by JS into #drawerBody) */
+.drawer-news-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding: 0.22rem 0.45rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.drawer-news-tab {
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.38rem;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.drawer-news-tab:hover { color: var(--text-secondary); }
+.drawer-news-tab.active { border-color: var(--border-bright); color: var(--text-secondary); }
+
+.drawer-news-content {
+  flex: 1;
+  overflow-y: auto;
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+
+/* Freshness footer inside news drawer (rendered by JS) */
+.drawer-news-freshness {
+  padding: 0.2rem 0.55rem;
+  font-size: 0.5rem;
+  color: rgba(100,116,139,0.6);
+  border-top: 1px solid rgba(148,163,184,0.06);
+  font-style: italic;
+  flex-shrink: 0;
 }

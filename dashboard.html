@@ -204,29 +204,20 @@
       </div>
     </div>
 
-    <!-- Per-ticker news — on-demand, focus view only. Hidden until a ticker is focused. -->
-    <div class="ticker-news-panel" id="tickerNewsPanel" style="display:none">
-      <div class="ticker-news-hd">
-        <span class="ticker-news-title" id="tickerNewsTitle">News</span>
-        <div class="ticker-news-hd-right">
-          <button class="ticker-news-dig" id="tickerNewsDigBtn" title="Load more via search_term fallback">dig deeper ↗</button>
-          <button class="news-collapse-btn" id="tickerNewsCollapseBtn" title="Collapse panel">▾</button>
-        </div>
-      </div>
-      <div class="ticker-news-body" id="tickerNewsBody"></div>
-      <div class="ticker-news-freshness">polled on scan clock · ≈10-min freshness · not real-time</div>
-    </div>
-
   </section>
 
-  <!-- ══ RIGHT: Positions + History ════════════════════════════════════════ -->
-  <aside class="cmd-col">
+  <!-- ══ RIGHT: Positions + History + Drawer ══════════════════════════════ -->
+  <aside class="cmd-col" id="rightCol">
 
-    <section class="dash-panel">
+    <section class="dash-panel" id="rightHistPanel" style="flex:1 1 0;min-height:120px">
       <div class="dash-panel-header">
         <div class="dash-tab-bar">
           <button class="dash-tab active" id="tabPositions">Positions</button>
           <button class="dash-tab" id="tabHistory">History</button>
+        </div>
+        <div class="drawer-trigger-btns">
+          <button class="drawer-trigger-btn" id="triggerNews" title="Open News drawer">NEWS</button>
+          <button class="drawer-trigger-btn" id="triggerLadder" title="Open Ladder drawer">LADDER</button>
         </div>
         <span class="dash-panel-meta" id="positionsMeta">live</span>
       </div>
@@ -255,6 +246,20 @@
         <div id="histSummary" class="hist-summary-wrap"></div>
         <div id="histBody" class="hist-body"></div>
       </div>
+    </section>
+
+    <div class="dash-resizer-h" id="rightResizer"></div>
+
+    <section class="dash-panel dash-drawer-panel" id="drawerPanel" style="display:none;min-height:80px">
+      <div class="drawer-header">
+        <div class="drawer-header-tabs">
+          <button class="drawer-tab-btn" id="drawerTabNews">NEWS</button>
+          <button class="drawer-tab-btn" id="drawerTabLadder">LADDER</button>
+        </div>
+        <span class="drawer-title" id="drawerTitle"></span>
+        <button class="drawer-close-btn" id="drawerCloseBtn">&#x2715;</button>
+      </div>
+      <div id="drawerBody" class="dash-panel-body"></div>
     </section>
 
   </aside>
@@ -294,18 +299,6 @@
     </div>
   </div>
 
-  <div class="cmd-bottom-cell" id="newsCellMarket">
-    <div class="dash-panel-header" style="padding:0.35rem 0.6rem">
-      <span class="dash-panel-title">Market Headlines</span>
-      <div class="news-market-hd-right">
-        <span class="dash-panel-meta">≈10-min · not real-time</span>
-        <button class="news-collapse-btn" id="newsMarketCollapseBtn" title="Collapse panel">▾</button>
-      </div>
-    </div>
-    <div class="news-market-body" id="newsMarketBody">
-      <span style="font-size:0.66rem; color:var(--text-muted)">— awaiting data —</span>
-    </div>
-  </div>
 
 </div>
 
