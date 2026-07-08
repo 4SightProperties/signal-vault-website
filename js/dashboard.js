@@ -1349,11 +1349,11 @@
 
     const container = document.createElement('div');
     container.className    = 'tradingview-widget-container';
-    container.style.cssText = 'width:100%';
+    container.style.cssText = 'width:100%;flex:none;height:650px';
 
     const inner = document.createElement('div');
     inner.className    = 'tradingview-widget-container__widget';
-    inner.style.cssText = 'width:100%';
+    inner.style.cssText = 'width:100%;height:100%';
     container.appendChild(inner);
 
     const script = document.createElement('script');
