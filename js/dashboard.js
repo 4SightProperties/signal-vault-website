@@ -30,7 +30,8 @@
 
   // Center panel + console state
   let currentPositions   = [];   // last positions array from WS — used by console delegation
-  let watchlistDataCache = [];   // last watchlist rows — used by levels panel
+  let watchlistDataCache  = [];   // last watchlist rows — used by levels panel
+  let signalTickersToday  = {};   // ticker -> most recent fire_time for today (ET) — used by watchlist row markers
   let focusedTicker      = null; // ticker currently loaded in center column
   let openConsoleId      = null; // position_id of the currently expanded management console
 
@@ -116,6 +117,17 @@
     if (diff < 3600)  return Math.floor(diff / 60) + 'm ago';
     if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
     return Math.floor(diff / 86400) + 'd ago';
+  }
+
+  function _etDateStr() {
+    const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+    const [m, d, y] = f.format(new Date()).split('/');
+    return `${y}-${m}-${d}`;
+  }
+
+  function _fmtClockET(unixSecs) {
+    return new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit', hour12: true })
+      .format(new Date(unixSecs * 1000)).toLowerCase().replace(/\s/g, '');
   }
 
   function authHeaders() {
@@ -544,6 +556,18 @@
       const sigs      = data.signals       || [];
       const lastSigTs = data.last_signal_ts || 0;
 
+      // Build signalTickersToday: ticker -> most recent fire_time on today's ET date
+      const todayET = _etDateStr();
+      const _sigMap = {};
+      sigs.forEach(s => {
+        if (!s.ticker || !s.fire_time) return;
+        const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
+        const [sm, sd, sy] = f.format(new Date(s.fire_time * 1000)).split('/');
+        if (`${sy}-${sm}-${sd}` !== todayET) return;
+        if (!_sigMap[s.ticker] || s.fire_time > _sigMap[s.ticker]) _sigMap[s.ticker] = s.fire_time;
+      });
+      signalTickersToday = _sigMap;
+
       const nowSecs    = Date.now() / 1000;
       const sigAgeMins = lastSigTs > 0 ? (nowSecs - lastSigTs) / 60 : null;
 
@@ -582,10 +606,13 @@
             const stitle = `Saty ATR (at fire-time): call $${parseFloat(satyCall).toFixed(2)} / put $${parseFloat(satyPut).toFixed(2)}`;
             satyHtml = `<span class="sig-saty ${scls}" title="${stitle}">${stxt}</span>`;
           }
+          // Watched tag — ticker was on today's watchlist board
+          const watchedHtml = watchlistDataCache.some(r => r.ticker === s.ticker)
+            ? ' <span class="sig-watched">👁 WL</span>' : '';
           return `
 <div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}"${satyCall ? ` data-saty-call="${satyCall}" data-saty-put="${satyPut}"` : ''}>
   <div class="sig-card-top">
-    <span class="sig-ticker">${dirStr} ${s.ticker || '?'}${starHtml}${satyHtml}</span>
+    <span class="sig-ticker">${dirStr} ${s.ticker || '?'}${starHtml}${satyHtml}${watchedHtml}</span>
     <span class="sig-tier ${tier}">${tier || '—'}</span>
   </div>
   <div class="sig-score-row">
@@ -646,6 +673,11 @@
         const zoneLabel = { armed: 'armed', at_risk: 'at risk', fired: 'fired', invalidated: 'invalid', deactivated: 'inactive' }[zoneKey] || zoneKey;
         const zoneCls   = 'wl-zone wl-zone-' + zoneKey.replace('_', '-');
 
+        // Signal marker — distinct from FIRED zone badge: shows when a posted signal exists for this ticker today
+        const sigFireTs = signalTickersToday[r.ticker];
+        const signalMarkerHtml = sigFireTs
+          ? `<span class="wl-signal-marker">⚡ ${_fmtClockET(sigFireTs)}</span>` : '';
+
         // ATR reachability pill — WATCHING rows only, live-computed against current_price
         let reachPillHtml = '';
         const isWatching = (zoneKey === 'armed' || zoneKey === 'at_risk');
@@ -681,7 +713,7 @@
   <div class="wl-row-header">
     <span class="wl-ticker">${r.ticker || '?'}</span>
     <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
-    <span class="${zoneCls}">${zoneLabel}</span>${reachPillHtml}
+    <span class="${zoneCls}">${zoneLabel}</span>${reachPillHtml}${signalMarkerHtml}
   </div>${gaugeHtml}
 </div>`;
       }).join('');
