@@ -2411,7 +2411,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .drawer-close-btn:hover { color: var(--text-primary); }
 
 /* Drawer body: no padding so inner tab bar/content fill edge-to-edge */
-#drawerBody { padding: 0; display: flex; flex-direction: column; }
+#drawerBody { padding: 0; display: flex; flex-direction: column; overflow-y: auto; }
 
 /* ── cmd-main-wrap: flex row holding the 3-col grid + right ribbon ─── */
 .cmd-main-wrap {

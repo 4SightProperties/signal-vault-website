@@ -45,12 +45,14 @@
       'META','NFLX','TSLA','MU','MRVL','COIN','MSTR','QQQ','CRWD','DDOG',
       'SOFI','MARA','AFRM','IONQ','SNDK','CRDO','ENVX','ALAB','ASTS','IREN',
       'ONDS','TTD','RKLB','PYPL','HOOD','SOXL',
+      // corrected from NYSE: confirmed NASDAQ-listed
+      'DKNG','ABNB','APP','TEM','VKTX','NBIS','AAOI','POET',
     ];
     const NYSE = [
-      'LLY','DELL','NET','DKNG','NOW','CRM','GEV','NVO','UBER','ABNB',
-      'APP','HIMS','TSM','CAVA','VRT','TEM','VKTX','SE','NU','NBIS',
-      'AAOI','RBRK','DECK','RDDT','ANET','XYZ','GS','JPM','BAC','BE',
-      'U','PATH','OSCR','PL','MP','POET',
+      'LLY','DELL','NET','NOW','CRM','GEV','NVO','UBER',
+      'HIMS','TSM','CAVA','VRT','SE','NU',
+      'RBRK','DECK','RDDT','ANET','XYZ','GS','JPM','BAC','BE',
+      'U','PATH','OSCR','PL','MP',
     ];
     const AMEX = ['SPY','IWM','XLE','GLD','XBI','XLK'];
     NASDAQ.forEach(t => { m[t] = 'NASDAQ'; });
