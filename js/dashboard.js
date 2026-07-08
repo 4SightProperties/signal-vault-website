@@ -1349,7 +1349,7 @@
 
     const container = document.createElement('div');
     container.className    = 'tradingview-widget-container';
-    container.style.cssText = 'width:100%;flex:none;height:650px';
+    container.style.cssText = 'width:100%;flex:none;height:450px';
 
     const inner = document.createElement('div');
     inner.className    = 'tradingview-widget-container__widget';
@@ -1364,7 +1364,7 @@
       interval:         '1h',
       width:            '100%',
       isTransparent:    false,
-      height:           650,
+      height:           450,
       symbol:           symbol,
       showIntervalTabs: true,
       locale:           'en',
