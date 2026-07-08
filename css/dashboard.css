@@ -2432,6 +2432,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   flex-direction: column;
   align-items: center;
   padding: 8px 0;
+  overflow: hidden;
 }
 .ribbon-cluster {
   display: flex;

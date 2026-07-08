@@ -37,6 +37,7 @@
   // Right-column drawer state
   let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
   let newsInnerTab   = 'ticker'; // 'ticker' | 'market' — active tab within news drawer
+  const _tvSymCache  = new Map(); // ticker → 'EXCHANGE:TICKER' resolved via TV symbol search
 
   // GEX analysis modal state
   let gexModalPos  = null;  // position object for the open GEX pop-out
@@ -1307,7 +1308,27 @@
     drawerBody.appendChild(container);
   }
 
-  function renderTaDrawer() {
+  async function _resolveSymbol(ticker) {
+    if (_tvSymCache.has(ticker)) return _tvSymCache.get(ticker);
+    try {
+      const res  = await fetch(
+        `https://symbol-search.tradingview.com/symbol_search/?text=${encodeURIComponent(ticker)}&type=stock&exchange=&lang=en&hl=1&limit=5`
+      );
+      const data = await res.json();
+      const list = Array.isArray(data) ? data : (data.symbols || []);
+      const hit  = list.find(s => (s.symbol || '').toUpperCase() === ticker.toUpperCase()
+                              || (s.short_name || '').toUpperCase() === ticker.toUpperCase());
+      const full = (hit && hit.full_name) ? hit.full_name : (list[0] && list[0].full_name) || `NASDAQ:${ticker}`;
+      _tvSymCache.set(ticker, full);
+      return full;
+    } catch (_) {
+      const fallback = `NASDAQ:${ticker}`;
+      _tvSymCache.set(ticker, fallback);
+      return fallback;
+    }
+  }
+
+  async function renderTaDrawer() {
     const drawerBody = document.getElementById('drawerBody');
     if (!drawerBody) return;
     drawerBody.innerHTML = '';
@@ -1316,6 +1337,16 @@
       drawerBody.innerHTML = '<div class="dash-placeholder">Select a ticker to load Technical Analysis</div>';
       return;
     }
+
+    const ticker = focusedTicker;
+    drawerBody.innerHTML = '<div class="dash-placeholder">Resolving symbol…</div>';
+
+    const symbol = await _resolveSymbol(ticker);
+
+    // Guard: drawer closed or ticker changed while we awaited
+    if (drawerActive !== 'ta' || focusedTicker !== ticker) return;
+
+    drawerBody.innerHTML = '';
 
     const container = document.createElement('div');
     container.className    = 'tradingview-widget-container';
@@ -1331,17 +1362,19 @@
     script.src       = 'https://s3.tradingview.com/external-embedding/embed-widget-technical-analysis.js';
     script.async     = true;
     script.textContent = JSON.stringify({
-      interval:         '10',
+      interval:         '60',
       width:            '100%',
       isTransparent:    false,
       height:           '100%',
-      symbol:           focusedTicker,
+      symbol:           symbol,
       showIntervalTabs: true,
       locale:           'en',
       colorTheme:       'dark',
     });
     container.appendChild(script);
     drawerBody.appendChild(container);
+
+    updateDrawerTitle();
   }
 
   function updateDrawerTitle() {
