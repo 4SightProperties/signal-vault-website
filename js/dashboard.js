@@ -1457,6 +1457,7 @@
       symbol:        symbol,
       colorTheme:    'dark',
       isTransparent: false,
+      displayMode:   'adaptive',
       width:         '100%',
       height:        600,
       locale:        'en',
