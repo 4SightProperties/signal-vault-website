@@ -555,6 +555,7 @@
       const data      = await apiFetch('/api/signals');
       const sigs      = data.signals       || [];
       const lastSigTs = data.last_signal_ts || 0;
+      const isStale   = !!data.stale;
 
       // Build signalTickersToday: ticker -> most recent fire_time on today's ET date
       const todayET = _etDateStr();
@@ -576,7 +577,10 @@
 
       const minsOpen = _marketMinutesOpen();
       let bannerHtml = '';
-      if (minsOpen > 30 && sigAgeMins != null && sigAgeMins > 30) {
+      if (isStale) {
+        bannerHtml = `<div class="sig-engine-banner stale">` +
+          `⚠ Signal data may be stale — showing last known state · last signal ${fmtRelTime(lastSigTs)}</div>`;
+      } else if (minsOpen > 30 && sigAgeMins != null && sigAgeMins > 30) {
         bannerHtml = `<div class="sig-engine-banner alarm">` +
           `⚠ Engine may be offline · last signal ${fmtRelTime(lastSigTs)}</div>`;
       } else if (minsOpen === 0 && sigAgeMins != null && sigAgeMins > 30) {
@@ -586,7 +590,7 @@
 
       let cardsHtml;
       if (!sigs.length) {
-        cardsHtml = '<div class="dash-empty">No signals today</div>';
+        cardsHtml = '<div class="dash-empty">No signals in the last 30 min</div>';
       } else {
         cardsHtml = sigs.map(s => {
           const tier      = (s.conviction_tier || s.cf_tier || '').toUpperCase();
