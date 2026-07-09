@@ -215,10 +215,12 @@
       isAdmin = !!me.is_admin;
       document.getElementById('dashUser').textContent =
         (me.username || 'subscriber') + ' · ' + (me.tier || '');
-      if (me.active_env) {
-        const badge = document.getElementById('envBadge');
+      const badge = document.getElementById('envBadge');
+      if (isAdmin && me.active_env) {
         badge.textContent = me.active_env;
         badge.className   = 'dash-env-badge ' + (me.active_env === 'production' ? 'production' : 'sandbox');
+      } else if (!isAdmin) {
+        badge.style.display = 'none';
       }
       hideOverlay();
     } catch (err) {
@@ -1119,8 +1121,8 @@
         v && v.pct != null ? `±${v.pct.toFixed(1)}%` : '—'
       );
 
-      // GEX stat row — fetch /api/gex separately for full terrain data; fire-and-forget
-      loadGexFlipCell(ticker).catch(() => {});
+      // GEX stat row — admin only
+      if (isAdmin) loadGexFlipCell(ticker).catch(() => {});
 
       // P/C Flow
       _setAcCell('acPcFlow', 'acCellPcFlow', data.pc_flow, v => {
@@ -2558,6 +2560,7 @@
     </div>${trailStkRow}
   </div>
 
+${isAdmin ? `
   <div class="pos-console-section pos-ticket-section">
     <div class="pos-console-label">Order Ticket</div>
     <div class="pos-ticket-modes">
@@ -2635,7 +2638,7 @@
       Exit ${cts}x
       <span class="pos-preview-tag">${isClose ? 'close pending — blocked' : 'market · kill-switch gated'}</span>
     </button>
-  </div>
+  </div>` : ''}
 </div>`;
   }
 
@@ -2686,6 +2689,12 @@
           if (sel.value) setHistScope('user', sel.value);
         });
       }
+    } else {
+      // Remove the All users button from the DOM entirely for non-admins.
+      // histScopeBar stays display:none (never revealed), but omitting the
+      // element prevents it from being discovered via DOM inspection.
+      const allBtn = document.querySelector('#histScopeBar .hist-scope-btn[data-scope="all"]');
+      if (allBtn) allBtn.remove();
     }
   }
 
@@ -2795,6 +2804,7 @@
   }
 
   function setHistScope(scope, userId) {
+    if (!isAdmin && scope === 'all') return;
     histCurrentScope = scope;
     histCurrentUser  = userId || null;
     document.querySelectorAll('.hist-scope-btn').forEach(b =>
@@ -2988,6 +2998,7 @@
   }
 
   function setupHealthPopover() {
+    if (!isAdmin) return;
     const cell    = document.getElementById('rcHealthCell');
     const popover = document.getElementById('rcHealthPopover');
     if (!cell || !popover) return;
