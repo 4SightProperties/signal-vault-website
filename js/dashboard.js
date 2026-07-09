@@ -2267,69 +2267,257 @@
   }
 
   function wireConsoleButtons(card, pos) {
-    // Close button — real POST /api/v1/orders/close behind a confirmation modal
+    const pid     = pos.position_id;
+    const cts     = pos.contracts_open || 1;
+    const entry   = pos.entry_price || 0;
+    const sym     = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
+
+    // ── Helpers ──────────────────────────────────────────────────────────────
+    function setTicketStatus(el, msg, cls) {
+      if (!el) return;
+      el.textContent = msg;
+      el.className   = 'pos-ticket-status' + (cls ? ' ' + cls : '');
+    }
+    function fmtProceeds(price, qty) {
+      return '$' + (price * qty * 100).toFixed(2);
+    }
+    function fmtGain(price, qty) {
+      if (!entry) return '—';
+      const pct  = ((price - entry) / entry * 100).toFixed(1);
+      const cash = ((price - entry) * qty * 100).toFixed(2);
+      const sign = price >= entry ? '+' : '';
+      return `${sign}${pct}% ($${sign}${cash})`;
+    }
+
+    // ── Market close — "Exit Nx" danger button ────────────────────────────────
     const closeBtn = card.querySelector('.pos-console-close-btn');
     if (closeBtn) {
       closeBtn.addEventListener('click', e => {
         e.stopPropagation();
-        const posId = closeBtn.dataset.posId;
-        const cts   = parseInt(closeBtn.dataset.contracts, 10);
-        const sym   = closeBtn.dataset.symbol;
-        const entry = parseFloat(closeBtn.dataset.entry);
         showConfirmModal({
           title:   `Close ${pos.ticker} position`,
           body:    `<strong>${sym}</strong><br>` +
                    `Qty: <strong>${cts} contract${cts !== 1 ? 's' : ''}</strong> · entry $${entry.toFixed(2)}<br><br>` +
                    `<span style="color:var(--text-muted);font-size:0.68rem">` +
-                   `Market order. Fill price may differ from current mid. Gated by kill-switch.</span>`,
+                   `Market order. Fill may differ from mid. Gated by kill-switch.</span>`,
           okLabel: `Close ${cts}x at market`,
           okClass: 'danger',
           onOk: async (setStatus) => {
-            const orderType  = document.getElementById('closeOrderType')?.value || 'market';
-            const limitPrice = parseFloat(document.getElementById('closeLimitPrice')?.value || '0');
-            const stopPrice  = parseFloat(document.getElementById('closeStopPrice')?.value  || '0');
-            setStatus('Placing close order…');
+            setStatus('Placing market close…');
             try {
-              const payload = { position_id: posId, order_type: orderType };
-              if (orderType === 'limit' || orderType === 'bracket') payload.limit_price = limitPrice;
-              if (orderType === 'bracket') payload.stop_price = stopPrice;
-              const result = await apiPost('/api/v1/orders/close', payload);
+              const result = await apiPost('/api/v1/orders/close', { position_id: pid, order_type: 'market' });
               if (result.status === 'closed') {
                 setStatus(`Closed @ $${result.fill_price.toFixed(2)}`, 'ok');
               } else if (result.status === 'closing_pending') {
-                const msg = result.limit_price != null
-                  ? `Close resting at $${result.limit_price.toFixed(2)} — unfilled, GTC active. Reconciling.`
-                  : 'Close pending — order placed, fill unconfirmed. GTC stop active. Reconciling.';
-                setStatus(msg, 'warn');
-              } else if (result.status === 'dry_run') {
-                setStatus('Limit close not sent — order staging disabled (EXIT_ORDERS_ENABLED=False).', 'warn');
+                setStatus('Close pending — fill unconfirmed, GTC intact. Reconciling.', 'warn');
               } else if (result.status === 'pdt_protected') {
-                setStatus('PDT protected — close manually in your broker.', 'error');
+                setStatus('PDT protected — close manually in broker.', 'error');
               } else {
-                setStatus(`Close failed — position still open, GTC intact. (${result.status || 'unknown'})`, 'error');
+                setStatus(`Close failed — position still open. (${result.status || 'unknown'})`, 'error');
               }
-            } catch (err) {
+            } catch(err) {
               const detail = err.data && err.data.detail ? err.data.detail : err.message;
-              if (err.status === 503) {
-                setStatus('Kill-switch is OFF — web trading disabled', 'error');
-              } else if (err.status === 403) {
-                setStatus('Admin access required', 'error');
-              } else {
-                setStatus(`Error: ${detail}`, 'error');
-              }
+              if (err.status === 503) setStatus('Kill-switch OFF — web trading disabled', 'error');
+              else if (err.status === 403) setStatus('Admin access required', 'error');
+              else setStatus(`Error: ${detail}`, 'error');
             }
           },
         });
       });
     }
+
+    // ── Mode tabs — toggle PROFIT-ONLY / MANUAL+STOP forms ───────────────────
+    card.querySelectorAll('.pos-ticket-mode').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const mode = btn.dataset.mode;
+        card.querySelectorAll('.pos-ticket-mode').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+        card.querySelectorAll('.pos-ticket-form').forEach(f => {
+          f.style.display = f.dataset.form === mode ? '' : 'none';
+        });
+      });
+    });
+
+    // ── PROFIT-ONLY — Review ──────────────────────────────────────────────────
+    const profitForm  = card.querySelector('.pos-ticket-form[data-form="profit"]');
+    const profitReview = card.querySelector('#ticketReview');
+    const profitStatus = card.querySelector('#ticketStatus');
+
+    profitForm && profitForm.querySelector('.pos-ticket-review-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      const tp  = parseFloat(profitForm.querySelector('#ticketTp').value  || '0');
+      const qty = parseInt(profitForm.querySelector('#ticketQty').value   || '0', 10);
+      const tif = profitForm.querySelector('#ticketTif').value || 'gtc';
+
+      if (!(tp > 0))     { setTicketStatus(profitStatus, 'Enter a valid TP limit price.', 'error'); return; }
+      if (!(qty >= 1))   { setTicketStatus(profitStatus, 'Enter a valid quantity.', 'error'); return; }
+      if (qty > cts)     { setTicketStatus(profitStatus, `Qty exceeds contracts open (${cts}).`, 'error'); return; }
+
+      profitForm.querySelector('#ticketReviewBody').innerHTML =
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">TP limit</span> $${tp.toFixed(2)}</div>` +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Proceeds</span> ${fmtProceeds(tp, qty)}</div>` +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">vs entry</span> ${fmtGain(tp, qty)}</div>` +
+        (entry && tp < entry ? `<div class="pos-ticket-review-line" style="color:var(--warning)">⚠ TP is below entry ($${entry.toFixed(2)}) — limit sells at a loss if filled</div>` : '') +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Qty / TIF</span> ${qty}× ${tif.toUpperCase()}</div>`;
+
+      profitReview.style.display   = '';
+      profitReview.dataset.tp      = tp;
+      profitReview.dataset.qty     = qty;
+      profitReview.dataset.tif     = tif;
+      setTicketStatus(profitStatus, '', '');
+    });
+
+    // ── PROFIT-ONLY — Confirm ─────────────────────────────────────────────────
+    profitForm && profitForm.querySelector('.pos-ticket-confirm-btn').addEventListener('click', async e => {
+      e.stopPropagation();
+      const tp  = parseFloat(profitReview.dataset.tp  || '0');
+      const qty = parseInt(profitReview.dataset.qty   || '0', 10);
+      const tif = profitReview.dataset.tif || 'gtc';
+      if (!(tp > 0) || !(qty >= 1)) { setTicketStatus(profitStatus, 'Review the order first.', 'error'); return; }
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      setTicketStatus(profitStatus, 'Placing limit order…');
+      try {
+        const result = await apiPost('/api/v1/orders/close', {
+          position_id: pid, order_type: 'limit', limit_price: tp, quantity: qty, tif,
+        });
+        if (result.status === 'closing_pending') {
+          setTicketStatus(profitStatus, `Resting at $${result.limit_price.toFixed(2)} ${tif.toUpperCase()} — fill reconciles automatically.`, 'ok');
+        } else if (result.status === 'dry_run') {
+          setTicketStatus(profitStatus, 'Dry-run — EXIT_ORDERS_ENABLED=False. Payload verified, no order sent.', 'warn');
+          btn.disabled = false;
+        } else if (result.status === 'pdt_protected') {
+          setTicketStatus(profitStatus, 'PDT protected — close manually.', 'error');
+          btn.disabled = false;
+        } else {
+          setTicketStatus(profitStatus, `Unexpected: ${result.status}`, 'warn');
+          btn.disabled = false;
+        }
+      } catch(err) {
+        const detail = err.data && err.data.detail ? err.data.detail : err.message;
+        setTicketStatus(profitStatus, `Error: ${detail}`, 'error');
+        btn.disabled = false;
+      }
+    });
+
+    // ── MANUAL+STOP — Review ──────────────────────────────────────────────────
+    const bktForm   = card.querySelector('.pos-ticket-form[data-form="bracket"]');
+    const bktReview = card.querySelector('#ticketReviewBkt');
+    const bktStatus = card.querySelector('#ticketStatusBkt');
+
+    bktForm && bktForm.querySelector('.pos-ticket-review-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      const tp   = parseFloat(bktForm.querySelector('#ticketTpBkt').value  || '0');
+      const stop = parseFloat(bktForm.querySelector('#ticketStop').value   || '0');
+      const qty  = parseInt(bktForm.querySelector('#ticketQtyBkt').value   || '0', 10);
+
+      if (!(tp > 0))     { setTicketStatus(bktStatus, 'Enter a valid TP limit price.', 'error'); return; }
+      if (!(stop > 0))   { setTicketStatus(bktStatus, 'Enter a valid stop price.', 'error'); return; }
+      if (stop >= tp)    { setTicketStatus(bktStatus, 'Stop must be below TP.', 'error'); return; }
+      if (entry && stop >= entry) { setTicketStatus(bktStatus, `Stop premium ($${stop.toFixed(2)}) is at or above entry premium ($${entry.toFixed(2)}) — stop would trigger immediately.`, 'error'); return; }
+      if (!(qty >= 1))   { setTicketStatus(bktStatus, 'Enter a valid quantity.', 'error'); return; }
+      if (qty > cts)     { setTicketStatus(bktStatus, `Qty exceeds contracts open (${cts}).`, 'error'); return; }
+
+      bktForm.querySelector('#ticketReviewBodyBkt').innerHTML =
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">TP limit</span> $${tp.toFixed(2)} &nbsp;·&nbsp; <span class="pos-ticket-rlbl">Stop</span> $${stop.toFixed(2)}</div>` +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">OCO</span> whichever fills first closes</div>` +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Proceeds if TP</span> ${fmtProceeds(tp, qty)} &nbsp;·&nbsp; ${fmtGain(tp, qty)}</div>` +
+        (entry && tp < entry ? `<div class="pos-ticket-review-line" style="color:var(--warning)">⚠ TP is below entry ($${entry.toFixed(2)}) — OCO closes at a loss if TP leg fills</div>` : '') +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Stop loss</span> ${fmtProceeds(stop, qty)}</div>` +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Qty / TIF</span> ${qty}× GTC · both legs</div>`;
+
+      bktReview.style.display  = '';
+      bktReview.dataset.tp     = tp;
+      bktReview.dataset.stop   = stop;
+      bktReview.dataset.qty    = qty;
+      setTicketStatus(bktStatus, '', '');
+    });
+
+    // ── MANUAL+STOP — Confirm ─────────────────────────────────────────────────
+    bktForm && bktForm.querySelector('.pos-ticket-confirm-btn').addEventListener('click', async e => {
+      e.stopPropagation();
+      const tp   = parseFloat(bktReview.dataset.tp   || '0');
+      const stop = parseFloat(bktReview.dataset.stop || '0');
+      const qty  = parseInt(bktReview.dataset.qty    || '0', 10);
+      if (!(tp > 0) || !(stop > 0) || !(qty >= 1)) { setTicketStatus(bktStatus, 'Review the order first.', 'error'); return; }
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      setTicketStatus(bktStatus, 'Placing OCO bracket…');
+      try {
+        const result = await apiPost('/api/v1/orders/close', {
+          position_id: pid, order_type: 'bracket', limit_price: tp, stop_price: stop, quantity: qty,
+        });
+        if (result.status === 'closing_pending') {
+          setTicketStatus(bktStatus, `OCO resting: TP $${result.limit_price.toFixed(2)} · stop $${stop.toFixed(2)} GTC. Fill reconciles automatically.`, 'ok');
+        } else if (result.status === 'dry_run') {
+          setTicketStatus(bktStatus, 'Dry-run — EXIT_ORDERS_ENABLED=False. OCO payload verified, no order sent.', 'warn');
+          btn.disabled = false;
+        } else if (result.status === 'pdt_protected') {
+          setTicketStatus(bktStatus, 'PDT protected — close manually.', 'error');
+          btn.disabled = false;
+        } else {
+          setTicketStatus(bktStatus, `Unexpected: ${result.status}`, 'warn');
+          btn.disabled = false;
+        }
+      } catch(err) {
+        const detail = err.data && err.data.detail ? err.data.detail : err.message;
+        setTicketStatus(bktStatus, `Error: ${detail}`, 'error');
+        btn.disabled = false;
+      }
+    });
+
+    // ── Stop update — Review ──────────────────────────────────────────────────
+    const stopReview = card.querySelector('#ticketStopReview');
+    const stopStatus = card.querySelector('#ticketStopStatus');
+
+    card.querySelector('.pos-ticket-stop-btn') && card.querySelector('.pos-ticket-stop-btn').addEventListener('click', e => {
+      e.stopPropagation();
+      const stopPrice = parseFloat(card.querySelector('#ticketStopUpd').value || '0');
+      if (!(stopPrice > 0)) { setTicketStatus(stopStatus, 'Enter a valid stop price.', 'error'); return; }
+      card.querySelector('#ticketStopReviewBody').innerHTML =
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">New stop</span> $${stopPrice.toFixed(2)}</div>` +
+        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Symbol</span> ${sym}</div>` +
+        `<div class="pos-ticket-review-line" style="color:var(--text-muted);font-size:0.58rem">Cancel existing stop → place new · position briefly exposed between steps</div>`;
+      stopReview.style.display    = '';
+      stopReview.dataset.stopPrice = stopPrice;
+      setTicketStatus(stopStatus, '', '');
+    });
+
+    // ── Stop update — Confirm ─────────────────────────────────────────────────
+    card.querySelector('.pos-ticket-confirm-stop-btn') && card.querySelector('.pos-ticket-confirm-stop-btn').addEventListener('click', async e => {
+      e.stopPropagation();
+      const stopPrice = parseFloat(stopReview.dataset.stopPrice || '0');
+      if (!(stopPrice > 0)) { setTicketStatus(stopStatus, 'Review the stop first.', 'error'); return; }
+      const btn = e.currentTarget;
+      btn.disabled = true;
+      setTicketStatus(stopStatus, 'Updating stop…');
+      try {
+        const result = await apiPost('/api/v1/orders/update-stop', { position_id: pid, new_stop_price: stopPrice });
+        if (result.status === 'ok') {
+          setTicketStatus(stopStatus, `Stop set at $${result.new_stop_price.toFixed(2)} · order ${result.new_stop_id || '?'}`, 'ok');
+        } else {
+          setTicketStatus(stopStatus, `Unexpected: ${result.status}`, 'warn');
+          btn.disabled = false;
+        }
+      } catch(err) {
+        const detail = err.data && err.data.detail ? err.data.detail : err.message;
+        setTicketStatus(stopStatus, `Error: ${detail}`, 'error');
+        btn.disabled = false;
+      }
+    });
   }
 
   // Builds the HTML for the inline management console.
-  // Scale and Rebase are stubs (not yet wired). Exit is wired via Part 3.
+  // Scale and Rebase are stubs. Exit at market uses the legacy modal path.
+  // Order Ticket (Rungs 1-2) and Moving Stop A are wired via wireConsoleButtons.
   function buildConsoleHtml(pos) {
     const cts     = pos.contracts_open || 1;
     const halfCts = Math.max(1, Math.floor(cts / 2));
     const tw      = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
+    const sym     = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
+    const entry   = pos.entry_price || 0;
+    const isClose = pos.state === 'closing_pending';
 
     const tp2Row = pos.tp2_stock_price ? `
     <div class="pos-target-row">
@@ -2343,9 +2531,6 @@
       <span class="pos-target-type">Trail stk</span>
       <span class="pos-target-price">${fmtPrice(pos.trail_stop_stock_price)}</span>
     </div>` : '';
-
-    const sym   = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
-    const entry = pos.entry_price || 0;
 
     return `<div class="pos-console">
   <div class="pos-console-section">
@@ -2368,14 +2553,73 @@
       <span class="pos-target-price">${tw}</span>
     </div>${trailStkRow}
   </div>
+
+  <div class="pos-console-section pos-ticket-section">
+    <div class="pos-console-label">Order Ticket</div>
+    <div class="pos-ticket-modes">
+      <button class="pos-ticket-mode active" data-mode="profit">PROFIT-ONLY</button>
+      <button class="pos-ticket-mode" data-mode="bracket">MANUAL+STOP</button>
+    </div>
+
+    <div class="pos-ticket-form" data-form="profit">
+      <div class="pos-ticket-row">
+        <span class="pos-ticket-lbl">TP limit</span>
+        <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketTp" type="number" step="0.01" min="0.01" placeholder="0.00">
+        <span class="pos-ticket-lbl" style="margin-left:0.35rem">Qty</span>
+        <input class="pos-ticket-inp pos-ticket-qty" id="ticketQty" type="number" min="1" max="${cts}" value="${cts}">
+        <select class="pos-ticket-select" id="ticketTif"><option value="gtc">GTC</option><option value="day">DAY</option></select>
+      </div>
+      <button class="pos-ticket-review-btn">Review</button>
+      <div class="pos-ticket-status" id="ticketStatus"></div>
+      <div class="pos-ticket-review" id="ticketReview" style="display:none">
+        <div class="pos-ticket-review-body" id="ticketReviewBody"></div>
+        <button class="pos-ticket-confirm-btn">Confirm order</button>
+      </div>
+    </div>
+
+    <div class="pos-ticket-form" data-form="bracket" style="display:none">
+      <div class="pos-preview-tag" style="margin-bottom:0.4rem">OCO · both legs GTC · enter option premiums ($)</div>
+      <div class="pos-ticket-row">
+        <span class="pos-ticket-lbl">TP limit</span>
+        <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketTpBkt" type="number" step="0.01" min="0.01" placeholder="0.00">
+        <span class="pos-ticket-lbl" style="margin-left:0.35rem">Qty</span>
+        <input class="pos-ticket-inp pos-ticket-qty" id="ticketQtyBkt" type="number" min="1" max="${cts}" value="${cts}">
+      </div>
+      <div class="pos-ticket-sep">— protection —</div>
+      <div class="pos-ticket-row">
+        <span class="pos-ticket-lbl">Stop</span>
+        <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketStop" type="number" step="0.01" min="0.01" placeholder="0.00">
+      </div>
+      <button class="pos-ticket-review-btn">Review</button>
+      <div class="pos-ticket-status" id="ticketStatusBkt"></div>
+      <div class="pos-ticket-review" id="ticketReviewBkt" style="display:none">
+        <div class="pos-ticket-review-body" id="ticketReviewBodyBkt"></div>
+        <button class="pos-ticket-confirm-btn">Confirm order</button>
+      </div>
+    </div>
+  </div>
+
+  <div class="pos-console-section pos-ticket-section">
+    <div class="pos-console-label">Set / move stop</div>
+    <div class="pos-ticket-row">
+      <span class="pos-ticket-lbl">Stop $</span>
+      <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketStopUpd" type="number" step="0.01" min="0.01" placeholder="0.00">
+      <button class="pos-ticket-stop-btn">Update</button>
+    </div>
+    <div class="pos-ticket-status" id="ticketStopStatus"></div>
+    <div class="pos-ticket-review" id="ticketStopReview" style="display:none">
+      <div class="pos-ticket-review-body" id="ticketStopReviewBody"></div>
+      <button class="pos-ticket-confirm-stop-btn">Confirm stop update</button>
+    </div>
+    <div class="pos-preview-tag">cancel existing → place new · never two stops resting</div>
+  </div>
+
   <div class="pos-console-actions">
-    <button class="pos-console-btn"
-            data-stub="partial_close" data-contracts="${halfCts}" data-pos-id="${pos.position_id}">
+    <button class="pos-console-btn" data-stub="partial_close" data-contracts="${halfCts}" data-pos-id="${pos.position_id}">
       Scale ${halfCts}x
       <span class="pos-preview-tag">stub · not wired</span>
     </button>
-    <button class="pos-console-btn"
-            data-stub="rebase_trail" data-pos-id="${pos.position_id}">
+    <button class="pos-console-btn" data-stub="rebase_trail" data-pos-id="${pos.position_id}">
       Rebase Trail
       <span class="pos-preview-tag">stub · not wired</span>
     </button>
@@ -2383,10 +2627,9 @@
             data-pos-id="${pos.position_id}"
             data-contracts="${cts}"
             data-symbol="${sym}"
-            data-entry="${entry}"
-            ${pos.state === 'closing_pending' ? 'disabled title="Close already pending — double-close blocked"' : ''}>
+            data-entry="${entry}"${isClose ? ' disabled title="Close already pending — double-close blocked"' : ''}>
       Exit ${cts}x
-      <span class="pos-preview-tag">${pos.state === 'closing_pending' ? 'close pending — blocked' : 'real · gated by kill-switch'}</span>
+      <span class="pos-preview-tag">${isClose ? 'close pending — blocked' : 'market · kill-switch gated'}</span>
     </button>
   </div>
 </div>`;

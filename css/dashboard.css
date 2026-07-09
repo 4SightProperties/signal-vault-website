@@ -2532,3 +2532,182 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-style: italic;
   flex-shrink: 0;
 }
+
+/* ── Order Ticket (inline console expansion) ─────────────────────────────── */
+
+.pos-ticket-section {
+  border-top: 1px solid var(--border);
+  padding-top: 0.4rem;
+  margin-top: 0.1rem;
+}
+
+.pos-ticket-modes {
+  display: flex;
+  gap: 0.2rem;
+  margin-bottom: 0.4rem;
+}
+.pos-ticket-mode {
+  flex: 1;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  padding: 0.22rem 0;
+  text-transform: uppercase;
+  transition: border-color 0.15s, color 0.15s, background 0.15s;
+}
+.pos-ticket-mode.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: rgba(74, 222, 128, 0.07);
+}
+
+.pos-ticket-row {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  margin-bottom: 0.28rem;
+  flex-wrap: wrap;
+}
+.pos-ticket-lbl {
+  font-size: 0.59rem;
+  color: var(--text-muted);
+  min-width: 38px;
+}
+.pos-ticket-dollar {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  margin-right: -0.08rem;
+}
+.pos-ticket-inp {
+  width: 4.4rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+  font-size: 0.64rem;
+  padding: 0.17rem 0.26rem;
+  outline: none;
+  transition: border-color 0.15s;
+}
+.pos-ticket-inp:focus { border-color: var(--accent); }
+.pos-ticket-inp.pos-ticket-qty { width: 2.6rem; }
+.pos-ticket-select {
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  padding: 0.17rem 0.22rem;
+  cursor: pointer;
+}
+
+.pos-ticket-sep {
+  font-size: 0.56rem;
+  color: var(--text-muted);
+  text-align: center;
+  border-top: 1px dashed var(--border);
+  border-bottom: 1px dashed var(--border);
+  padding: 0.15rem 0;
+  margin: 0.22rem 0;
+  letter-spacing: 0.07em;
+}
+
+.pos-ticket-review-btn {
+  display: block;
+  width: 100%;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.61rem;
+  font-weight: 600;
+  padding: 0.23rem;
+  margin-top: 0.22rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+.pos-ticket-review-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+.pos-ticket-review {
+  margin-top: 0.28rem;
+  background: var(--bg-base);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.3rem 0.38rem;
+}
+.pos-ticket-review-line {
+  font-size: 0.63rem;
+  color: var(--text-secondary);
+  padding: 0.08rem 0;
+}
+.pos-ticket-rlbl {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  margin-right: 0.22rem;
+}
+
+/* Confirm — visually distinct from Review (filled accent, not outline) */
+.pos-ticket-confirm-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.32rem;
+  background: rgba(74, 222, 128, 0.12);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-sm);
+  color: var(--accent);
+  cursor: pointer;
+  font-size: 0.64rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.26rem;
+  transition: background 0.15s;
+}
+.pos-ticket-confirm-btn:hover   { background: rgba(74, 222, 128, 0.22); }
+.pos-ticket-confirm-btn:disabled { opacity: 0.4; cursor: default; }
+
+.pos-ticket-stop-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  cursor: pointer;
+  font-size: 0.59rem;
+  font-weight: 600;
+  padding: 0.17rem 0.38rem;
+  transition: border-color 0.15s, color 0.15s;
+}
+.pos-ticket-stop-btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* Stop-update confirm uses gold to distinguish from order confirm */
+.pos-ticket-confirm-stop-btn {
+  display: block;
+  width: 100%;
+  margin-top: 0.28rem;
+  background: rgba(251, 191, 36, 0.1);
+  border: 1px solid var(--gold);
+  border-radius: var(--radius-sm);
+  color: var(--gold);
+  cursor: pointer;
+  font-size: 0.62rem;
+  font-weight: 700;
+  padding: 0.24rem;
+  transition: background 0.15s;
+}
+.pos-ticket-confirm-stop-btn:hover   { background: rgba(251, 191, 36, 0.2); }
+.pos-ticket-confirm-stop-btn:disabled { opacity: 0.4; cursor: default; }
+
+.pos-ticket-status {
+  margin-top: 0.28rem;
+  font-size: 0.59rem;
+  min-height: 0.85rem;
+  line-height: 1.35;
+}
+.pos-ticket-status.ok   { color: var(--accent); }
+.pos-ticket-status.error { color: var(--danger); }
+.pos-ticket-status.warn  { color: var(--warning); }
