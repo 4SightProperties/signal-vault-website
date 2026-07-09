@@ -45,7 +45,7 @@
       'AAPL','NVDA','AMD','AVGO','ARM','SMCI','PLTR','MSFT','GOOGL','AMZN',
       'META','NFLX','TSLA','MU','MRVL','COIN','MSTR','QQQ','CRWD','DDOG',
       'SOFI','MARA','AFRM','IONQ','SNDK','CRDO','ENVX','ALAB','ASTS','IREN',
-      'ONDS','TTD','RKLB','PYPL','HOOD','SOXL',
+      'ONDS','TTD','RKLB','PYPL','HOOD',
       // corrected from NYSE: confirmed NASDAQ-listed
       'DKNG','ABNB','APP','TEM','VKTX','NBIS','AAOI','POET',
     ];
@@ -55,7 +55,8 @@
       'RBRK','DECK','RDDT','ANET','XYZ','GS','JPM','BAC','BE',
       'U','PATH','OSCR','PL','MP',
     ];
-    const AMEX = ['SPY','IWM','XLE','GLD','XBI','XLK'];
+    // NYSE Arca ETFs — TradingView addresses these as AMEX:TICKER
+    const AMEX = ['SPY','IWM','XLE','GLD','XBI','XLK','SOXL'];
     NASDAQ.forEach(t => { m[t] = 'NASDAQ'; });
     NYSE.forEach(t   => { m[t] = 'NYSE'; });
     AMEX.forEach(t   => { m[t] = 'AMEX'; });
