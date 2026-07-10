@@ -1825,7 +1825,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   height: 100%;
   background: rgba(148,163,184,0.35);
   border-radius: 1.5px;
-  transition: width 0.3s ease;
+  transition: left 0.3s ease, width 0.3s ease;
   pointer-events: none;
 }
 
@@ -1838,13 +1838,19 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-radius: 1px;
   pointer-events: none;
 }
-.idx-cap-l { left: 0;   transform: translateX(-50%); }
-.idx-cap-r { right: 0;  transform: translateX(50%); }
+/* Position (left, width, transform) set by JS on the unified price axis. */
+.idx-cap-l { }
+.idx-cap-r { }
 .idx-cap-thick { width: 3px; }
 .idx-cap-amber { background: var(--warning); }
 
-/* Zone cap width + transform are set via inline style in JS.
-   Fused state: bar track tinted amber; fill covers the full zone. */
+/* Zone band: translucent area overlay (not the solid edge used for line caps). */
+.idx-cap-zone  { background: rgba(148, 163, 184, 0.20); border-radius: 2px; }
+.idx-cap-zone.idx-cap-strong { background: rgba(148, 163, 184, 0.30); }
+.idx-cap-zone.idx-cap-amber  { background: rgba(251, 191, 36, 0.22);  }
+.idx-cap-zone.idx-cap-amber.idx-cap-strong { background: rgba(251, 191, 36, 0.32); }
+
+/* Fused state: bar track tinted amber; fill covers the full zone. */
 .idx-bar-fused  { background: rgba(251, 191, 36, 0.10); }
 .idx-fill-amber { background: rgba(251, 191, 36, 0.22); }
 

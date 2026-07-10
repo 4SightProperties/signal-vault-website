@@ -595,25 +595,28 @@
     const supEl   = cell.querySelector('.idx-sup');
     const resEl   = cell.querySelector('.idx-res');
 
-    // Full reset — clear inline styles so CSS defaults reassert
-    barEl.className       = 'idx-bar';
+    // Reset — pxEl first so a null barEl throw doesn't leave a stale price visible
     pxEl.textContent      = '—';
     stateEl.textContent   = '—';
     stateEl.className     = 'idx-state';
     fillEl.className      = 'idx-fill';
+    fillEl.style.left     = '';
     fillEl.style.width    = '0';
     markEl.style.display  = 'none';
     ghostEl.style.display = 'none';
     capL.className        = 'idx-cap idx-cap-l';
+    capL.style.left       = '';
     capL.style.width      = '';
     capL.style.transform  = '';
     capL.style.display    = '';
     capR.className        = 'idx-cap idx-cap-r';
+    capR.style.left       = '';
     capR.style.width      = '';
     capR.style.transform  = '';
     capR.style.display    = '';
     supEl.textContent     = '—';
     resEl.textContent     = '—';
+    if (barEl) barEl.className = 'idx-bar';
 
     if (!t.available) return;
 
@@ -637,20 +640,24 @@
       resEl.textContent = pfx + t.resistance.low.toFixed(2);
     }
 
-    // Fused cap: price is inside a single zone — corridor width is zero.
-    // Both booleans true; support and resistance are the same object.
+    // Unified price axis: domain = support.low → resistance.high
+    // Every element (caps, fill, marker) uses x() so coordinate spaces never diverge.
+    const domainLow  = hasSup ? t.support.low    : (hasRes ? t.resistance.low  : null);
+    const domainHigh = hasRes ? t.resistance.high : (hasSup ? t.support.high   : null);
+    const domainSpan = (domainLow != null && domainHigh != null) ? domainHigh - domainLow : 0;
+    const x = p => domainSpan > 0 ? (p - domainLow) / domainSpan * 100 : 50;
+
+    // Fused: price inside a single zone (support === resistance object)
     const fused = t.in_support_zone && t.in_resistance_zone;
     if (fused && hasSup) {
-      const z   = t.support;
-      const span = z.high - z.low;
-      const pct  = span > 0
-        ? Math.min(100, Math.max(0, (t.price - z.low) / span * 100))
-        : 50;
-      barEl.classList.add('idx-bar-fused');
+      const z = t.support;
+      if (barEl) barEl.classList.add('idx-bar-fused');
+      // In fused case domainLow=z.low, domainHigh=z.high, so x(z.low)=0 and x(z.high)=100
+      fillEl.style.left  = domainSpan > 0 ? x(z.low)  + '%' : '0%';
+      fillEl.style.width = domainSpan > 0 ? (x(z.high) - x(z.low)) + '%' : '100%';
       fillEl.classList.add('idx-fill-amber');
-      fillEl.style.width   = '100%';
       markEl.style.display = '';
-      markEl.style.left    = pct + '%';
+      markEl.style.left    = Math.min(100, Math.max(0, x(t.price))) + '%';
       capL.style.display   = 'none';
       capR.style.display   = 'none';
       stateEl.textContent  = 'in zone';
@@ -659,39 +666,45 @@
       return;
     }
 
-    // Normal: bar spans the corridor support.high → resistance.low.
-    const supHigh      = hasSup ? t.support.high  : null;
-    const resLow       = hasRes ? t.resistance.low : null;
-    const corridorSpan = (hasSup && hasRes) ? resLow - supHigh : null;
+    // Normal: position caps and fill on the unified axis
 
-    // Zone cap geometry: cap width ∝ zone span / corridor span, extends outward.
-    // Line caps keep the CSS default (2px, centered on edge).
-    if (hasSup) {
-      const s = t.support;
-      if (s.witnesses > 1) capL.classList.add('idx-cap-thick');
-      if (s.is_zone && corridorSpan > 0) {
-        capL.style.width     = ((s.high - s.low) / corridorSpan * 100) + '%';
-        capL.style.transform = 'translateX(-100%)';
-      }
-    }
-    if (hasRes) {
-      const r = t.resistance;
-      if (r.witnesses > 1) capR.classList.add('idx-cap-thick');
-      if (r.is_zone && corridorSpan > 0) {
-        capR.style.width     = ((r.high - r.low) / corridorSpan * 100) + '%';
-        capR.style.transform = 'translateX(100%)';
+    function applyCap(capEl, bnd) {
+      if (!bnd || !capEl) return;
+      const lx = x(bnd.low);
+      if (bnd.is_zone) {
+        // Area band: left=x(low), width=x(high)-x(low), translucent fill treatment
+        capEl.style.left      = lx + '%';
+        capEl.style.width     = Math.max(0, x(bnd.high) - lx) + '%';
+        capEl.style.transform = '';
+        capEl.classList.add('idx-cap-zone');
+        if (bnd.witnesses > 1) capEl.classList.add('idx-cap-strong');
+      } else {
+        // Line cap: 2px edge centered on x(low) via translateX(-50%)
+        capEl.style.left      = lx + '%';
+        capEl.style.width     = '';   // CSS default: 2px
+        capEl.style.transform = 'translateX(-50%)';
+        if (bnd.witnesses > 1) capEl.classList.add('idx-cap-thick');
       }
     }
 
-    // Marker and fill — only when the corridor is well-defined
-    if (corridorSpan > 0) {
-      const pct = Math.min(100, Math.max(0, (t.price - supHigh) / corridorSpan * 100));
-      fillEl.style.width   = pct + '%';
+    if (hasSup) applyCap(capL, t.support);
+    if (hasRes) applyCap(capR, t.resistance);
+
+    // Fill: corridor portion traversed = support.high → price
+    if (hasSup && domainSpan > 0) {
+      const fillLeft  = x(t.support.high);
+      const fillRight = Math.min(100, Math.max(fillLeft, x(t.price)));
+      fillEl.style.left  = Math.max(0, fillLeft) + '%';
+      fillEl.style.width = (fillRight - Math.max(0, fillLeft)) + '%';
+    }
+
+    // Marker at price position on the unified axis
+    if (domainSpan > 0) {
       markEl.style.display = '';
-      markEl.style.left    = pct + '%';
+      markEl.style.left    = Math.min(100, Math.max(0, x(t.price))) + '%';
     }
 
-    // State from booleans — no percentage thresholds
+    // State from booleans
     if (t.in_support_zone) {
       stateEl.textContent = 'at S';
       stateEl.classList.add('idx-state-amber');
