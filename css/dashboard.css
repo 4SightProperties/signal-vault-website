@@ -916,6 +916,48 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .chain-badge.OTM   { background: rgba(148,163,184,0.1); color: var(--text-muted); }
 .chain-badge.lotto { background: rgba(251,191,36,0.1);  color: var(--gold); }
 
+/* SR / tier context header — shown above the chain table when a tier or next-SR exists */
+.chain-sr-header {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  padding: 0.22rem 0.35rem;
+  font-size: 0.59rem;
+  font-family: var(--font-display);
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  line-height: 1.4;
+}
+.chain-hdr-tier {
+  font-weight: 700;
+  font-size: 0.61rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.chain-hdr-tier-prime    { color: var(--gold); }
+.chain-hdr-tier-high     { color: var(--accent); }
+.chain-hdr-tier-moderate { color: var(--text-secondary); }
+.chain-hdr-tier-low      { color: var(--text-muted); }
+.chain-hdr-baseline      { color: var(--text-secondary); }
+.chain-hdr-sep           { color: var(--border); margin: 0 0.1rem; }
+.chain-hdr-unreachable   { color: var(--warning); }
+
+/* @TP1 column — BS-projected % gain to next SR level. Display only, never clickable. */
+.chain-tp1 { font-weight: 600; }
+.chain-tp1.tp1-green { color: var(--accent); }       /* SR not the binding constraint */
+.chain-tp1.tp1-amber { color: var(--warning); }      /* would hit resistance before typical move */
+
+/* When atr_reachable == false, grey the entire @TP1 column (header + cells).
+   Values are suppressed ("—") in the JS; the opacity reinforces that the level
+   is outside today's ATR budget and the projection would be misleading. */
+.chain-table.chain-tp1-greyed th:last-child,
+.chain-table.chain-tp1-greyed td:last-child {
+  opacity: 0.38;
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
 /* Armed open panel (appears below chain table when a contract is selected) */
 .chain-armed {
   padding: 0.5rem 0.6rem;

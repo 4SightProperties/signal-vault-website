@@ -137,7 +137,7 @@
 
   async function apiFetch(path, opts) {
     const res = await fetch(API + path, { headers: authHeaders(), ...opts });
-    if (!res.ok) throw new Error(res.status + ' ' + path);
+    if (!res.ok) throw Object.assign(new Error(res.status + ' ' + path), { status: res.status });
     return res.json();
   }
 
@@ -573,12 +573,13 @@
         if (cell) _renderIdxCell(cell, t);
       });
     } catch (err) {
-      if (String(err).includes('403')) {
-        // Non-admin response: stay hidden, let P/L cell keep its flex-grow.
+      if (err.status === 403) {
+        // Non-admin: hide strip, restore flex-grow to P/L cell.
         strip.style.display = 'none';
         if (pnlCell) pnlCell.classList.add('cmd-rc-grow');
+      } else {
+        console.error('loadIndexLevels:', err);
       }
-      // Other errors: strip stays as-is from last successful render.
     }
   }
 
@@ -619,11 +620,11 @@
     if (!hasRes) capR.style.display = 'none';
 
     if (hasSup) {
-      supEl.textContent = '$' + t.support.level.toFixed(2);
+      supEl.textContent = '$' + t.support.price.toFixed(2);
       if (t.support.witnesses > 1) capL.classList.add('idx-cap-thick');
     }
     if (hasRes) {
-      resEl.textContent = '$' + t.resistance.level.toFixed(2);
+      resEl.textContent = '$' + t.resistance.price.toFixed(2);
       if (t.resistance.witnesses > 1) capR.classList.add('idx-cap-thick');
     }
 
@@ -1989,7 +1990,7 @@
     try {
       const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 13 });
       const data   = await apiFetch(`/api/chain?${params}`);
-      renderChain(data.strikes || [], bias);
+      renderChain(data.strikes || [], bias, data);
     } catch (err) {
       if (String(err).includes('403')) {
         chainBody.innerHTML = '<div class="dash-placeholder">Chain requires admin access</div>';
@@ -1999,30 +2000,98 @@
     }
   }
 
-  function renderChain(strikes, bias) {
+  function renderChain(strikes, bias, srCtx) {
     const chainBody = document.getElementById('chainBody');
     if (!strikes.length) {
       chainBody.innerHTML = '<div class="dash-placeholder">No liquid strikes (market closed or try different expiry)</div>';
       return;
     }
 
+    srCtx = srCtx || {};
+
+    const tier            = srCtx.tier             || null;
+    const tierBaselinePct = srCtx.tier_baseline_pct != null ? srCtx.tier_baseline_pct : null;
+    const tierHitRate     = srCtx.tier_hit_rate     != null ? srCtx.tier_hit_rate     : null;
+    const tierCi          = srCtx.tier_ci           || null;
+    const nextSr          = srCtx.next_sr           || null;
+    const srDistPct       = srCtx.sr_distance_pct   != null ? srCtx.sr_distance_pct  : null;
+    // atr_reachable may be true | false | null (null = no ATR data)
+    const atrReachable    = srCtx.atr_reachable != null ? srCtx.atr_reachable : null;
+    const atrMultiple     = srCtx.atr_multiple      != null ? srCtx.atr_multiple     : null;
+
+    // When atr_reachable is explicitly false, grey the @TP1 column and suppress values.
+    // The SR level exists but is outside today's ATR budget; projecting to it would be
+    // arithmetically valid but practically misleading.
+    const tp1Greyed = atrReachable === false;
+
     const dirLabel = bias === 'bullish' ? 'CALL' : 'PUT';
 
-    const rows = strikes.map((s, i) => `
+    // ── SR / tier header ────────────────────────────────────────────────────
+    let headerHtml = '';
+    if (tier || nextSr) {
+      const parts = [];
+
+      if (tier) {
+        const hitPct = tierHitRate != null ? Math.round(tierHitRate * 100) : null;
+        // "typical peak" = MFE (intraday session high), not take-profit. It is a ceiling.
+        const hitStr  = hitPct != null ? ` (${hitPct}%)` : '';
+        const baseline = tierBaselinePct != null
+          ? ` · <span class="chain-hdr-baseline">+${tierBaselinePct}% typical peak${hitStr}</span>`
+          : '';
+        parts.push(
+          `<span class="chain-hdr-tier chain-hdr-tier-${tier.toLowerCase()}">${tier}</span>${baseline}`
+        );
+      }
+
+      if (nextSr) {
+        // Sign: calls go up to resistance (+), puts go down to support (-)
+        const dSign = bias === 'bullish' ? '+' : '-';
+        const dStr = srDistPct != null
+          ? `(${dSign}${(srDistPct * 100).toFixed(2)}%)`
+          : '';
+        const aStr = atrMultiple != null
+          ? `· ${atrMultiple.toFixed(2)} ATR`
+          : '';
+        const unreachTag = atrReachable === false
+          ? ' <span class="chain-hdr-unreachable">— not reachable today</span>'
+          : '';
+        parts.push(
+          [`next R $${nextSr.price.toFixed(2)}`, dStr, aStr].filter(Boolean).join(' ') + unreachTag
+        );
+      }
+
+      if (parts.length) {
+        headerHtml = `<div class="chain-sr-header">${parts.join('<span class="chain-hdr-sep">  </span>')}</div>`;
+      }
+    }
+
+    // ── Table rows ──────────────────────────────────────────────────────────
+    const rows = strikes.map((s, i) => {
+      // @TP1 cell: BS-projected % gain to next SR. Not clickable; never wired to an order.
+      let tp1Cell  = '—';
+      let tp1Class = '';
+      if (!tp1Greyed && s.tp1_pct != null) {
+        const sign = s.tp1_pct >= 0 ? '+' : '';
+        tp1Cell = `${sign}${Math.round(s.tp1_pct)}%`;
+        if (tierBaselinePct != null) {
+          // Green = SR is not the binding constraint; amber = would hit resistance before typical move.
+          tp1Class = s.tp1_pct >= tierBaselinePct ? ' tp1-green' : ' tp1-amber';
+        }
+      }
+
+      return `
 <tr data-idx="${i}" class="${s.is_target ? 'chain-atm' : ''}">
-  <td>
-    <span class="chain-badge ${s.badge}">${s.badge}</span>
-    $${s.strike}
-  </td>
+  <td><span class="chain-badge ${s.badge}">${s.badge}</span> $${s.strike}</td>
   <td>${s.delta.toFixed(2)}</td>
   <td>${s.ask.toFixed(2)}</td>
   <td>${s.bid.toFixed(2)}</td>
   <td>${s.iv > 0 ? (s.iv * 100).toFixed(0) + '%' : '—'}</td>
-  <td>${s.tp1_val > 0 ? s.tp1_val.toFixed(2) : '—'}</td>
-</tr>`).join('');
+  <td class="chain-tp1${tp1Class}">${tp1Cell}</td>
+</tr>`;
+    }).join('');
 
-    chainBody.innerHTML = `
-<table class="chain-table">
+    chainBody.innerHTML = headerHtml + `
+<table class="chain-table${tp1Greyed ? ' chain-tp1-greyed' : ''}">
   <thead>
     <tr>
       <th>${dirLabel}</th>
@@ -2035,10 +2104,11 @@
   </thead>
   <tbody>${rows}</tbody>
 </table>`;
+
     const cockpitEl = document.getElementById('chainCockpit');
     if (cockpitEl) cockpitEl.innerHTML = '';
 
-    // Click-to-select a row
+    // Click-to-select a row (arms the contract for order entry)
     chainBody.querySelectorAll('table tbody tr').forEach((row, i) => {
       row.addEventListener('click', () => {
         chainBody.querySelectorAll('table tbody tr').forEach(r => r.classList.remove('chain-selected'));
