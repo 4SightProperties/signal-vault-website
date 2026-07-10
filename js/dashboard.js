@@ -614,7 +614,9 @@
     capR.style.width      = '';
     capR.style.transform  = '';
     capR.style.display    = '';
+    supEl.className       = 'idx-sup';
     supEl.textContent     = '—';
+    resEl.className       = 'idx-res';
     resEl.textContent     = '—';
     if (barEl) barEl.className = 'idx-bar';
 
@@ -655,7 +657,7 @@
       // In fused case domainLow=z.low, domainHigh=z.high, so x(z.low)=0 and x(z.high)=100
       fillEl.style.left  = domainSpan > 0 ? x(z.low)  + '%' : '0%';
       fillEl.style.width = domainSpan > 0 ? (x(z.high) - x(z.low)) + '%' : '100%';
-      fillEl.classList.add('idx-fill-amber');
+      fillEl.classList.add('idx-fill-gray');
       markEl.style.display = '';
       markEl.style.left    = Math.min(100, Math.max(0, x(t.price))) + '%';
       capL.style.display   = 'none';
@@ -667,6 +669,8 @@
     }
 
     // Normal: position caps and fill on the unified axis
+    if (hasSup) supEl.classList.add('idx-lbl-green');
+    if (hasRes) resEl.classList.add('idx-lbl-red');
 
     function applyCap(capEl, bnd) {
       if (!bnd || !capEl) return;
@@ -687,8 +691,8 @@
       }
     }
 
-    if (hasSup) applyCap(capL, t.support);
-    if (hasRes) applyCap(capR, t.resistance);
+    if (hasSup) { applyCap(capL, t.support);   capL.classList.add('idx-cap-green'); }
+    if (hasRes) { applyCap(capR, t.resistance); capR.classList.add('idx-cap-red');   }
 
     // Fill: corridor portion traversed = support.high → price
     if (hasSup && domainSpan > 0) {
@@ -708,11 +712,11 @@
     if (t.in_support_zone) {
       stateEl.textContent = 'at S';
       stateEl.classList.add('idx-state-amber');
-      capL.classList.add('idx-cap-amber');
+      capL.classList.add('idx-cap-green');
     } else if (t.in_resistance_zone) {
       stateEl.textContent = 'at R';
       stateEl.classList.add('idx-state-amber');
-      capR.classList.add('idx-cap-amber');
+      capR.classList.add('idx-cap-red');
     } else {
       stateEl.textContent = 'mid';
     }

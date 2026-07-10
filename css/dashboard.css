@@ -1842,17 +1842,20 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .idx-cap-l { }
 .idx-cap-r { }
 .idx-cap-thick { width: 3px; }
-.idx-cap-amber { background: var(--warning); }
+.idx-cap-green { background: #26a69a; }
+.idx-cap-red   { background: #ef5350; }
 
 /* Zone band: translucent area overlay (not the solid edge used for line caps). */
 .idx-cap-zone  { background: rgba(148, 163, 184, 0.20); border-radius: 2px; }
 .idx-cap-zone.idx-cap-strong { background: rgba(148, 163, 184, 0.30); }
-.idx-cap-zone.idx-cap-amber  { background: rgba(251, 191, 36, 0.22);  }
-.idx-cap-zone.idx-cap-amber.idx-cap-strong { background: rgba(251, 191, 36, 0.32); }
+.idx-cap-zone.idx-cap-green              { background: rgba(38, 166, 154, 0.20); }
+.idx-cap-zone.idx-cap-green.idx-cap-strong { background: rgba(38, 166, 154, 0.30); }
+.idx-cap-zone.idx-cap-red               { background: rgba(239, 83, 80, 0.20);  }
+.idx-cap-zone.idx-cap-red.idx-cap-strong  { background: rgba(239, 83, 80, 0.30);  }
 
-/* Fused state: bar track tinted amber; fill covers the full zone. */
-.idx-bar-fused  { background: rgba(251, 191, 36, 0.10); }
-.idx-fill-amber { background: rgba(251, 191, 36, 0.22); }
+/* Fused state: bar track and fill tinted gray (price inside zone, direction unknown). */
+.idx-bar-fused { background: rgba(148, 163, 184, 0.10); }
+.idx-fill-gray { background: rgba(148, 163, 184, 0.22); }
 
 .idx-mark {
   position: absolute;
@@ -1889,6 +1892,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   color: var(--text-muted);
   font-family: var(--font-display);
 }
+.idx-lbl-green { color: #26a69a; }
+.idx-lbl-red   { color: #ef5350; }
 
 /* ── Regime health dot + panel-health popover ───────────────── */
 .cmd-rc-health-cell {
