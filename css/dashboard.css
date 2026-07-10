@@ -1843,6 +1843,11 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .idx-cap-thick { width: 3px; }
 .idx-cap-amber { background: var(--warning); }
 
+/* Zone cap width + transform are set via inline style in JS.
+   Fused state: bar track tinted amber; fill covers the full zone. */
+.idx-bar-fused  { background: rgba(251, 191, 36, 0.10); }
+.idx-fill-amber { background: rgba(251, 191, 36, 0.22); }
+
 .idx-mark {
   position: absolute;
   top: -3px;

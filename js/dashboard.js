@@ -584,6 +584,7 @@
   }
 
   function _renderIdxCell(cell, t) {
+    const barEl   = cell.querySelector('.idx-bar');
     const pxEl    = cell.querySelector('.idx-px');
     const stateEl = cell.querySelector('.idx-state');
     const fillEl  = cell.querySelector('.idx-fill');
@@ -594,57 +595,113 @@
     const supEl   = cell.querySelector('.idx-sup');
     const resEl   = cell.querySelector('.idx-res');
 
-    // Full reset
+    // Full reset — clear inline styles so CSS defaults reassert
+    barEl.className       = 'idx-bar';
     pxEl.textContent      = '—';
     stateEl.textContent   = '—';
     stateEl.className     = 'idx-state';
+    fillEl.className      = 'idx-fill';
     fillEl.style.width    = '0';
     markEl.style.display  = 'none';
     ghostEl.style.display = 'none';
+    capL.className        = 'idx-cap idx-cap-l';
+    capL.style.width      = '';
+    capL.style.transform  = '';
     capL.style.display    = '';
+    capR.className        = 'idx-cap idx-cap-r';
+    capR.style.width      = '';
+    capR.style.transform  = '';
     capR.style.display    = '';
-    capL.className = 'idx-cap idx-cap-l';
-    capR.className = 'idx-cap idx-cap-r';
-    supEl.textContent = '—';
-    resEl.textContent = '—';
+    supEl.textContent     = '—';
+    resEl.textContent     = '—';
 
     if (!t.available) return;
 
-    if (t.price != null) pxEl.textContent = t.price.toFixed(2);
-
+    const pfx    = t.ticker === 'VIX' ? '' : '$';
     const hasSup = t.support    != null;
     const hasRes = t.resistance != null;
-    const pct    = t.pct_through_range;
+
+    if (t.price != null) pxEl.textContent = pfx + t.price.toFixed(2);
 
     if (!hasSup) capL.style.display = 'none';
     if (!hasRes) capR.style.display = 'none';
 
+    // Labels: support shows low (or low–high if zone); resistance shows low
     if (hasSup) {
-      supEl.textContent = '$' + t.support.price.toFixed(2);
-      if (t.support.witnesses > 1) capL.classList.add('idx-cap-thick');
+      const s = t.support;
+      supEl.textContent = s.is_zone
+        ? pfx + s.low.toFixed(2) + '–' + s.high.toFixed(2)
+        : pfx + s.low.toFixed(2);
     }
     if (hasRes) {
-      resEl.textContent = '$' + t.resistance.price.toFixed(2);
-      if (t.resistance.witnesses > 1) capR.classList.add('idx-cap-thick');
+      resEl.textContent = pfx + t.resistance.low.toFixed(2);
     }
 
-    if (pct != null) {
-      const w = Math.min(100, Math.max(0, pct * 100));
-      fillEl.style.width   = w + '%';
+    // Fused cap: price is inside a single zone — corridor width is zero.
+    // Both booleans true; support and resistance are the same object.
+    const fused = t.in_support_zone && t.in_resistance_zone;
+    if (fused && hasSup) {
+      const z   = t.support;
+      const span = z.high - z.low;
+      const pct  = span > 0
+        ? Math.min(100, Math.max(0, (t.price - z.low) / span * 100))
+        : 50;
+      barEl.classList.add('idx-bar-fused');
+      fillEl.classList.add('idx-fill-amber');
+      fillEl.style.width   = '100%';
       markEl.style.display = '';
-      markEl.style.left    = w + '%';
+      markEl.style.left    = pct + '%';
+      capL.style.display   = 'none';
+      capR.style.display   = 'none';
+      stateEl.textContent  = 'in zone';
+      stateEl.classList.add('idx-state-amber');
+      if (t.next_above != null) ghostEl.style.display = '';
+      return;
+    }
 
-      if (pct <= 0.25) {
-        stateEl.textContent = 'near S';
-        stateEl.classList.add('idx-state-amber');
-        capL.classList.add('idx-cap-amber');
-      } else if (pct >= 0.75) {
-        stateEl.textContent = 'near R';
-        stateEl.classList.add('idx-state-amber');
-        capR.classList.add('idx-cap-amber');
-      } else {
-        stateEl.textContent = 'mid';
+    // Normal: bar spans the corridor support.high → resistance.low.
+    const supHigh      = hasSup ? t.support.high  : null;
+    const resLow       = hasRes ? t.resistance.low : null;
+    const corridorSpan = (hasSup && hasRes) ? resLow - supHigh : null;
+
+    // Zone cap geometry: cap width ∝ zone span / corridor span, extends outward.
+    // Line caps keep the CSS default (2px, centered on edge).
+    if (hasSup) {
+      const s = t.support;
+      if (s.witnesses > 1) capL.classList.add('idx-cap-thick');
+      if (s.is_zone && corridorSpan > 0) {
+        capL.style.width     = ((s.high - s.low) / corridorSpan * 100) + '%';
+        capL.style.transform = 'translateX(-100%)';
       }
+    }
+    if (hasRes) {
+      const r = t.resistance;
+      if (r.witnesses > 1) capR.classList.add('idx-cap-thick');
+      if (r.is_zone && corridorSpan > 0) {
+        capR.style.width     = ((r.high - r.low) / corridorSpan * 100) + '%';
+        capR.style.transform = 'translateX(100%)';
+      }
+    }
+
+    // Marker and fill — only when the corridor is well-defined
+    if (corridorSpan > 0) {
+      const pct = Math.min(100, Math.max(0, (t.price - supHigh) / corridorSpan * 100));
+      fillEl.style.width   = pct + '%';
+      markEl.style.display = '';
+      markEl.style.left    = pct + '%';
+    }
+
+    // State from booleans — no percentage thresholds
+    if (t.in_support_zone) {
+      stateEl.textContent = 'at S';
+      stateEl.classList.add('idx-state-amber');
+      capL.classList.add('idx-cap-amber');
+    } else if (t.in_resistance_zone) {
+      stateEl.textContent = 'at R';
+      stateEl.classList.add('idx-state-amber');
+      capR.classList.add('idx-cap-amber');
+    } else {
+      stateEl.textContent = 'mid';
     }
 
     if (t.next_above != null) ghostEl.style.display = '';
