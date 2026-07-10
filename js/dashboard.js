@@ -547,6 +547,106 @@
     } catch (_) {
       // Silently fail — don't disrupt the rest of the dashboard
     }
+
+    // Piggyback index proximity on the same 60s cadence — no second timer.
+    loadIndexLevels();
+  }
+
+  // ── Index proximity strip — admin-only ────────────────────────────────────
+
+  async function loadIndexLevels() {
+    if (!isAdmin) return;
+
+    const strip  = document.getElementById('idxStrip');
+    const pnlCell = document.getElementById('rcCellPnl');
+    if (!strip) return;
+
+    try {
+      const data = await apiFetch('/api/index-levels');
+      // Show strip and hand the flex-grow role to it.
+      strip.style.display = 'flex';
+      if (pnlCell) pnlCell.classList.remove('cmd-rc-grow');
+
+      const tickers = data.tickers || [];
+      tickers.forEach(t => {
+        const cell = strip.querySelector(`.idx-cell[data-idx="${t.ticker}"]`);
+        if (cell) _renderIdxCell(cell, t);
+      });
+    } catch (err) {
+      if (String(err).includes('403')) {
+        // Non-admin response: stay hidden, let P/L cell keep its flex-grow.
+        strip.style.display = 'none';
+        if (pnlCell) pnlCell.classList.add('cmd-rc-grow');
+      }
+      // Other errors: strip stays as-is from last successful render.
+    }
+  }
+
+  function _renderIdxCell(cell, t) {
+    const pxEl    = cell.querySelector('.idx-px');
+    const stateEl = cell.querySelector('.idx-state');
+    const fillEl  = cell.querySelector('.idx-fill');
+    const markEl  = cell.querySelector('.idx-mark');
+    const ghostEl = cell.querySelector('.idx-ghost');
+    const capL    = cell.querySelector('.idx-cap-l');
+    const capR    = cell.querySelector('.idx-cap-r');
+    const supEl   = cell.querySelector('.idx-sup');
+    const resEl   = cell.querySelector('.idx-res');
+
+    // Full reset
+    pxEl.textContent      = '—';
+    stateEl.textContent   = '—';
+    stateEl.className     = 'idx-state';
+    fillEl.style.width    = '0';
+    markEl.style.display  = 'none';
+    ghostEl.style.display = 'none';
+    capL.style.display    = '';
+    capR.style.display    = '';
+    capL.className = 'idx-cap idx-cap-l';
+    capR.className = 'idx-cap idx-cap-r';
+    supEl.textContent = '—';
+    resEl.textContent = '—';
+
+    if (!t.available) return;
+
+    if (t.price != null) pxEl.textContent = t.price.toFixed(2);
+
+    const hasSup = t.support    != null;
+    const hasRes = t.resistance != null;
+    const pct    = t.pct_through_range;
+
+    if (!hasSup) capL.style.display = 'none';
+    if (!hasRes) capR.style.display = 'none';
+
+    if (hasSup) {
+      supEl.textContent = '$' + t.support.level.toFixed(2);
+      if (t.support.witnesses > 1) capL.classList.add('idx-cap-thick');
+    }
+    if (hasRes) {
+      resEl.textContent = '$' + t.resistance.level.toFixed(2);
+      if (t.resistance.witnesses > 1) capR.classList.add('idx-cap-thick');
+    }
+
+    if (pct != null) {
+      const w = Math.min(100, Math.max(0, pct * 100));
+      fillEl.style.width   = w + '%';
+      markEl.style.display = '';
+      markEl.style.left    = w + '%';
+
+      if (pct <= 0.25) {
+        stateEl.textContent = 'near S';
+        stateEl.classList.add('idx-state-amber');
+        capL.classList.add('idx-cap-amber');
+      } else if (pct >= 0.75) {
+        stateEl.textContent = 'near R';
+        stateEl.classList.add('idx-state-amber');
+        capR.classList.add('idx-cap-amber');
+      } else {
+        stateEl.textContent = 'mid';
+      }
+    }
+
+    if (t.next_above != null) ghostEl.style.display = '';
   }
 
   // ── Signals ───────────────────────────────────────────────────────────────

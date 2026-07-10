@@ -1718,6 +1718,125 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cmd-regime-cell.rc-error .cmd-rc-value { color: var(--text-muted) !important; opacity: 0.5; }
 .cmd-rc-sub { font-size: 0.58rem; font-weight: 400; opacity: 0.65; }
 
+/* ── Index proximity strip — admin-only; three cells between P/L and Risk ── */
+.idx-strip {
+  flex: 1;
+  align-self: stretch;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+  /* display is toggled by JS; keeps display:none for non-admins */
+}
+
+.idx-cell {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  padding: 0 0.55rem;
+  border-right: 1px solid var(--border);
+  min-width: 0;
+  gap: 0.12rem;
+}
+.idx-cell:last-child { border-right: none; }
+
+.idx-head {
+  display: flex;
+  align-items: baseline;
+  gap: 0.3rem;
+  line-height: 1;
+}
+
+.idx-tkr {
+  font-family: var(--font-display);
+  font-size: 11px;
+  font-weight: 700;
+  color: var(--text-primary);
+  letter-spacing: 0.05em;
+  flex-shrink: 0;
+}
+
+.idx-px {
+  font-size: 11px;
+  color: var(--text-muted);
+  flex-shrink: 0;
+}
+
+.idx-state {
+  font-size: 9px;
+  color: var(--text-muted);
+  margin-left: auto;
+  flex-shrink: 0;
+}
+.idx-state.idx-state-amber { color: var(--warning); }
+
+.idx-bar {
+  position: relative;
+  height: 3px;
+  background: var(--border);
+  border-radius: 1.5px;
+  overflow: visible;
+}
+
+.idx-fill {
+  position: absolute;
+  top: 0; left: 0;
+  height: 100%;
+  background: rgba(148,163,184,0.35);
+  border-radius: 1.5px;
+  transition: width 0.3s ease;
+  pointer-events: none;
+}
+
+.idx-cap {
+  position: absolute;
+  top: -3px;
+  width: 2px;
+  height: calc(100% + 6px);
+  background: var(--border-bright);
+  border-radius: 1px;
+  pointer-events: none;
+}
+.idx-cap-l { left: 0;   transform: translateX(-50%); }
+.idx-cap-r { right: 0;  transform: translateX(50%); }
+.idx-cap-thick { width: 3px; }
+.idx-cap-amber { background: var(--warning); }
+
+.idx-mark {
+  position: absolute;
+  top: -3px;
+  width: 1px;
+  height: calc(100% + 6px);
+  background: var(--text-primary);
+  border-radius: 1px;
+  transform: translateX(-50%);
+  pointer-events: none;
+  box-shadow: 0 0 3px rgba(226,232,240,0.35);
+}
+
+.idx-ghost {
+  position: absolute;
+  top: -2px;
+  right: -8px;
+  width: 1px;
+  height: calc(100% + 4px);
+  background: var(--border-bright);
+  opacity: 0.4;
+  pointer-events: none;
+}
+
+.idx-lvls {
+  display: flex;
+  justify-content: space-between;
+  line-height: 1;
+}
+
+.idx-sup,
+.idx-res {
+  font-size: 9px;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+
 /* ── Regime health dot + panel-health popover ───────────────── */
 .cmd-rc-health-cell {
   padding: 0 0.6rem;
