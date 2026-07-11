@@ -1925,12 +1925,9 @@
 
   // Levels panel: shows watchlist-derived context for the focused ticker.
   function renderLevels(ticker) {
-    const titleEl  = document.getElementById('levelsTicker');
     const sourceEl = document.getElementById('levelsSource');
     const gridEl   = document.getElementById('levelsGrid');
-    if (!titleEl || !gridEl) return;
-
-    titleEl.textContent = ticker || '—';
+    if (!gridEl) return;
 
     const row = watchlistDataCache.find(r => r.ticker === ticker);
     if (!row) {
@@ -1943,19 +1940,17 @@
 
     const dirClass = (row.direction || '').toLowerCase().startsWith('bear') ? 'bear' : 'bull';
 
-    const cells = [
+    const fields = [
       { label: 'Direction', value: (row.direction || '—').replace(/_/g, ' ').toUpperCase(), cls: dirClass },
-      { label: 'Trigger',   value: row.trigger  != null ? fmtPrice(row.trigger) : '—' },
-      { label: 'vs',        value: row.vs       != null ? fmtPrice(row.vs)      : '—' },
-      { label: 'Gates',     value: row.gate_n   != null ? row.gate_n + ' / 4'   : '—' },
-      { label: 'Arm',       value: row.arm_state || '—'                              },
+      { label: 'Vs',        value: row.vs       != null ? fmtPrice(row.vs)      : '—' },
+      { label: 'Arm',       value: row.arm_state || '—' },
       { label: 'Rank',      value: row.rank     != null ? '#' + row.rank         : '—' },
     ];
 
-    gridEl.innerHTML = cells.map(c => `
+    gridEl.innerHTML = fields.map(f => `
 <div class="dash-level-cell">
-  <span class="dash-level-cell-label">${c.label}</span>
-  <span class="dash-level-cell-value${c.cls ? ' ' + c.cls : ''}">${c.value}</span>
+  <span class="dash-level-cell-label">${f.label}</span>
+  <span class="dash-level-cell-value${f.cls ? ' ' + f.cls : ''}">${f.value}</span>
 </div>`).join('');
 
     // Structural levels — async fetch, graceful degradation
