@@ -849,6 +849,15 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   background: rgba(59,130,246,0.08);
   color: var(--blue);
   font-weight: 700;
+  cursor: default;
+}
+.chain-compact-item.chain-compact-neighbor {
+  cursor: pointer;
+  transition: border-color 0.12s, color 0.12s;
+}
+.chain-compact-item.chain-compact-neighbor:hover {
+  border-color: var(--text-muted);
+  color: var(--text-secondary);
 }
 .chain-expand-btn {
   background: transparent;
@@ -1573,55 +1582,85 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* Projection wrap + cockpit level matrix */
 .cockpit-proj-wrap { margin: 0.1rem 0 0.08rem; }
 
-/* ── Level × Payoff matrix ──────────────────────────────────── */
+/* ── Level × Payoff matrix (8-col: Level · Stock · Now{val,%,$} · Expiry{val,%,$}) ── */
 .cockpit-level-matrix {
   width: 100%;
   border-collapse: collapse;
-  font-size: 0.59rem;
+  font-size: 0.58rem;
   font-family: var(--font-display);
   margin-top: 0.1rem;
 }
-.cockpit-level-matrix th {
-  font-size: 0.51rem;
+
+/* Group header row (NOW / EXPIRY) */
+.mat-thead-top th {
+  font-size: 0.5rem;
   font-weight: 700;
   text-transform: uppercase;
-  letter-spacing: 0.06em;
+  letter-spacing: 0.05em;
   color: var(--text-muted);
-  padding: 0.1rem 0.22rem;
-  text-align: left;
+  padding: 0.08rem 0.2rem 0.04rem;
+  text-align: center;
+}
+.mat-th-level {
+  text-align: left !important;
+  vertical-align: bottom;
   border-bottom: 1px solid var(--border);
 }
-.cockpit-level-matrix th:nth-child(2),
-.cockpit-level-matrix th:nth-child(3),
-.cockpit-level-matrix th:nth-child(4) { text-align: right; }
+.mat-th-stock {
+  text-align: right !important;
+  vertical-align: bottom;
+  border-bottom: 1px solid var(--border);
+}
+.mat-th-group        { border-bottom: 1px solid rgba(148,163,184,0.35); }
+.mat-th-group-right  { border-left: 1px solid rgba(148,163,184,0.15); }
+
+/* Sub-header row (Val / % / $) */
+.mat-thead-sub th {
+  font-size: 0.46rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: var(--text-muted);
+  text-align: right;
+  padding: 0.02rem 0.2rem 0.09rem;
+  border-bottom: 1px solid var(--border);
+  opacity: 0.6;
+}
+.mat-th-sub-sep { border-left: 1px solid rgba(148,163,184,0.15); }
+
+/* Data cells */
 .cockpit-level-matrix td {
-  padding: 0.12rem 0.22rem;
+  padding: 0.11rem 0.2rem;
   border-bottom: 1px solid rgba(148,163,184,0.05);
   color: var(--text-muted);
   vertical-align: middle;
+  font-variant-numeric: tabular-nums;
 }
-.cockpit-level-matrix td.mat-price,
-.cockpit-level-matrix td.mat-payoff { text-align: right; font-variant-numeric: tabular-nums; }
 
+/* Subtle zebra tint */
+.cockpit-level-matrix tbody tr:nth-child(even) td { background-color: rgba(148,163,184,0.02); }
+
+/* Column alignment */
+.mat-label    { text-align: left; white-space: nowrap; }
+.mat-stock    { text-align: right; }
+.mat-val      { text-align: right; }
+.mat-pct-cell { text-align: right; }
+.mat-dol-cell { text-align: right; min-width: 2rem; }
+.mat-group-sep { border-left: 1px solid rgba(148,163,184,0.1); }
+
+/* Row highlights */
 .cockpit-level-matrix tr.mat-row-target    td { background: rgba(59,130,246,0.07); color: var(--text-secondary); font-weight: 600; }
-.cockpit-level-matrix tr.mat-row-current   td { color: var(--text-primary); border-left: 2px solid var(--border); }
+.cockpit-level-matrix tr.mat-row-current   td { color: var(--text-primary); }
 .cockpit-level-matrix tr.mat-row-strike    td { color: var(--text-secondary); }
 .cockpit-level-matrix tr.mat-row-breakeven td { font-style: italic; }
 .cockpit-level-matrix tr.mat-row-confluence td { background: rgba(148,163,184,0.04); }
 
-.mat-label          { color: var(--text-muted); }
-.mat-lbl-resistance { color: var(--danger); }
-.mat-lbl-support    { color: var(--accent); }
-.mat-lbl-call-wall  { color: var(--accent); }
-.mat-lbl-put-wall   { color: var(--danger); }
-.mat-lbl-magnet     { color: #a78bfa; }
-.mat-lbl-confluence { color: var(--text-primary); font-weight: 700; }
-
-.mat-pct                              { font-size: 0.52rem; margin-left: 0.15rem; }
-.mat-total                            { font-size: 0.5rem; margin-left: 0.1rem; opacity: 0.85; }
+/* Gain/loss color on % and $ spans only; everything else neutral */
+.mat-pct                               { font-size: 0.52rem; }
+.mat-total                             { font-size: 0.52rem; }
 .mat-pct.positive, .mat-total.positive { color: var(--accent); }
 .mat-pct.negative, .mat-total.negative { color: var(--danger); }
-.mat-na                               { opacity: 0.35; }
+.mat-na                                { opacity: 0.35; }
 
 /* Projection strip — 4 horizontal scenario cells (GEX modal) */
 .cockpit-proj-strip {

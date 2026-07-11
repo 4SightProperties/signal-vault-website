@@ -2254,16 +2254,29 @@
       chainBody.innerHTML = `
 <div class="chain-compact-strip">
   <div class="chain-compact-strikes">
-    ${neighbors.map(s => `
-    <div class="chain-compact-item${s.strike === strike.strike ? ' chain-compact-armed' : ''}">
+    ${neighbors.map((s, ni) => {
+      const isArmed = s.strike === strike.strike;
+      return `
+    <div class="chain-compact-item${isArmed ? ' chain-compact-armed' : ' chain-compact-neighbor'}" data-idx="${start + ni}">
       <span class="chain-badge ${s.badge}">${s.badge}</span>
       <span>$${s.strike}</span>
-    </div>`).join('')}
+    </div>`;
+    }).join('')}
   </div>
   <button class="chain-expand-btn" id="chainExpandBtn" title="Restore full chain table">⤢ Expand chain</button>
 </div>`;
 
       chainPanelEl.classList.add('chain-collapsed');
+
+      // Neighbor chips re-arm directly from cached strike data (cache path —
+      // no /api/chain/quote call at click time; armContract handles quote refresh internally)
+      chainBody.querySelectorAll('.chain-compact-neighbor').forEach(chip => {
+        chip.addEventListener('click', () => {
+          const idx = parseInt(chip.dataset.idx, 10);
+          const s   = chainLastStrikesData && chainLastStrikesData.strikes[idx];
+          if (s) armContract(s, chainLastStrikesData.bias);
+        });
+      });
     }
 
     // Hide structural levels block while cockpit matrix is showing
@@ -2512,20 +2525,20 @@
     const srLevels = [];
     if (srLevelsCache && srLevelsCache.available) {
       const d = srLevelsCache;
-      if (d.ath != null)           srLevels.push({ label: 'ATH',   price: d.ath,         type: 'sr', role: 'resistance' });
-      else if (d.high_52w != null) srLevels.push({ label: '52W H', price: d.high_52w,    type: 'sr', role: 'resistance' });
-      if (d.pdh2 != null)          srLevels.push({ label: 'PDH2',  price: d.pdh2,        type: 'sr', role: 'resistance' });
-      if (d.round_above != null)   srLevels.push({ label: 'R↑',   price: d.round_above, type: 'sr', role: 'round' });
+      if (d.ath != null)           srLevels.push({ label: 'All-time high',  price: d.ath,         type: 'sr', role: 'resistance' });
+      else if (d.high_52w != null) srLevels.push({ label: '52-week high',   price: d.high_52w,    type: 'sr', role: 'resistance' });
+      if (d.pdh2 != null)          srLevels.push({ label: 'Prior-day high', price: d.pdh2,        type: 'sr', role: 'resistance' });
+      if (d.round_above != null)   srLevels.push({ label: 'Round above',    price: d.round_above, type: 'sr', role: 'round' });
       (d.overhead_swings  || []).slice(0, 3).forEach((s, i) =>
-        srLevels.push({ label: `OH${i+1}`, price: s, type: 'sr', role: 'resistance' })
+        srLevels.push({ label: `Overhead ${i+1}`,  price: s, type: 'sr', role: 'resistance' })
       );
       (d.underfoot_swings || []).slice(0, 3).forEach((s, i) =>
-        srLevels.push({ label: `UF${i+1}`, price: s, type: 'sr', role: 'support' })
+        srLevels.push({ label: `Underfoot ${i+1}`, price: s, type: 'sr', role: 'support' })
       );
-      if (d.round_below != null)   srLevels.push({ label: 'R↓',   price: d.round_below, type: 'sr', role: 'round' });
-      if (d.pdl2 != null)          srLevels.push({ label: 'PDL2',  price: d.pdl2,        type: 'sr', role: 'support' });
-      if (d.atl != null)           srLevels.push({ label: 'ATL',   price: d.atl,         type: 'sr', role: 'support' });
-      else if (d.low_52w != null)  srLevels.push({ label: '52W L', price: d.low_52w,     type: 'sr', role: 'support' });
+      if (d.round_below != null)   srLevels.push({ label: 'Round below',   price: d.round_below, type: 'sr', role: 'round' });
+      if (d.pdl2 != null)          srLevels.push({ label: 'Prior-day low', price: d.pdl2,        type: 'sr', role: 'support' });
+      if (d.atl != null)           srLevels.push({ label: 'All-time low',  price: d.atl,         type: 'sr', role: 'support' });
+      else if (d.low_52w != null)  srLevels.push({ label: '52-week low',   price: d.low_52w,     type: 'sr', role: 'support' });
     }
 
     const gexLevels = [];
@@ -2602,8 +2615,26 @@
   }
 
   // Renders the level × payoff matrix table + verdict banner.
+  // 8-col layout: Level · Stock · Now{val,%,$} · Expiry{val,%,$}
   function renderProjectionMatrix(levels, projResults, qty, wrapEl, verdEl, userTarget) {
     if (!wrapEl) return;
+
+    function fmtVal(row) {
+      return row ? `$${row.value.toFixed(2)}` : '<span class="mat-na">—</span>';
+    }
+    function fmtPct(row) {
+      if (!row) return '<span class="mat-na">—</span>';
+      const gc    = row.gain_pct >= 0 ? 'positive' : 'negative';
+      const gSign = row.gain_pct >= 0 ? '+' : '';
+      return `<span class="mat-pct ${gc}">${gSign}${row.gain_pct.toFixed(1)}%</span>`;
+    }
+    function fmtDol(row) {
+      if (!row || qty <= 1) return '';
+      const total = Math.round(row.dollars * qty);
+      const gc    = total >= 0 ? 'positive' : 'negative';
+      const tSign = total >= 0 ? '+' : '';
+      return `<span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`;
+    }
 
     const rowsHtml = levels.map((lvl, i) => {
       const proj   = projResults[i];
@@ -2611,51 +2642,44 @@
       const expRow = proj && proj.rows && proj.rows[proj.rows.length - 1];
 
       let rowCls = '';
-      if      (lvl.role === 'target')    rowCls = 'mat-row-target';
-      else if (lvl.role === 'current')   rowCls = 'mat-row-current';
-      else if (lvl.role === 'strike')    rowCls = 'mat-row-strike';
-      else if (lvl.role === 'breakeven') rowCls = 'mat-row-breakeven';
+      if      (lvl.role === 'target')     rowCls = 'mat-row-target';
+      else if (lvl.role === 'current')    rowCls = 'mat-row-current';
+      else if (lvl.role === 'strike')     rowCls = 'mat-row-strike';
+      else if (lvl.role === 'breakeven')  rowCls = 'mat-row-breakeven';
       else if (lvl.type === 'confluence') rowCls = 'mat-row-confluence';
 
-      let lCls = 'mat-label';
-      if (lvl.type === 'confluence') {
-        lCls += ' mat-lbl-confluence';
-      } else if (lvl.type === 'gex') {
-        if      (lvl.role === 'call_wall') lCls += ' mat-lbl-call-wall';
-        else if (lvl.role === 'put_wall')  lCls += ' mat-lbl-put-wall';
-        else if (lvl.role === 'magnet')    lCls += ' mat-lbl-magnet';
-      } else if (lvl.type === 'sr') {
-        if      (lvl.role === 'resistance') lCls += ' mat-lbl-resistance';
-        else if (lvl.role === 'support')    lCls += ' mat-lbl-support';
-      }
-
-      function fmtCell(row) {
-        if (!row) return '<span class="mat-na">—</span>';
-        const gc    = row.gain_pct >= 0 ? 'positive' : 'negative';
-        const gSign = row.gain_pct >= 0 ? '+' : '';
-        const total = Math.round(row.dollars * qty);
-        const tSign = total >= 0 ? '+' : '';
-        const totalHtml = qty > 1
-          ? ` <span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`
-          : '';
-        return `$${row.value.toFixed(2)} <span class="mat-pct ${gc}">${gSign}${row.gain_pct.toFixed(1)}%</span>${totalHtml}`;
-      }
-
-      const priceLabel = `$${lvl.price.toFixed(2)}${lvl.role === 'current' ? ' ◀' : ''}`;
+      const priceStr = `$${lvl.price.toFixed(2)}${lvl.role === 'current' ? ' ◀' : ''}`;
 
       return `<tr class="${rowCls}">
-  <td class="${lCls}">${lvl.label}</td>
-  <td class="mat-price">${priceLabel}</td>
-  <td class="mat-payoff">${fmtCell(nowRow)}</td>
-  <td class="mat-payoff">${fmtCell(expRow)}</td>
+  <td class="mat-label">${lvl.label}</td>
+  <td class="mat-stock">${priceStr}</td>
+  <td class="mat-val">${fmtVal(nowRow)}</td>
+  <td class="mat-pct-cell">${fmtPct(nowRow)}</td>
+  <td class="mat-dol-cell">${fmtDol(nowRow)}</td>
+  <td class="mat-val mat-group-sep">${fmtVal(expRow)}</td>
+  <td class="mat-pct-cell">${fmtPct(expRow)}</td>
+  <td class="mat-dol-cell">${fmtDol(expRow)}</td>
 </tr>`;
     }).join('');
 
     wrapEl.innerHTML = `
 <table class="cockpit-level-matrix">
-  <thead><tr>
-    <th>Level</th><th>Stock</th><th>Now</th><th>Expiry</th>
-  </tr></thead>
+  <thead>
+    <tr class="mat-thead-top">
+      <th rowspan="2" class="mat-th-level">Level</th>
+      <th rowspan="2" class="mat-th-stock">Stock</th>
+      <th colspan="3" class="mat-th-group">Now</th>
+      <th colspan="3" class="mat-th-group mat-th-group-right">Expiry</th>
+    </tr>
+    <tr class="mat-thead-sub">
+      <th class="mat-th-sub">Val</th>
+      <th class="mat-th-sub">%</th>
+      <th class="mat-th-sub">$</th>
+      <th class="mat-th-sub mat-th-sub-sep">Val</th>
+      <th class="mat-th-sub">%</th>
+      <th class="mat-th-sub">$</th>
+    </tr>
+  </thead>
   <tbody>${rowsHtml}</tbody>
 </table>`;
 
