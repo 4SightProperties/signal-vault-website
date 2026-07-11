@@ -76,9 +76,14 @@
   let gexLastProj  = null;  // last projection result, drives exit-section auto-fill
 
   // Chain state
-  let chainTicker       = null;  // ticker for which chain is loaded
-  let chainCurrentPrice = 0.0;   // stock price at chain load time
-  let armedContract     = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
+  let chainTicker          = null;  // ticker for which chain is loaded
+  let chainCurrentPrice    = 0.0;   // stock price at chain load time
+  let armedContract        = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
+  let chainLastStrikesData = null;  // {strikes, bias, srCtx} — saved for compact-strip expand
+  let cockpitExitMode      = 'profit'; // persisted exit mode: 'profit' | 'stop' | 'manual'
+  let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
+  let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
+  let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
 
   // History tab state
   let isAdmin           = false;
@@ -993,6 +998,10 @@
     if (!ticker) return;
     const t = ticker.toUpperCase();
     focusedTicker = t;
+
+    srLevelsCache   = null;
+    focusGexCache   = null;
+    matrixProjCache = null;
 
     const searchInput = document.getElementById('tickerSearch');
     if (searchInput) searchInput.value = t;
@@ -1956,6 +1965,7 @@
       const px = row.current_price || null;
       const url = `/api/sr_levels?ticker=${encodeURIComponent(ticker)}${px ? '&price=' + px : ''}`;
       apiFetch(url).then(d => {
+        srLevelsCache = (d && d.available) ? d : null;
         if (!d || !d.available) return;
         const fmtN = v => v != null ? '$' + Number(v).toFixed(2) : null;
         const rows = [];
@@ -2000,7 +2010,7 @@
             ).join('') +
             `</div>`
           ).join('');
-      }).catch(() => {});
+      }).catch(() => { srLevelsCache = null; });
     }
   }
 
@@ -2014,6 +2024,7 @@
     chainBody.innerHTML = '<div class="dash-placeholder">Loading expirations…</div>';
     expiryEl.innerHTML  = '<option value="">— loading —</option>';
     armedContract       = null;
+    matrixProjCache     = null;
     const cockpit0 = document.getElementById('chainCockpit');
     if (cockpit0) cockpit0.innerHTML = '';
 
@@ -2057,7 +2068,8 @@
     }
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
-    armedContract = null;
+    armedContract    = null;
+    matrixProjCache  = null;
     const cockpit1 = document.getElementById('chainCockpit');
     if (cockpit1) cockpit1.innerHTML = '';
 
@@ -2074,12 +2086,21 @@
     }
   }
 
-  function renderChain(strikes, bias, srCtx) {
+  function renderChain(strikes, bias, srCtx, opts = {}) {
     const chainBody = document.getElementById('chainBody');
     if (!strikes.length) {
       chainBody.innerHTML = '<div class="dash-placeholder">No liquid strikes (market closed or try different expiry)</div>';
       return;
     }
+
+    // Save for compact-strip expand (always, on any full chain render)
+    chainLastStrikesData = { strikes, bias, srCtx };
+
+    // Remove arm-state and restore structural levels on every full chain render
+    const chainPanelEl = document.querySelector('.dash-chain-panel');
+    if (chainPanelEl) chainPanelEl.classList.remove('chain-collapsed');
+    const structElRestore = document.getElementById('levelsStructural');
+    if (structElRestore) structElRestore.style.display = '';
 
     srCtx = srCtx || {};
 
@@ -2180,7 +2201,7 @@
 </table>`;
 
     const cockpitEl = document.getElementById('chainCockpit');
-    if (cockpitEl) cockpitEl.innerHTML = '';
+    if (cockpitEl && !opts.preserveCockpit) cockpitEl.innerHTML = '';
 
     // Click-to-select a row (arms the contract for order entry)
     chainBody.querySelectorAll('table tbody tr').forEach((row, i) => {
@@ -2191,6 +2212,15 @@
       });
     });
 
+    // If preserveCockpit (expand from compact strip), mark the currently armed row
+    if (opts.preserveCockpit && armedContract) {
+      chainBody.querySelectorAll('table tbody tr').forEach((row, i) => {
+        if (strikes[i] && strikes[i].strike === armedContract.strike) {
+          row.classList.add('chain-selected');
+        }
+      });
+    }
+
     // Scroll ATM row into view so the center strike is always visible
     const atmRow = chainBody.querySelector('tr.chain-atm');
     if (atmRow) atmRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
@@ -2199,8 +2229,9 @@
   async function armContract(strike, bias) {
     armedContract = { ...strike, bias };
 
-    const chainBody = document.getElementById('chainBody');
+    const chainBody    = document.getElementById('chainBody');
     const chainCockpit = document.getElementById('chainCockpit');
+    const chainPanelEl = document.querySelector('.dash-chain-panel');
     chainCockpit.innerHTML = '';
 
     const dir = bias === 'bullish' ? 'call' : 'put';
@@ -2212,6 +2243,34 @@
     const defaultTarget = chainCurrentPrice > 0 ? chainCurrentPrice.toFixed(2) : '';
     const targetSrc     = chainCurrentPrice > 0 ? 'watchlist trigger' : 'enter target';
 
+    // ── Compact strip — collapse chain body to armed ± 2 neighbors ───────────
+    if (chainPanelEl && chainLastStrikesData) {
+      const allStrikes = chainLastStrikesData.strikes;
+      const armedIdx   = allStrikes.findIndex(s => s.strike === strike.strike);
+      const start      = Math.max(0, armedIdx - 2);
+      const end        = Math.min(allStrikes.length - 1, armedIdx + 2);
+      const neighbors  = allStrikes.slice(start, end + 1);
+
+      chainBody.innerHTML = `
+<div class="chain-compact-strip">
+  <div class="chain-compact-strikes">
+    ${neighbors.map(s => `
+    <div class="chain-compact-item${s.strike === strike.strike ? ' chain-compact-armed' : ''}">
+      <span class="chain-badge ${s.badge}">${s.badge}</span>
+      <span>$${s.strike}</span>
+    </div>`).join('')}
+  </div>
+  <button class="chain-expand-btn" id="chainExpandBtn" title="Restore full chain table">⤢ Expand chain</button>
+</div>`;
+
+      chainPanelEl.classList.add('chain-collapsed');
+    }
+
+    // Hide structural levels block while cockpit matrix is showing
+    const structEl = document.getElementById('levelsStructural');
+    if (structEl) structEl.style.display = 'none';
+
+    // ── Cockpit HTML ──────────────────────────────────────────────────────────
     const cockpitHtml = `
 <div class="chain-armed" id="chainArmed">
   <div class="cockpit-header">
@@ -2245,9 +2304,9 @@
   <div class="cockpit-levels-section">
     <div class="cockpit-level-btns" id="cockpitLevelBtns">
       <span class="cockpit-section-label">Exit target</span>
-      <button class="cockpit-level-btn active" data-mode="profit">Profit-only</button>
-      <button class="cockpit-level-btn" data-mode="stop">+ Stop</button>
-      <button class="cockpit-level-btn" data-mode="manual">Full manual</button>
+      <button class="cockpit-level-btn${cockpitExitMode === 'profit' ? ' active' : ''}" data-mode="profit">Profit-only</button>
+      <button class="cockpit-level-btn${cockpitExitMode === 'stop'   ? ' active' : ''}" data-mode="stop">+ Stop</button>
+      <button class="cockpit-level-btn${cockpitExitMode === 'manual' ? ' active' : ''}" data-mode="manual">Full manual</button>
     </div>
   </div>
 
@@ -2265,21 +2324,43 @@
 
     chainCockpit.innerHTML = cockpitHtml;
 
-    // Qty → update cost + max-loss (cost = max-loss for long options)
+    // Wire expand-chain button (lives in the compact strip, not in the cockpit)
+    const expandBtn = document.getElementById('chainExpandBtn');
+    if (expandBtn) {
+      expandBtn.addEventListener('click', () => {
+        if (chainLastStrikesData) {
+          renderChain(
+            chainLastStrikesData.strikes,
+            chainLastStrikesData.bias,
+            chainLastStrikesData.srCtx,
+            { preserveCockpit: true }
+          );
+        }
+      });
+    }
+
+    // Qty → update cost + max-loss; re-render matrix dollar totals if cached
     document.getElementById('chainQty').addEventListener('input', () => {
       const qty  = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
       const cost = armedContract.ask * qty * 100;
       document.getElementById('chainCost').textContent    = fmtPrice(cost);
       document.getElementById('chainMaxLoss').textContent = fmtPrice(cost);
+      if (matrixProjCache) {
+        const wrapEl = document.getElementById('cockpitProjWrap');
+        const verdEl = document.getElementById('cockpitVerdict');
+        const tgt    = parseFloat(document.getElementById('cockpitTarget').value) || chainCurrentPrice;
+        renderProjectionMatrix(matrixProjCache.levels, matrixProjCache.projResults, qty, wrapEl, verdEl, tgt);
+      }
     });
 
-    // Exit level mode buttons (UI only — no backend wiring in this task)
+    // Exit-target mode buttons — persist selection as cockpitExitMode state
     document.getElementById('cockpitLevelBtns').addEventListener('click', e => {
       const btn = e.target.closest('.cockpit-level-btn');
       if (!btn) return;
       document.querySelectorAll('#cockpitLevelBtns .cockpit-level-btn')
         .forEach(b => b.classList.remove('active'));
       btn.classList.add('active');
+      cockpitExitMode = btn.dataset.mode;
     });
 
     // Target override apply
@@ -2287,7 +2368,7 @@
       const tgt = parseFloat(document.getElementById('cockpitTarget').value);
       if (tgt > 0) {
         document.getElementById('cockpitTargetSrc').textContent = 'manual override';
-        loadProjection();
+        loadProjectionMatrix();
       }
     });
     // Also apply on Enter key in target input
@@ -2295,13 +2376,13 @@
       if (e.key === 'Enter') document.getElementById('cockpitApplyTarget').click();
     });
 
-    // Cockpit refresh: re-fetch live quote then re-run projection
+    // Cockpit refresh: re-fetch live quote then re-run matrix
     document.getElementById('cockpitRefreshBtn').addEventListener('click', async () => {
       await refreshArmedQuote();
-      loadProjection();
+      loadProjectionMatrix();
     });
 
-    // Open Position button — existing kill-switch gated behavior
+    // Open Position button — existing kill-switch gated behavior (payload unchanged)
     document.getElementById('chainOpenBtn').addEventListener('click', () => {
       const qty     = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
       const cost    = armedContract.ask * qty * 100;
@@ -2340,9 +2421,9 @@
       });
     });
 
-    // Auto-refresh quote then load projection on arm
+    // Auto-refresh quote then load projection matrix on arm
     await refreshArmedQuote();
-    loadProjection();
+    loadProjectionMatrix();
   }
 
   // Re-fetches the live quote for the armed contract from /api/chain/quote.
@@ -2395,84 +2476,206 @@
     }
   }
 
-  // Calls /api/projection with the current armed contract data + target override.
-  async function loadProjection() {
+  // Confluence tolerance for display-only level merging (not a scored input).
+  const CONFLUENCE_TOLERANCE_PCT = 0.0020; // 0.20% of price
+
+  // Fetches /api/projection for every structural + GEX + marker level in parallel
+  // and renders the level × payoff matrix in the cockpit.
+  async function loadProjectionMatrix() {
     const wrapEl = document.getElementById('cockpitProjWrap');
     const verdEl = document.getElementById('cockpitVerdict');
     if (!wrapEl || !armedContract) return;
 
-    const targetEl = document.getElementById('cockpitTarget');
-    const target   = targetEl && parseFloat(targetEl.value) > 0
+    const targetEl   = document.getElementById('cockpitTarget');
+    const userTarget = targetEl && parseFloat(targetEl.value) > 0
       ? parseFloat(targetEl.value)
       : chainCurrentPrice;
 
-    if (!target || target <= 0) {
+    if (!userTarget || userTarget <= 0) {
       wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Enter a target price above to see projection</div>';
+      if (verdEl) verdEl.style.display = 'none';
       return;
     }
 
     if (!armedContract.iv || armedContract.iv <= 0) {
       wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">IV unavailable — projection requires market hours data</div>';
+      if (verdEl) verdEl.style.display = 'none';
       return;
     }
 
-    wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Loading projection…</div>';
+    wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Loading level matrix…</div>';
+
+    const price      = chainCurrentPrice > 0 ? chainCurrentPrice : armedContract.strike;
+    const optionType = armedContract.option_type || (armedContract.bias === 'bullish' ? 'call' : 'put');
+
+    // ── Build structural level list ──────────────────────────────────────────
+    const srLevels = [];
+    if (srLevelsCache && srLevelsCache.available) {
+      const d = srLevelsCache;
+      if (d.ath != null)           srLevels.push({ label: 'ATH',   price: d.ath,         type: 'sr', role: 'resistance' });
+      else if (d.high_52w != null) srLevels.push({ label: '52W H', price: d.high_52w,    type: 'sr', role: 'resistance' });
+      if (d.pdh2 != null)          srLevels.push({ label: 'PDH2',  price: d.pdh2,        type: 'sr', role: 'resistance' });
+      if (d.round_above != null)   srLevels.push({ label: 'R↑',   price: d.round_above, type: 'sr', role: 'round' });
+      (d.overhead_swings  || []).slice(0, 3).forEach((s, i) =>
+        srLevels.push({ label: `OH${i+1}`, price: s, type: 'sr', role: 'resistance' })
+      );
+      (d.underfoot_swings || []).slice(0, 3).forEach((s, i) =>
+        srLevels.push({ label: `UF${i+1}`, price: s, type: 'sr', role: 'support' })
+      );
+      if (d.round_below != null)   srLevels.push({ label: 'R↓',   price: d.round_below, type: 'sr', role: 'round' });
+      if (d.pdl2 != null)          srLevels.push({ label: 'PDL2',  price: d.pdl2,        type: 'sr', role: 'support' });
+      if (d.atl != null)           srLevels.push({ label: 'ATL',   price: d.atl,         type: 'sr', role: 'support' });
+      else if (d.low_52w != null)  srLevels.push({ label: '52W L', price: d.low_52w,     type: 'sr', role: 'support' });
+    }
+
+    const gexLevels = [];
+    if (focusGexCache && focusGexCache.available) {
+      const g = focusGexCache;
+      if (g.call_wall    != null) gexLevels.push({ label: 'Call Wall', price: g.call_wall,    type: 'gex', role: 'call_wall' });
+      if (g.gamma_magnet != null) gexLevels.push({ label: 'Magnet',    price: g.gamma_magnet, type: 'gex', role: 'magnet' });
+      if (g.put_wall     != null) gexLevels.push({ label: 'Put Wall',  price: g.put_wall,     type: 'gex', role: 'put_wall' });
+    }
+
+    // ── Confluence merge — display-only, no scoring impact ───────────────────
+    const tol       = price * CONFLUENCE_TOLERANCE_PCT;
+    const allLevels = [...srLevels];
+    const usedSrIdx = new Set();
+
+    gexLevels.forEach(gLvl => {
+      const srIdx = allLevels.findIndex((s, i) => !usedSrIdx.has(i) && Math.abs(s.price - gLvl.price) <= tol);
+      if (srIdx >= 0) {
+        const sr = allLevels[srIdx];
+        allLevels[srIdx] = {
+          label:   `${sr.label} + ${gLvl.label}`,
+          price:   (sr.price + gLvl.price) / 2,
+          type:    'confluence',
+          role:    sr.role,
+          gexRole: gLvl.role,
+        };
+        usedSrIdx.add(srIdx);
+      } else {
+        allLevels.push(gLvl);
+      }
+    });
+
+    // ── Marker levels ─────────────────────────────────────────────────────────
+    const breakevenStock = optionType === 'call'
+      ? armedContract.strike + armedContract.ask
+      : armedContract.strike - armedContract.ask;
+
+    allLevels.push({ label: 'Target',    price: userTarget,           type: 'marker', role: 'target' });
+    allLevels.push({ label: 'Current',   price: price,                type: 'marker', role: 'current' });
+    allLevels.push({ label: 'Strike',    price: armedContract.strike, type: 'marker', role: 'strike' });
+    allLevels.push({ label: 'Breakeven', price: breakevenStock,       type: 'marker', role: 'breakeven' });
+
+    allLevels.sort((a, b) => b.price - a.price);
+
+    // ── Fetch projection per level in parallel ────────────────────────────────
+    const commonParams = {
+      ticker:      chainTicker,
+      strike:      armedContract.strike,
+      expiry:      armedContract.expiration,
+      option_type: optionType,
+      iv:          armedContract.iv,
+      premium:     armedContract.ask,
+      dte:         armedContract.dte,
+      iv_crush:    0,
+    };
 
     try {
-      const optionType = armedContract.option_type ||
-        (armedContract.bias === 'bullish' ? 'call' : 'put');
-      const params = new URLSearchParams({
-        ticker:      chainTicker,
-        strike:      armedContract.strike,
-        expiry:      armedContract.expiration,
-        target,
-        option_type: optionType,
-        iv:          armedContract.iv,
-        premium:     armedContract.ask,
-        dte:         armedContract.dte,
-        iv_crush:    0,
-      });
-      const proj = await apiFetch(`/api/projection?${params}`);
-      renderProjection(proj, wrapEl, verdEl);
+      const projResults = await Promise.all(
+        allLevels.map(lvl =>
+          apiFetch(`/api/projection?${new URLSearchParams({ ...commonParams, target: lvl.price })}`)
+          .catch(() => null)
+        )
+      );
+
+      matrixProjCache = { levels: allLevels, projResults };
+
+      const qtyEl = document.getElementById('chainQty');
+      const qty   = qtyEl ? Math.max(1, parseInt(qtyEl.value, 10) || 1) : 1;
+      renderProjectionMatrix(allLevels, projResults, qty, wrapEl, verdEl, userTarget);
     } catch (err) {
       const detail = String(err).includes('403') ? 'Admin access required' : 'Projection unavailable';
       wrapEl.innerHTML = `<div class="dash-placeholder" style="padding:0.4rem 0">${detail}</div>`;
     }
   }
 
-  // Renders the projection matrix table + verdict banner.
-  function renderProjection(proj, wrapEl, verdEl) {
-    const rows = proj.rows || [];
-    if (!rows.length) {
-      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">No projection data</div>';
-      return;
-    }
+  // Renders the level × payoff matrix table + verdict banner.
+  function renderProjectionMatrix(levels, projResults, qty, wrapEl, verdEl, userTarget) {
+    if (!wrapEl) return;
 
-    const rowsHtml = rows.map(r => {
-      const gainCls = r.gain_pct >= 0 ? 'positive' : 'negative';
-      const dolSign = r.dollars >= 0 ? '+' : '';
-      return `
-<div class="proj-strip-cell">
-  <div class="proj-strip-when">${r.horizon_label}</div>
-  <div class="proj-strip-val">$${r.value.toFixed(2)}</div>
-  <div class="proj-strip-gain ${gainCls}">${r.gain_pct >= 0 ? '+' : ''}${r.gain_pct.toFixed(1)}%</div>
-  <div class="proj-strip-dol ${gainCls}">${dolSign}$${Math.abs(Math.round(r.dollars))}</div>
-</div>`;
+    const rowsHtml = levels.map((lvl, i) => {
+      const proj   = projResults[i];
+      const nowRow = proj && proj.rows && proj.rows[0];
+      const expRow = proj && proj.rows && proj.rows[proj.rows.length - 1];
+
+      let rowCls = '';
+      if      (lvl.role === 'target')    rowCls = 'mat-row-target';
+      else if (lvl.role === 'current')   rowCls = 'mat-row-current';
+      else if (lvl.role === 'strike')    rowCls = 'mat-row-strike';
+      else if (lvl.role === 'breakeven') rowCls = 'mat-row-breakeven';
+      else if (lvl.type === 'confluence') rowCls = 'mat-row-confluence';
+
+      let lCls = 'mat-label';
+      if (lvl.type === 'confluence') {
+        lCls += ' mat-lbl-confluence';
+      } else if (lvl.type === 'gex') {
+        if      (lvl.role === 'call_wall') lCls += ' mat-lbl-call-wall';
+        else if (lvl.role === 'put_wall')  lCls += ' mat-lbl-put-wall';
+        else if (lvl.role === 'magnet')    lCls += ' mat-lbl-magnet';
+      } else if (lvl.type === 'sr') {
+        if      (lvl.role === 'resistance') lCls += ' mat-lbl-resistance';
+        else if (lvl.role === 'support')    lCls += ' mat-lbl-support';
+      }
+
+      function fmtCell(row) {
+        if (!row) return '<span class="mat-na">—</span>';
+        const gc    = row.gain_pct >= 0 ? 'positive' : 'negative';
+        const gSign = row.gain_pct >= 0 ? '+' : '';
+        const total = Math.round(row.dollars * qty);
+        const tSign = total >= 0 ? '+' : '';
+        const totalHtml = qty > 1
+          ? ` <span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`
+          : '';
+        return `$${row.value.toFixed(2)} <span class="mat-pct ${gc}">${gSign}${row.gain_pct.toFixed(1)}%</span>${totalHtml}`;
+      }
+
+      const priceLabel = `$${lvl.price.toFixed(2)}${lvl.role === 'current' ? ' ◀' : ''}`;
+
+      return `<tr class="${rowCls}">
+  <td class="${lCls}">${lvl.label}</td>
+  <td class="mat-price">${priceLabel}</td>
+  <td class="mat-payoff">${fmtCell(nowRow)}</td>
+  <td class="mat-payoff">${fmtCell(expRow)}</td>
+</tr>`;
     }).join('');
 
-    wrapEl.innerHTML = `<div class="cockpit-proj-strip">${rowsHtml}</div>`;
+    wrapEl.innerHTML = `
+<table class="cockpit-level-matrix">
+  <thead><tr>
+    <th>Level</th><th>Stock</th><th>Now</th><th>Expiry</th>
+  </tr></thead>
+  <tbody>${rowsHtml}</tbody>
+</table>`;
 
-    // Verdict banner
-    const verdictMap = {
-      worthless_at_expiry: { cls: 'verdict-red',   icon: '✗', text: 'Worthless at expiry — expires OTM even if stock hits target' },
-      theta_dominated:     { cls: 'verdict-amber',  icon: '⚡', text: 'Theta dominated — most value lost by expiry; move must happen soon' },
-      survives_slow_move:  { cls: 'verdict-green',  icon: '✓', text: 'Survives slow move — retains value at target even near expiry' },
-    };
-    const v = verdictMap[proj.verdict] || { cls: '', icon: '?', text: proj.verdict };
+    // Verdict from the user's chosen target level
     if (verdEl) {
-      verdEl.innerHTML     = `${v.icon} ${v.text}`;
-      verdEl.className     = `cockpit-verdict ${v.cls}`;
-      verdEl.style.display = '';
+      const tIdx  = levels.findIndex(l => l.role === 'target');
+      const tProj = tIdx >= 0 ? projResults[tIdx] : null;
+      if (tProj && tProj.verdict) {
+        const verdictMap = {
+          worthless_at_expiry: { cls: 'verdict-red',   icon: '✗', text: 'Worthless at expiry — expires OTM even if stock hits target' },
+          theta_dominated:     { cls: 'verdict-amber',  icon: '⚡', text: 'Theta dominated — most value lost by expiry; move must happen soon' },
+          survives_slow_move:  { cls: 'verdict-green',  icon: '✓', text: 'Survives slow move — retains value at target even near expiry' },
+        };
+        const v = verdictMap[tProj.verdict] || { cls: '', icon: '?', text: tProj.verdict };
+        verdEl.innerHTML     = `${v.icon} ${v.text}`;
+        verdEl.className     = `cockpit-verdict ${v.cls}`;
+        verdEl.style.display = '';
+      } else {
+        verdEl.style.display = 'none';
+      }
     }
   }
 
@@ -3835,6 +4038,7 @@ ${isAdmin ? `
 
     try {
       const gex = await apiFetch(`/api/gex?ticker=${encodeURIComponent(ticker)}`);
+      focusGexCache = (gex && gex.available) ? gex : null;
 
       if (!gex || !gex.available) {
         valueEl.textContent = '—';
@@ -3871,6 +4075,7 @@ ${isAdmin ? `
       if (cellEl) cellEl.classList.toggle('stale', !!gex.stale_exposure);
 
     } catch (_) {
+      focusGexCache = null;
       valueEl.textContent = '—';
       valueEl.style.color = 'var(--text-muted)';
     }
