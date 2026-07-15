@@ -84,6 +84,7 @@
   let armedContract        = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
   let chainLastStrikesData = null;  // {strikes, bias, srCtx} — saved for compact-strip expand
   let cockpitExitMode      = 'profit'; // persisted exit mode: 'profit' | 'stop' | 'manual'
+  let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
   let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
@@ -2355,11 +2356,21 @@
     </div>
   </div>
 
+  <div class="cockpit-levels-section">
+    <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
+      <span class="cockpit-section-label">Entry price</span>
+      <button class="cockpit-level-btn active" data-entry-mode="auto">AUTO</button>
+      <button class="cockpit-level-btn" data-entry-mode="take_ask">Take ask</button>
+      <button class="cockpit-level-btn" data-entry-mode="your_price">Your price</button>
+    </div>
+    <div id="cockpitEntryPriceRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.35rem;">
+      <span class="cockpit-section-label">Premium $</span>
+      <input type="number" id="cockpitEntryPriceInput" class="cockpit-target-input"
+             min="0.01" step="0.01" placeholder="0.00">
+    </div>
+  </div>
+
   <div class="cockpit-actions">
-    <button class="cockpit-action-btn" id="cockpitLimitBtn" disabled>
-      Set limit
-      <span class="pos-preview-tag">wired later</span>
-    </button>
     <button class="chain-open-btn" id="chainOpenBtn">
       Open Position
       <span class="pos-preview-tag">gated by kill-switch</span>
@@ -2408,6 +2419,19 @@
       cockpitExitMode = btn.dataset.mode;
     });
 
+    // Entry price mode buttons — reset to AUTO on each arm, persist within session
+    cockpitEntryMode = 'auto';
+    document.getElementById('cockpitEntryModeBtns').addEventListener('click', e => {
+      const btn = e.target.closest('[data-entry-mode]');
+      if (!btn) return;
+      document.querySelectorAll('#cockpitEntryModeBtns .cockpit-level-btn')
+        .forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cockpitEntryMode = btn.dataset.entryMode;
+      document.getElementById('cockpitEntryPriceRow').style.display =
+        cockpitEntryMode === 'your_price' ? 'flex' : 'none';
+    });
+
     // Target override apply
     document.getElementById('cockpitApplyTarget').addEventListener('click', () => {
       const tgt = parseFloat(document.getElementById('cockpitTarget').value);
@@ -2427,34 +2451,133 @@
       loadProjectionMatrix();
     });
 
-    // Open Position button — existing kill-switch gated behavior (payload unchanged)
+    // Open Position button
     document.getElementById('chainOpenBtn').addEventListener('click', () => {
       const qty     = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
-      const cost    = armedContract.ask * qty * 100;
       const cpLabel = dir === 'call' ? 'CALL' : 'PUT';
+      const bid     = armedContract.bid ?? 0;
+      const ask     = armedContract.ask;
+
+      // ── Spread preview (same thresholds as server: warn >40%, reject >60%) ──
+      let spreadPct      = null;
+      let spreadWarnHtml = '';
+      if (bid > 0 && ask > 0) {
+        const mid = (bid + ask) / 2;
+        spreadPct = (ask - bid) / mid;
+        if (spreadPct > 0.60) {
+          const pct = (spreadPct * 100).toFixed(0);
+          spreadWarnHtml = cockpitEntryMode === 'your_price'
+            ? `<span style="color:var(--warn-amber,#fa0)">⚠ Spread ${pct}% — server guard bypassed in Your price mode. Order may rest or fill thinly.</span><br>`
+            : `<span style="color:var(--danger,#e05);font-weight:600">⚠ Spread ${pct}% — server will reject this order (&gt;60% limit). Choose a different strike.</span><br>`;
+        } else if (spreadPct > 0.40) {
+          spreadWarnHtml = `<span style="color:var(--warn-amber,#fa0)">⚠ Wide spread ${(spreadPct * 100).toFixed(0)}% — order may not fill promptly.</span><br>`;
+        }
+      }
+
+      // ── Entry limit resolution ────────────────────────────────────────────────
+      let limitPricePayload;  // undefined → omit; server derives (byte-equivalent AUTO)
+      let entryPriceHtml;
+      let displayCostPrice;   // null = market order, no honest estimate possible
+
+      if (cockpitEntryMode === 'auto') {
+        if (bid <= 0) {
+          entryPriceHtml   = `<span style="color:var(--danger,#e05);font-weight:600">` +
+            `⚠ No bid — server will send a MARKET order, unbounded fill price</span>`;
+          displayCostPrice = null;
+        } else {
+          const mid     = (bid + ask) / 2;
+          const derived = Math.min(ask * 1.02, mid * 1.08);
+          entryPriceHtml   = `$${derived.toFixed(2)} (server-derived)`;
+          displayCostPrice = derived;
+        }
+      } else if (cockpitEntryMode === 'take_ask') {
+        limitPricePayload = ask * 1.02;
+        entryPriceHtml    = `$${limitPricePayload.toFixed(2)} (ask + 2% fill cushion)`;
+        displayCostPrice  = limitPricePayload;
+      } else {
+        const inp   = document.getElementById('cockpitEntryPriceInput');
+        const typed = parseFloat(inp.value);
+        if (!typed || typed <= 0) {
+          inp.focus();
+          inp.setCustomValidity('Enter a valid premium price');
+          inp.reportValidity();
+          inp.setCustomValidity('');
+          return;
+        }
+        limitPricePayload = typed;
+        entryPriceHtml    = `$${typed.toFixed(2)} (your price — may rest unfilled)`;
+        displayCostPrice  = typed;
+      }
+
+      const costHtml = displayCostPrice != null
+        ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong><br>`
+        : `Est. cost: <strong>unknown — market order, no limit</strong><br>`;
+
       showConfirmModal({
         title:   `Open ${chainTicker} ${cpLabel}`,
-        body:    `<strong>${sym}</strong><br>` +
+        body:    spreadWarnHtml +
+                 `<strong>${sym}</strong><br>` +
                  `Qty: <strong>${qty}</strong> contract${qty > 1 ? 's' : ''}<br>` +
-                 `Est. cost: <strong>${fmtPrice(cost)}</strong> (${qty} × $${armedContract.ask.toFixed(2)} × 100)<br><br>` +
+                 `Entry limit: <strong>${entryPriceHtml}</strong><br>` +
+                 costHtml +
+                 `<br>` +
                  `<span style="color:var(--text-muted);font-size:0.68rem">` +
                  `Gated by kill-switch. Order goes to your active env (verify sandbox before first live use).</span>`,
         okLabel: 'Place Order',
         okClass: '',
         onOk: async (setStatus) => {
+          // Block: no bid in AUTO mode → would send unbounded market order
+          if (cockpitEntryMode === 'auto' && bid <= 0) {
+            setStatus(
+              '⚠ No bid — refusing to send a market order on an illiquid contract. ' +
+              'Switch to Your price mode to set a limit, or choose a different strike.',
+              'error',
+            );
+            return;
+          }
+          // Block: spread >60% in AUTO/take_ask — server rejects, spare the round-trip
+          if (spreadPct !== null && spreadPct > 0.60 && cockpitEntryMode !== 'your_price') {
+            setStatus(
+              `Spread ${(spreadPct * 100).toFixed(0)}% exceeds 60% server limit — order would be rejected. ` +
+              'Choose a different strike or use Your price mode.',
+              'error',
+            );
+            return;
+          }
+
           setStatus('Placing order…');
           try {
-            const result = await apiPost('/api/v1/orders/open', {
+            const body = {
               ticker:        chainTicker,
               option_symbol: armedContract.symbol,
               direction:     dir,
               strike:        armedContract.strike,
               expiry:        armedContract.expiration,
               qty,
-              bid_price:     armedContract.ask,
-            });
+              bid_price:     ask,
+            };
+            if (limitPricePayload !== undefined) {
+              body.limit_price = limitPricePayload;
+            }
+            const result = await apiPost('/api/v1/orders/open', body);
+
             if (result.status === 'filled') {
-              setStatus(`Filled @ $${result.fill_price.toFixed(2)} · position_id ${result.position_id}`, 'ok');
+              const priceStr = result.resolved_limit_price != null
+                ? `$${result.resolved_limit_price.toFixed(2)}`
+                : result.fill_price != null ? `$${result.fill_price.toFixed(2)}` : '';
+              setStatus(
+                `Filled${priceStr ? ` @ ${priceStr}` : ''} · position_id ${result.position_id}`,
+                'ok',
+              );
+            } else if (result.status === 'working') {
+              const priceStr = result.limit_price != null
+                ? ` at $${result.limit_price.toFixed(2)}`
+                : '';
+              setStatus(
+                `Resting${priceStr} — will register when filled. ` +
+                'Check Working Orders to monitor or cancel.',
+                'ok',
+              );
             } else {
               setStatus(`Status: ${result.status} — ${result.detail || ''}`, 'ok');
             }
@@ -2491,7 +2614,8 @@
       });
       const fresh = await apiFetch(`/api/chain/quote?${params}`);
 
-      // Update in-place so qty handler and Open button use fresh ask
+      // Update in-place so qty handler and Open button use fresh ask/bid
+      armedContract.bid = fresh.bid;
       armedContract.ask = fresh.ask;
       armedContract.iv  = fresh.iv;
       armedContract.dte = fresh.dte;
