@@ -34,6 +34,8 @@
   let signalTickersToday  = {};   // ticker -> most recent fire_time for today (ET) — used by watchlist row markers
   let focusedTicker      = null; // ticker currently loaded in center column
   let openConsoleId      = null; // position_id of the currently expanded management console
+  let _restingInterval   = null; // setInterval handle for the resting-orders poll
+  let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
 
   // Right-column drawer state
   let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
@@ -437,11 +439,25 @@
           // Cold path: no saved node (position was re-opened from scratch). Build fresh.
           card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
           wireConsoleButtons(card, pos);
+          // Restart the resting poll — the interval may have died with the old node.
+          _restingOpenSym = pos.option_symbol || null;
+          if (_restingOpenSym && !_restingInterval) {
+            const consoleEl = card.querySelector('.pos-console');
+            fetchRestingOrders(_restingOpenSym, consoleEl);
+            _restingInterval = setInterval(() => {
+              const c = document.querySelector(`.pos-card[data-pos-id="${openConsoleId}"] .pos-console`);
+              if (c) fetchRestingOrders(_restingOpenSym, c);
+              else { clearInterval(_restingInterval); _restingInterval = null; }
+            }, 30000);
+          }
         }
         card.classList.add('expanded');
       } else {
         // Position gone — let the detached savedConsole be GC'd.
         openConsoleId = null;
+        clearInterval(_restingInterval);
+        _restingInterval = null;
+        _restingOpenSym  = null;
       }
     }
   }
@@ -2751,11 +2767,28 @@
       existing.remove();
       card.classList.remove('expanded');
       openConsoleId = null;
+      clearInterval(_restingInterval);
+      _restingInterval = null;
+      _restingOpenSym  = null;
     } else {
       card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
       card.classList.add('expanded');
-      openConsoleId = posId;
+      openConsoleId    = posId;
+      _restingOpenSym  = pos.option_symbol || null;
       wireConsoleButtons(card, pos);
+      // Fetch resting orders immediately, then every 30 s while the console is open.
+      // 30 s is safe under Tradier's rate limits (1 admin user, 2 calls/min).
+      // The 3 s WS render only calls updateConsoleLiveFields — no broker call there.
+      const consoleEl = card.querySelector('.pos-console');
+      if (_restingOpenSym) {
+        fetchRestingOrders(_restingOpenSym, consoleEl);
+        clearInterval(_restingInterval);
+        _restingInterval = setInterval(() => {
+          const c = document.querySelector(`.pos-card[data-pos-id="${posId}"] .pos-console`);
+          if (c) fetchRestingOrders(_restingOpenSym, c);
+          else { clearInterval(_restingInterval); _restingInterval = null; }
+        }, 30000);
+      }
     }
   }
 
@@ -2881,6 +2914,8 @@
         });
         if (result.status === 'closing_pending') {
           setTicketStatus(profitStatus, `Resting at $${result.limit_price.toFixed(2)} ${tif.toUpperCase()} — fill reconciles automatically.`, 'ok');
+          const c = card.querySelector('.pos-console');
+          if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
         } else if (result.status === 'dry_run') {
           setTicketStatus(profitStatus, 'Dry-run — EXIT_ORDERS_ENABLED=False. Payload verified, no order sent.', 'warn');
           btn.disabled = false;
@@ -2947,6 +2982,8 @@
         });
         if (result.status === 'closing_pending') {
           setTicketStatus(bktStatus, `OCO resting: TP $${result.limit_price.toFixed(2)} · stop $${stop.toFixed(2)} GTC. Fill reconciles automatically.`, 'ok');
+          const c = card.querySelector('.pos-console');
+          if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
         } else if (result.status === 'dry_run') {
           setTicketStatus(bktStatus, 'Dry-run — EXIT_ORDERS_ENABLED=False. OCO payload verified, no order sent.', 'warn');
           btn.disabled = false;
@@ -2996,6 +3033,9 @@
         const result = await apiPost('/api/v1/orders/update-stop', { position_id: pid, new_stop_price: stopPrice });
         if (result.status === 'ok') {
           setTicketStatus(stopStatus, `Stop set at $${result.new_stop_price.toFixed(2)} · order ${result.new_stop_id || '?'}`, 'ok');
+          // Refresh broker truth immediately so the RESTING section reflects the new stop.
+          const c = card.querySelector('.pos-console');
+          if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
         } else {
           setTicketStatus(stopStatus, `Unexpected: ${result.status}`, 'warn');
           btn.disabled = false;
@@ -3023,6 +3063,26 @@
     set('trail-width',      tw);
     set('trail-stop-stock', pos.trail_stop_stock_price ? fmtPrice(pos.trail_stop_stock_price) : '—');
 
+    // Live P&L — mirrors the card badges but inside the console.
+    const isLive  = pos.current_price != null;
+    const isStale = !isLive && pos.price_age_secs != null;
+    if (isLive) {
+      set('cur-opt-price', fmtPrice(pos.current_price));
+      const sign = pos.unrealized_pnl >= 0 ? '+' : '';
+      set('cur-pnl', sign + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ') • LIVE');
+    } else if (isStale) {
+      const ageSecs = pos.price_age_secs;
+      const ageStr  = ageSecs < 60 ? Math.round(ageSecs) + 's' : Math.floor(ageSecs / 60) + 'm' + Math.round(ageSecs % 60) + 's';
+      set('cur-opt-price', 'STALE · ' + ageStr);
+      set('cur-pnl', '—');
+    } else {
+      set('cur-opt-price', 'NO PRICE');
+      set('cur-pnl', '—');
+    }
+    if (pos.peak_pnl != null) {
+      set('peak-pnl-console', fmt$(Math.round(pos.peak_pnl)) + ' (' + fmtPct(pos.peak_pnl_pct) + ')');
+    }
+
     // Keep the Exit button in sync with closing_pending transitions so double-close
     // is blocked even while the console is held open across renders.
     const closeBtn = consoleEl.querySelector('.pos-console-close-btn');
@@ -3032,6 +3092,39 @@
       closeBtn.title    = isPending ? 'Close already pending — double-close blocked' : '';
       const tag = closeBtn.querySelector('.pos-preview-tag');
       if (tag) tag.textContent = isPending ? 'close pending — blocked' : 'market · kill-switch gated';
+    }
+  }
+
+  // Fetches resting orders from the broker and renders them into the console's
+  // data-live="resting-orders" target.  Called on console open, after any
+  // mutation, and on the 30 s poll cadence — NOT on the 3 s WS tick.
+  async function fetchRestingOrders(sym, consoleEl) {
+    const el = consoleEl && consoleEl.querySelector('[data-live="resting-orders"]');
+    if (!el || !sym) return;
+    try {
+      const data = await apiFetch('/api/orders/resting?option_symbol=' + encodeURIComponent(sym));
+      if (!data.ok) {
+        el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
+        return;
+      }
+      if (!data.orders || !data.orders.length) {
+        el.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem">— none resting —</span>';
+        return;
+      }
+      el.innerHTML = data.orders.map(o => {
+        const priceStr = o.stop_price
+          ? 'stop $' + o.stop_price.toFixed(2)
+          : (o.price ? 'limit $' + o.price.toFixed(2) : '—');
+        const dur = o.duration ? o.duration.toUpperCase() : '';
+        return '<div class="pos-target-row">' +
+          '<span class="pos-target-type">' + (o.type || '?').toUpperCase() + '</span>' +
+          '<span class="pos-target-price">' + priceStr + '</span>' +
+          '<span class="pos-target-badge">' + (o.quantity || '?') + '× · ' + (o.status || '') + ' · ' + dur + '</span>' +
+          '<span style="color:var(--text-muted);font-size:0.65rem;margin-left:0.4rem">id&nbsp;' + (o.order_id || '?') + '</span>' +
+          '</div>';
+      }).join('');
+    } catch (_) {
+      el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
     }
   }
 
@@ -3059,7 +3152,35 @@
       <span class="pos-target-price" data-live="trail-stop-stock">${fmtPrice(pos.trail_stop_stock_price)}</span>
     </div>` : '';
 
+    // Initial P&L render — updateConsoleLiveFields will keep these current on each WS tick.
+    const isLive0  = pos.current_price != null;
+    const isStale0 = !isLive0 && pos.price_age_secs != null;
+    const curOptInit = isLive0 ? fmtPrice(pos.current_price) : (isStale0 ? 'STALE' : 'NO PRICE');
+    let curPnlInit = '—';
+    if (isLive0 && pos.unrealized_pnl != null) {
+      const sign0 = pos.unrealized_pnl >= 0 ? '+' : '';
+      curPnlInit = sign0 + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ') • LIVE';
+    }
+    const peakPnlInit = pos.peak_pnl != null
+      ? fmt$(Math.round(pos.peak_pnl)) + ' (' + fmtPct(pos.peak_pnl_pct) + ')'
+      : '—';
+
     return `<div class="pos-console">
+  <div class="pos-console-section">
+    <div class="pos-console-label">P&amp;L</div>
+    <div class="pos-target-row">
+      <span class="pos-target-type">Option price</span>
+      <span class="pos-target-price" data-live="cur-opt-price">${curOptInit}</span>
+    </div>
+    <div class="pos-target-row">
+      <span class="pos-target-type">Unrealized</span>
+      <span class="pos-target-price" data-live="cur-pnl">${curPnlInit}</span>
+    </div>
+    <div class="pos-target-row">
+      <span class="pos-target-type">Peak</span>
+      <span class="pos-target-price" data-live="peak-pnl-console">${peakPnlInit}</span>
+    </div>
+  </div>
   <div class="pos-console-section">
     <div class="pos-console-label">System exits — read-only</div>
     <div class="pos-target-row">
@@ -3079,6 +3200,11 @@
       <span class="pos-target-type">Width</span>
       <span class="pos-target-price" data-live="trail-width">${tw}</span>
     </div>${trailStkRow}
+  </div>
+
+  <div class="pos-console-section">
+    <div class="pos-console-label">Resting at broker</div>
+    <div data-live="resting-orders"><span style="color:var(--text-muted);font-size:0.75rem">fetching…</span></div>
   </div>
 
 ${isAdmin ? `
