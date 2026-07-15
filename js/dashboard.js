@@ -325,7 +325,17 @@
 
     if (!positions.length) {
       body.innerHTML = '<div class="dash-empty">No open positions</div>';
+      openConsoleId = null;
       return;
+    }
+
+    // Detach the open console before the DOM wipe so interactive state
+    // (mode tab, typed prices, cursor position) survives continuous WS re-renders.
+    // The same node is re-appended to the rebuilt card below; listeners survive with it.
+    let savedConsole = null;
+    if (openConsoleId) {
+      const live = body.querySelector(`.pos-card[data-pos-id="${openConsoleId}"] .pos-console`);
+      if (live) { live.remove(); savedConsole = live; }
     }
 
     body.innerHTML = positions.map(pos => {
@@ -413,15 +423,24 @@
 </div>`;
     }).join('');
 
-    // Re-attach console for any position that had it open before this WS refresh.
+    // Re-attach the preserved console — same node, no DOM destruction, no state loss.
     if (openConsoleId) {
       const card = body.querySelector(`.pos-card[data-pos-id="${openConsoleId}"]`);
       const pos  = currentPositions.find(p => p.position_id === openConsoleId);
       if (card && pos) {
-        card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
+        if (savedConsole) {
+          // Hot path: reattach the preserved node. Event listeners survived with the node —
+          // do NOT re-run wireConsoleButtons (every handler would be double-bound).
+          card.appendChild(savedConsole);
+          updateConsoleLiveFields(savedConsole, pos);
+        } else {
+          // Cold path: no saved node (position was re-opened from scratch). Build fresh.
+          card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
+          wireConsoleButtons(card, pos);
+        }
         card.classList.add('expanded');
-        wireConsoleButtons(card, pos);
       } else {
+        // Position gone — let the detached savedConsole be GC'd.
         openConsoleId = null;
       }
     }
@@ -2801,13 +2820,17 @@
     }
 
     // ── Mode tabs — toggle PROFIT-ONLY / MANUAL+STOP forms ───────────────────
-    card.querySelectorAll('.pos-ticket-mode').forEach(btn => {
+    // Capture element arrays at wire-time so click handlers remain correct after
+    // the card is replaced by body.innerHTML on each WS render.
+    const modeBtns  = Array.from(card.querySelectorAll('.pos-ticket-mode'));
+    const modeForms = Array.from(card.querySelectorAll('.pos-ticket-form'));
+    modeBtns.forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
         const mode = btn.dataset.mode;
-        card.querySelectorAll('.pos-ticket-mode').forEach(b => b.classList.remove('active'));
+        modeBtns.forEach(b => b.classList.remove('active'));
         btn.classList.add('active');
-        card.querySelectorAll('.pos-ticket-form').forEach(f => {
+        modeForms.forEach(f => {
           f.style.display = f.dataset.form === mode ? '' : 'none';
         });
       });
@@ -2942,18 +2965,21 @@
     });
 
     // ── Stop update — Review ──────────────────────────────────────────────────
-    const stopReview = card.querySelector('#ticketStopReview');
-    const stopStatus = card.querySelector('#ticketStopStatus');
+    const stopReview     = card.querySelector('#ticketStopReview');
+    const stopStatus     = card.querySelector('#ticketStopStatus');
+    const stopUpdInput   = card.querySelector('#ticketStopUpd');
+    const stopReviewBody = card.querySelector('#ticketStopReviewBody');
 
-    card.querySelector('.pos-ticket-stop-btn') && card.querySelector('.pos-ticket-stop-btn').addEventListener('click', e => {
+    const stopBtn = card.querySelector('.pos-ticket-stop-btn');
+    stopBtn && stopBtn.addEventListener('click', e => {
       e.stopPropagation();
-      const stopPrice = parseFloat(card.querySelector('#ticketStopUpd').value || '0');
+      const stopPrice = parseFloat(stopUpdInput ? stopUpdInput.value : '0');
       if (!(stopPrice > 0)) { setTicketStatus(stopStatus, 'Enter a valid stop price.', 'error'); return; }
-      card.querySelector('#ticketStopReviewBody').innerHTML =
+      if (stopReviewBody) stopReviewBody.innerHTML =
         `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">New stop</span> $${stopPrice.toFixed(2)}</div>` +
         `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Symbol</span> ${sym}</div>` +
         `<div class="pos-ticket-review-line" style="color:var(--text-muted);font-size:0.58rem">Cancel existing stop → place new · position briefly exposed between steps</div>`;
-      stopReview.style.display    = '';
+      stopReview.style.display     = '';
       stopReview.dataset.stopPrice = stopPrice;
       setTicketStatus(stopStatus, '', '');
     });
@@ -2982,6 +3008,33 @@
     });
   }
 
+  // Updates only the read-only data rows inside an already-open console node.
+  // Called each WS render instead of rebuilding the whole console DOM.
+  // Interactive controls (mode tabs, inputs, review state) are deliberately untouched.
+  function updateConsoleLiveFields(consoleEl, pos) {
+    function set(attr, text) {
+      const el = consoleEl.querySelector(`[data-live="${attr}"]`);
+      if (el) el.textContent = text;
+    }
+    const tw = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
+    set('tp1-stock',        pos.tp1_stock_price        ? fmtPrice(pos.tp1_stock_price)        : '—');
+    set('tp2-stock',        pos.tp2_stock_price        ? fmtPrice(pos.tp2_stock_price)        : '—');
+    set('sl-stock',         pos.sl_stock_price         ? fmtPrice(pos.sl_stock_price)         : '—');
+    set('trail-width',      tw);
+    set('trail-stop-stock', pos.trail_stop_stock_price ? fmtPrice(pos.trail_stop_stock_price) : '—');
+
+    // Keep the Exit button in sync with closing_pending transitions so double-close
+    // is blocked even while the console is held open across renders.
+    const closeBtn = consoleEl.querySelector('.pos-console-close-btn');
+    if (closeBtn) {
+      const isPending = pos.state === 'closing_pending';
+      closeBtn.disabled = isPending;
+      closeBtn.title    = isPending ? 'Close already pending — double-close blocked' : '';
+      const tag = closeBtn.querySelector('.pos-preview-tag');
+      if (tag) tag.textContent = isPending ? 'close pending — blocked' : 'market · kill-switch gated';
+    }
+  }
+
   // Builds the HTML for the inline management console.
   // Scale and Rebase are stubs. Exit at market uses the legacy modal path.
   // Order Ticket (Rungs 1-2) and Moving Stop A are wired via wireConsoleButtons.
@@ -2996,14 +3049,14 @@
     const tp2Row = pos.tp2_stock_price ? `
     <div class="pos-target-row">
       <span class="pos-target-type">TP2 Stock</span>
-      <span class="pos-target-price">${fmtPrice(pos.tp2_stock_price)}</span>
+      <span class="pos-target-price" data-live="tp2-stock">${fmtPrice(pos.tp2_stock_price)}</span>
       <span class="pos-target-badge system">SYSTEM</span>
     </div>` : '';
 
     const trailStkRow = pos.trail_stop_stock_price ? `
     <div class="pos-target-row">
       <span class="pos-target-type">Trail stk</span>
-      <span class="pos-target-price">${fmtPrice(pos.trail_stop_stock_price)}</span>
+      <span class="pos-target-price" data-live="trail-stop-stock">${fmtPrice(pos.trail_stop_stock_price)}</span>
     </div>` : '';
 
     return `<div class="pos-console">
@@ -3011,12 +3064,12 @@
     <div class="pos-console-label">System exits — read-only</div>
     <div class="pos-target-row">
       <span class="pos-target-type">TP1 Stock</span>
-      <span class="pos-target-price">${pos.tp1_stock_price ? fmtPrice(pos.tp1_stock_price) : '—'}</span>
+      <span class="pos-target-price" data-live="tp1-stock">${pos.tp1_stock_price ? fmtPrice(pos.tp1_stock_price) : '—'}</span>
       <span class="pos-target-badge system">SYSTEM</span>
     </div>${tp2Row}
     <div class="pos-target-row">
       <span class="pos-target-type">SL Stock</span>
-      <span class="pos-target-price">${pos.sl_stock_price ? fmtPrice(pos.sl_stock_price) : '—'}</span>
+      <span class="pos-target-price" data-live="sl-stock">${pos.sl_stock_price ? fmtPrice(pos.sl_stock_price) : '—'}</span>
       <span class="pos-target-badge system">SYSTEM</span>
     </div>
   </div>
@@ -3024,7 +3077,7 @@
     <div class="pos-console-label">Trail</div>
     <div class="pos-target-row">
       <span class="pos-target-type">Width</span>
-      <span class="pos-target-price">${tw}</span>
+      <span class="pos-target-price" data-live="trail-width">${tw}</span>
     </div>${trailStkRow}
   </div>
 
