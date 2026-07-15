@@ -36,6 +36,7 @@
   let openConsoleId      = null; // position_id of the currently expanded management console
   let _restingInterval   = null; // setInterval handle for the resting-orders poll
   let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
+  let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
 
   // Right-column drawer state
   let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
@@ -261,6 +262,7 @@
     setupGexModal();
     setupHealthPopover();
     setupDrawer();
+    setupWorkingOrdersPanel();
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -3126,6 +3128,145 @@
     } catch (_) {
       el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
     }
+  }
+
+  // Fetches account-level working orders and renders workingOrdersPanel.
+  // Called on panel init, after any cancel mutation, and on the 30 s cadence.
+  // NOT on the 3 s WS tick.  Mirrors the fetchRestingOrders cadence; the two
+  // polls target different endpoints and the resting poll only runs while a
+  // console is open, so combined rate stays at most 2 calls / 30 s.
+  async function fetchWorkingOrders() {
+    const el = document.getElementById('workingOrdersBody');
+    if (!el) return;
+    try {
+      const data = await apiFetch('/api/orders/working');
+      if (!data.ok) {
+        el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
+        return;
+      }
+      if (!data.orders || !data.orders.length) {
+        el.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem">— nothing working —</span>';
+        return;
+      }
+      el.innerHTML = data.orders.map(o => {
+        const isStop  = o.classification === 'protective_stop';
+        const isEntry = o.classification === 'entry';
+        const dirCls  = isEntry ? 'call' : isStop ? 'put' : '';
+        const clsLabel = isEntry ? 'ENTRY'
+                       : isStop  ? 'STOP ⚠'
+                       : o.classification === 'take_profit' ? 'TP'
+                       : 'ORDER';
+        const priceStr = o.stop_price
+          ? 'stop $' + Number(o.stop_price).toFixed(2)
+          : (o.price ? 'limit $' + Number(o.price).toFixed(2) : '—');
+        const sym     = o.option_symbol || o.ticker || '?';
+        const dur     = o.duration ? o.duration.toUpperCase() : '';
+        const untracked = !o.tracked
+          ? ' <span class="pnl-badge stale" title="Broker has this order but system does not track it">untracked</span>'
+          : '';
+        const safeSym = (sym + '').replace(/"/g, '&quot;');
+        return '<div class="pos-target-row" style="flex-wrap:wrap;gap:0.2rem 0.4rem;align-items:center">' +
+          '<span class="pos-direction ' + dirCls + '" style="font-size:0.68rem;padding:0.1rem 0.3rem">' + clsLabel + '</span>' +
+          '<span class="pos-target-type">' + (o.ticker || '?') + '</span>' +
+          '<span class="pos-target-price" style="font-size:0.72rem;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeSym + '">' + sym + '</span>' +
+          '<span class="pos-target-badge">' + priceStr + ' · ' + (o.quantity || '?') + '× · ' + (o.status || '') + (dur ? ' · ' + dur : '') + '</span>' +
+          untracked +
+          '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+            ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+            ' data-cancel-id="' + o.order_id + '"' +
+            ' data-classification="' + o.classification + '"' +
+            ' data-ticker="' + (o.ticker || '') + '"' +
+            ' data-sym="' + safeSym + '">Cancel</button>' +
+          '</div>';
+      }).join('');
+
+      // Bind cancel handlers — buttons are rebuilt each render, so listeners are always fresh.
+      el.querySelectorAll('[data-cancel-id]').forEach(btn => {
+        btn.addEventListener('click', () => _onCancelWorkingOrder(btn));
+      });
+    } catch (err) {
+      if (err.status === 403) {
+        // Not authorized — remove the panel and stop polling rather than
+        // showing a false "broker unreachable" error.  Mirrors the
+        // loadIndexLevels 403 handler (dashboard.js:618).
+        const panel = document.getElementById('workingOrdersPanel');
+        if (panel) panel.remove();
+        if (_workingInterval) { clearInterval(_workingInterval); _workingInterval = null; }
+        return;
+      }
+      el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
+    }
+  }
+
+  function _onCancelWorkingOrder(btn) {
+    const orderId = btn.dataset.cancelId;
+    const cls     = btn.dataset.classification;
+    const ticker  = btn.dataset.ticker;
+    const sym     = btn.dataset.sym;
+    const isStop  = cls === 'protective_stop';
+
+    const modalBody = isStop
+      ? '<strong style="color:var(--danger)">⚠ This is a PROTECTIVE STOP for ' + ticker + '.</strong><br>' +
+        'Canceling it leaves the <strong>' + ticker + '</strong> position <strong>completely unprotected</strong>.<br><br>' +
+        'Order: <code style="font-size:0.8rem">' + sym + '</code> &nbsp; ID: <code style="font-size:0.8rem">' + orderId + '</code><br><br>' +
+        '<span style="color:var(--danger);font-size:0.8rem">Only proceed if you intend to manage the exit manually.</span>'
+      : 'Cancel this entry order?<br><br>' +
+        'Order: <code style="font-size:0.8rem">' + sym + '</code> &nbsp; ID: <code style="font-size:0.8rem">' + orderId + '</code>';
+
+    showConfirmModal({
+      title:   isStop ? 'Cancel Stop — ' + ticker + ' will be EXPOSED' : 'Cancel Entry Order',
+      body:    modalBody,
+      okLabel: isStop ? 'Cancel Stop — leave exposed' : 'Cancel Order',
+      okClass: isStop ? 'danger' : '',
+      onOk: async (setStatus) => {
+        setStatus('Canceling…');
+        try {
+          const result = await apiPost('/api/orders/cancel', { order_id: orderId });
+          if (result.ok) {
+            setStatus('Canceled', 'ok');
+            fetchWorkingOrders();
+          } else if (result.reason === 'already_filled') {
+            setStatus('Already filled — position may now exist. Refreshing…', 'error');
+            fetchWorkingOrders();
+          } else {
+            setStatus('Error: ' + (result.error || 'cancel failed'), 'error');
+          }
+        } catch (err) {
+          const detail = err.data && err.data.detail ? err.data.detail : err.message;
+          setStatus('Error: ' + detail, 'error');
+        }
+      },
+    });
+  }
+
+  // Injects the account-level working orders panel above the positions panel
+  // and starts the 30 s poll.  Called unconditionally after auth succeeds —
+  // the backend authorize_trading() is the gate; do not add an isAdmin check here.
+  function setupWorkingOrdersPanel() {
+    const rightCol  = document.getElementById('rightCol');
+    const histPanel = document.getElementById('rightHistPanel');
+    if (!rightCol || !histPanel) return;
+
+    const section = document.createElement('section');
+    section.className = 'dash-panel';
+    section.id        = 'workingOrdersPanel';
+    section.style.cssText = 'flex:0 0 auto;margin-bottom:0.5rem';
+    section.innerHTML =
+      '<div class="dash-panel-header">' +
+        '<span class="dash-panel-title">Working Orders</span>' +
+        '<span class="dash-panel-meta">account-level · 30 s refresh</span>' +
+      '</div>' +
+      '<div id="workingOrdersBody" class="dash-panel-body" style="padding:0.4rem 0.5rem">' +
+        '<span style="color:var(--text-muted);font-size:0.75rem">loading…</span>' +
+      '</div>';
+    rightCol.insertBefore(section, histPanel);
+
+    fetchWorkingOrders();
+    _workingInterval = setInterval(() => {
+      const el = document.getElementById('workingOrdersBody');
+      if (el) fetchWorkingOrders();
+      else { clearInterval(_workingInterval); _workingInterval = null; }
+    }, 30_000);
   }
 
   // Builds the HTML for the inline management console.
