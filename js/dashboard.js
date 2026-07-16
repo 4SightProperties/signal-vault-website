@@ -85,6 +85,7 @@
   let chainLastStrikesData = null;  // {strikes, bias, srCtx} — saved for compact-strip expand
   let cockpitExitMode      = 'profit'; // persisted exit mode: 'profit' | 'stop' | 'manual'
   let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
+  let cockpitExitLayer     = 'default'; // exit layer: 'default' | 'tight_trail' | 'cloud_break' | 'oco_bracket'
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
   let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
@@ -2370,6 +2371,25 @@
     </div>
   </div>
 
+  <div class="cockpit-levels-section">
+    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem;">
+      <span class="cockpit-section-label">Exit layer</span>
+      <select id="cockpitExitLayerSelect" class="cockpit-target-input" style="flex:1; padding:0.2rem 0.3rem;">
+        <option value="default">Default</option>
+        <option value="tight_trail">Tight trail</option>
+        <option value="cloud_break">Cloud break</option>
+        <option value="oco_bracket">OCO bracket</option>
+      </select>
+    </div>
+    <div id="cockpitOcoTpRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.35rem;">
+      <span class="cockpit-section-label">TP premium $</span>
+      <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
+             min="0.01" step="0.01" placeholder="0.00">
+      <span id="cockpitOcoTpHint" style="font-size:0.68rem; color:var(--text-muted)"></span>
+    </div>
+    <div id="cockpitOcoStopHint" style="display:none; font-size:0.68rem; color:var(--text-muted); margin-top:0.2rem;"></div>
+  </div>
+
   <div class="cockpit-actions">
     <button class="chain-open-btn" id="chainOpenBtn">
       Open Position
@@ -2421,6 +2441,7 @@
 
     // Entry price mode buttons — reset to AUTO on each arm, persist within session
     cockpitEntryMode = 'auto';
+    cockpitExitLayer = 'default';
     document.getElementById('cockpitEntryModeBtns').addEventListener('click', e => {
       const btn = e.target.closest('[data-entry-mode]');
       if (!btn) return;
@@ -2431,6 +2452,28 @@
       document.getElementById('cockpitEntryPriceRow').style.display =
         cockpitEntryMode === 'your_price' ? 'flex' : 'none';
     });
+
+    // Exit-layer select — reveal OCO TP row when oco_bracket chosen
+    document.getElementById('cockpitExitLayerSelect').addEventListener('change', e => {
+      cockpitExitLayer = e.target.value;
+      const isOco = cockpitExitLayer === 'oco_bracket';
+      document.getElementById('cockpitOcoTpRow').style.display    = isOco ? 'flex'  : 'none';
+      document.getElementById('cockpitOcoStopHint').style.display = isOco ? 'block' : 'none';
+      if (isOco) _updateOcoHints();
+    });
+
+    function _updateOcoHints() {
+      const ask      = armedContract ? armedContract.ask : 0;
+      const tpInp    = document.getElementById('cockpitOcoTpInput');
+      const tpHint   = document.getElementById('cockpitOcoTpHint');
+      const stopHint = document.getElementById('cockpitOcoStopHint');
+      if (!tpInp || ask <= 0) return;
+      const derivedTp = +(ask * 1.50).toFixed(2);
+      const derivedSl = +(ask * 0.70).toFixed(2);
+      tpInp.placeholder    = `${derivedTp}`;
+      tpHint.textContent   = `blank = server default ≈$${derivedTp} (est. from ask; server uses actual fill)`;
+      stopHint.textContent = `Stop: ≈$${derivedSl} (est. from ask; server uses actual fill — override with stop_price)`;
+    }
 
     // Target override apply
     document.getElementById('cockpitApplyTarget').addEventListener('click', () => {
@@ -2513,6 +2556,23 @@
         ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong><br>`
         : `Est. cost: <strong>unknown — market order, no limit</strong><br>`;
 
+      // ── OCO bracket resolution ────────────────────────────────────────────────
+      let ocoTpPayload;     // undefined → omit from body; server uses tp2_price (fill × 1.50)
+      let ocoBracketHtml = '';
+      if (cockpitExitLayer === 'oco_bracket') {
+        const tpInp     = document.getElementById('cockpitOcoTpInput');
+        const typed     = tpInp ? parseFloat(tpInp.value) : NaN;
+        const derivedTp = +(ask * 1.50).toFixed(2);
+        const derivedSl = +(ask * 0.70).toFixed(2);
+        if (typed > 0) ocoTpPayload = typed;
+        const tpDisplay = ocoTpPayload !== undefined
+          ? `$${ocoTpPayload.toFixed(2)} (your price)`
+          : `≈$${derivedTp.toFixed(2)} (est. from ask; server uses actual fill)`;
+        ocoBracketHtml =
+          `OCO bracket: TP <strong>${tpDisplay}</strong>, ` +
+          `Stop <strong>≈$${derivedSl.toFixed(2)}</strong> (est. from ask; server uses actual fill)<br>`;
+      }
+
       showConfirmModal({
         title:   `Open ${chainTicker} ${cpLabel}`,
         body:    spreadWarnHtml +
@@ -2520,6 +2580,7 @@
                  `Qty: <strong>${qty}</strong> contract${qty > 1 ? 's' : ''}<br>` +
                  `Entry limit: <strong>${entryPriceHtml}</strong><br>` +
                  costHtml +
+                 ocoBracketHtml +
                  `<br>` +
                  `<span style="color:var(--text-muted);font-size:0.68rem">` +
                  `Gated by kill-switch. Order goes to your active env (verify sandbox before first live use).</span>`,
@@ -2558,6 +2619,12 @@
             };
             if (limitPricePayload !== undefined) {
               body.limit_price = limitPricePayload;
+            }
+            if (cockpitExitLayer !== 'default') {
+              body.exit_layer = cockpitExitLayer;
+            }
+            if (ocoTpPayload !== undefined) {
+              body.tp_price = ocoTpPayload;
             }
             const result = await apiPost('/api/v1/orders/open', body);
 
