@@ -2355,24 +2355,38 @@
 
   <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
 
+  <div class="cockpit-levels-section cockpit-order-type-row">
+    <span class="cockpit-section-label">order type</span>
+    <div class="cockpit-seg-group">
+      <span class="cockpit-seg cockpit-seg-active">limit</span>
+      <span class="cockpit-seg cockpit-seg-dim">market</span>
+      <span class="cockpit-seg cockpit-seg-dim">stop</span>
+    </div>
+  </div>
+
   <div class="cockpit-levels-section">
-    <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
-      <span class="cockpit-section-label">Entry price</span>
-      <button class="cockpit-level-btn active" data-entry-mode="auto">AUTO</button>
-      <button class="cockpit-level-btn" data-entry-mode="take_ask">Take ask</button>
-      <button class="cockpit-level-btn" data-entry-mode="your_price">Your price</button>
+    <div class="cockpit-inline-row">
+      <span class="cockpit-section-label">entry price</span>
+      <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
+        <button class="cockpit-level-btn active" data-entry-mode="auto">auto</button>
+        <button class="cockpit-level-btn" data-entry-mode="take_ask">ask</button>
+        <button class="cockpit-level-btn" data-entry-mode="your_price">your price</button>
+      </div>
     </div>
     <div id="cockpitEntryPriceRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.35rem;">
       <span class="cockpit-section-label">Premium $</span>
       <input type="number" id="cockpitEntryPriceInput" class="cockpit-target-input"
              min="0.01" step="0.01" placeholder="0.00">
     </div>
-    <div class="cockpit-tif-note">day · rests until 4:00 pm, then cancels</div>
+    <div class="cockpit-tif-row">
+      <span class="cockpit-section-label">tif</span>
+      <span class="cockpit-field-chip">day</span>
+    </div>
   </div>
 
   <div class="cockpit-levels-section">
-    <div style="display:flex; align-items:center; gap:0.5rem; margin-top:0.4rem;">
-      <span class="cockpit-section-label">Exit layer</span>
+    <div class="cockpit-inline-row" style="margin-top:0.4rem;">
+      <span class="cockpit-section-label">exit</span>
       <select id="cockpitExitLayerSelect" class="cockpit-target-input" style="flex:1; padding:0.2rem 0.3rem;">
         <option value="default">Default</option>
         <option value="tight_trail">Tight trail</option>
@@ -2381,34 +2395,41 @@
       </select>
     </div>
     <div class="cockpit-layer-subtitle" id="cockpitLayerSubtitle"></div>
-    <div id="cockpitOcoTpRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.35rem;">
-      <span class="cockpit-section-label">TP premium $</span>
-      <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
-             min="0.01" step="0.01" placeholder="0.00">
-      <span id="cockpitOcoTpHint" style="font-size:0.68rem; color:var(--text-muted)"></span>
-    </div>
-    <div id="cockpitOcoStopHint" style="display:none; font-size:0.68rem; color:var(--text-muted); margin-top:0.2rem;"></div>
     <div id="cockpitGtcStopRow" class="cockpit-gtc-row">
       GTC stop&nbsp; ≈$<span id="cockpitGtcStopPrice">${(ask * 0.70).toFixed(2)}</span>&nbsp; −30% · rests at broker
-      <span class="cockpit-gtc-note">est. from ask; server uses actual fill · skipped for ripster_sr_tiered / confluence_sr strategies</span>
     </div>
-    <div id="cockpitOcoTifNote" class="cockpit-tif-note" style="display:none; margin-top:0.25rem;">
-      gtc · both legs rest until filled or cancelled
+    <div id="cockpitOcoPairRow" style="display:none; margin-top:0.35rem;">
+      <div class="cockpit-oco-cols">
+        <div class="cockpit-oco-col">
+          <div class="cockpit-oco-check">☑ stop-loss</div>
+          <input type="number" class="cockpit-target-input" id="cockpitOcoStopVal"
+                 disabled value="${(ask * 0.70).toFixed(2)}">
+          <div class="cockpit-oco-sub" id="cockpitOcoStopSub">−30% · est −$${Math.round(ask * 0.30 * 2 * 100)}</div>
+        </div>
+        <div class="cockpit-oco-col">
+          <div class="cockpit-oco-check">☑ take-profit</div>
+          <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
+                 min="0.01" step="0.01" placeholder="0.00">
+          <div class="cockpit-oco-sub" id="cockpitOcoTpSub">+50% · est +$${Math.round(ask * 0.50 * 2 * 100)}</div>
+        </div>
+      </div>
+      <div class="cockpit-tif-row" style="margin-top:0.28rem;">
+        <span class="cockpit-section-label">tif (legs)</span>
+        <span class="cockpit-field-chip">gtc</span>
+        <span class="cockpit-tif-sub">blank = from actual fill</span>
+      </div>
     </div>
+    <span id="cockpitOcoTpHint" style="display:none"></span>
+    <span id="cockpitOcoStopHint" style="display:none"></span>
+    <span id="cockpitOcoTifNote" style="display:none"></span>
   </div>
 
   <div class="cockpit-summary-block" id="cockpitSummaryBlock">
-    <div class="cockpit-summary-row">
-      <span class="cockpit-summary-label">estimated cost</span>
-      <span class="cockpit-summary-val" id="chainCost">${fmtPrice(ask * 2 * 100)}</span>
-    </div>
-    <div class="cockpit-summary-row">
-      <span class="cockpit-summary-label">max loss</span>
-      <span class="cockpit-summary-val" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span>
-    </div>
-    <div class="cockpit-summary-row" id="cockpitSumRiskRow">
-      <span class="cockpit-summary-label">risk left today</span>
-      <span class="cockpit-summary-val" id="cockpitSumRisk">—</span>
+    <div class="cockpit-summary-single" id="cockpitSumRiskRow">
+      <span class="cockpit-sum-item">cost <span class="cockpit-summary-val" id="chainCost">${fmtPrice(ask * 2 * 100)}</span></span>
+      <span class="cockpit-sum-sep">·</span>
+      <span class="cockpit-sum-item">max loss <span class="cockpit-summary-val" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span></span>
+      <span class="cockpit-sum-risk-wrap"><span class="cockpit-sum-risk-label">⚠ risk left </span><span class="cockpit-summary-val" id="cockpitSumRisk">—</span></span>
     </div>
   </div>
 
@@ -2448,6 +2469,7 @@
       document.getElementById('chainCost').textContent    = fmtPrice(cost);
       document.getElementById('chainMaxLoss').textContent = fmtPrice(cost);
       _updateSummaryRisk(cost);
+      if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
       if (matrixProjCache) {
         const wrapEl = document.getElementById('cockpitProjWrap');
         const verdEl = document.getElementById('cockpitVerdict');
@@ -2470,16 +2492,14 @@
         cockpitEntryMode === 'your_price' ? 'flex' : 'none';
     });
 
-    // Exit-layer select — reveal OCO TP row; update subtitle, GTC stop, and TIF note
+    // Exit-layer select — reveal OCO bracket pair or GTC stop row; update subtitle
     document.getElementById('cockpitExitLayerSelect').addEventListener('change', e => {
       cockpitExitLayer = e.target.value;
       const isOco = cockpitExitLayer === 'oco_bracket';
-      document.getElementById('cockpitOcoTpRow').style.display    = isOco ? 'flex'  : 'none';
-      document.getElementById('cockpitOcoStopHint').style.display = isOco ? 'block' : 'none';
+      document.getElementById('cockpitOcoPairRow').style.display  = isOco ? 'block' : 'none';
       document.getElementById('cockpitGtcStopRow').style.display  = isOco ? 'none'  : 'block';
-      document.getElementById('cockpitOcoTifNote').style.display  = isOco ? 'block' : 'none';
       _updateLayerSubtitle(cockpitExitLayer);
-      if (isOco) _updateOcoHints();
+      if (isOco) { _updateOcoHints(); _updateOcoPnl(); }
     });
 
     function _updateOcoHints() {
@@ -2494,6 +2514,34 @@
       tpHint.textContent   = `blank = server default ≈$${derivedTp} (est. from ask; server uses actual fill)`;
       stopHint.textContent = `Stop: ≈$${derivedSl} (est. from ask; server uses actual fill — override with stop_price)`;
     }
+
+    function _updateOcoPnl() {
+      const curAsk = armedContract ? armedContract.ask : 0;
+      if (curAsk <= 0) return;
+      const qty    = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
+      const sl     = +(curAsk * 0.70).toFixed(2);
+      const tpInp  = document.getElementById('cockpitOcoTpInput');
+      const tpVal  = tpInp ? parseFloat(tpInp.value) : 0;
+      const tp     = tpVal > 0 ? tpVal : +(curAsk * 1.50).toFixed(2);
+      const slPnl  = Math.round((sl - curAsk) * qty * 100);
+      const tpPnl  = Math.round((tp - curAsk) * qty * 100);
+      const tpPct  = Math.round((tp / curAsk - 1) * 100);
+      const stopSubEl = document.getElementById('cockpitOcoStopSub');
+      const tpSubEl   = document.getElementById('cockpitOcoTpSub');
+      const stopValEl = document.getElementById('cockpitOcoStopVal');
+      if (stopValEl) stopValEl.value = sl.toFixed(2);
+      if (stopSubEl) stopSubEl.textContent = `−30% · est −$${Math.abs(slPnl)}`;
+      if (tpSubEl) {
+        const pctStr  = tpPct  >= 0 ? `+${tpPct}%`          : `−${Math.abs(tpPct)}%`;
+        const dolStr  = tpPnl  >= 0 ? `+$${tpPnl}`          : `−$${Math.abs(tpPnl)}`;
+        tpSubEl.textContent = `${pctStr} · est ${dolStr}`;
+        tpSubEl.style.color = tpPnl < 0 ? 'var(--danger, #ef4444)' : '';
+      }
+    }
+
+    // Update OCO P&L sub-labels when TP input changes
+    const _tpInputEl = document.getElementById('cockpitOcoTpInput');
+    if (_tpInputEl) _tpInputEl.addEventListener('input', _updateOcoPnl);
 
     function _updateLayerSubtitle(layer) {
       const el = document.getElementById('cockpitLayerSubtitle');
@@ -2761,6 +2809,8 @@
         if (mlEl)   mlEl.textContent   = fmtPrice(cost);
         const gtcPriceEl = document.getElementById('cockpitGtcStopPrice');
         if (gtcPriceEl && fresh.ask > 0) gtcPriceEl.textContent = (fresh.ask * 0.70).toFixed(2);
+        const ocoStopValEl = document.getElementById('cockpitOcoStopVal');
+        if (ocoStopValEl && fresh.ask > 0) ocoStopValEl.value = (fresh.ask * 0.70).toFixed(2);
         // Re-evaluate spend gate with refreshed cost.
         // _updateSummaryRisk() lives inside armContract's closure — not reachable here.
         // If you change this block, change _updateSummaryRisk() to match.

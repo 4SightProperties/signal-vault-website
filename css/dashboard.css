@@ -1754,7 +1754,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cockpit-level-btns { display: flex; gap: 0.28rem; align-items: center; }
 
 .cockpit-level-btn {
-  flex: 1;
+  flex: 0 0 auto;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
@@ -1771,6 +1771,63 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-color: rgba(59,130,246,0.4);
   background: rgba(59,130,246,0.08);
   color: var(--blue);
+}
+
+/* Order type segment row (display-only; limit active, market/stop disabled) */
+.cockpit-order-type-row { display: flex; align-items: center; gap: 0.3rem; }
+.cockpit-seg-group { display: flex; gap: 0.18rem; }
+.cockpit-seg {
+  font-size: 0.58rem;
+  font-weight: 600;
+  padding: 0.08rem 0.32rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  user-select: none;
+}
+.cockpit-seg-active {
+  color: var(--blue);
+  border-color: rgba(59,130,246,0.4);
+  background: rgba(59,130,246,0.08);
+}
+.cockpit-seg-dim { color: var(--text-muted); opacity: 0.45; cursor: not-allowed; }
+
+/* Inline label + control row (order type, entry price, exit) */
+.cockpit-inline-row { display: flex; align-items: center; gap: 0.3rem; }
+
+/* TIF labeled field */
+.cockpit-tif-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.22rem;
+}
+.cockpit-field-chip {
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.06rem 0.28rem;
+}
+.cockpit-tif-sub {
+  font-size: 0.54rem;
+  color: var(--text-muted);
+}
+
+/* OCO bracket pair columns */
+.cockpit-oco-cols { display: flex; gap: 0.5rem; }
+.cockpit-oco-col  { flex: 1; display: flex; flex-direction: column; gap: 0.14rem; }
+.cockpit-oco-check {
+  font-size: 0.57rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+}
+.cockpit-oco-sub {
+  font-size: 0.54rem;
+  color: var(--text-muted);
 }
 
 /* Cockpit action buttons row */
@@ -1801,13 +1858,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin-top: 0;
 }
 
-/* Static TIF note — appears under entry price section and OCO path */
-.cockpit-tif-note {
-  font-size: 0.58rem;
-  color: var(--text-muted);
-  margin-top: 0.22rem;
-  padding-left: 0.1rem;
-}
+/* .cockpit-tif-note removed — replaced by .cockpit-tif-row + .cockpit-field-chip */
 
 /* Layer subtitle — muted description line below the exit-layer select */
 .cockpit-layer-subtitle {
@@ -1832,53 +1883,59 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
 }
 
-.cockpit-gtc-note {
-  display: block;
-  font-size: 0.54rem;
-  font-weight: 400;
-  color: var(--text-muted);
-  margin-top: 0.08rem;
-}
+/* .cockpit-gtc-note removed — prose note stripped from GTC stop row */
 
-/* Order summary block — cost / max loss / risk left */
+/* Order summary block — single inline row: cost · max loss  ⚠ risk left */
 .cockpit-summary-block {
   margin: 0.2rem 0 0.1rem;
-  padding: 0.2rem 0.3rem;
+  padding: 0.18rem 0.3rem;
   background: rgba(148,163,184,0.03);
   border: 1px solid var(--border);
   border-radius: var(--radius-sm);
 }
 
-.cockpit-summary-row {
+.cockpit-summary-single {
   display: flex;
-  justify-content: space-between;
   align-items: baseline;
-  gap: 0.4rem;
-  padding: 0.06rem 0;
+  flex-wrap: wrap;
+  gap: 0.35rem;
 }
 
-.cockpit-summary-row + .cockpit-summary-row {
-  border-top: 1px solid rgba(148,163,184,0.06);
-}
-
-.cockpit-summary-label {
+.cockpit-sum-item {
   font-size: 0.57rem;
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  flex-shrink: 0;
+  white-space: nowrap;
 }
+
+.cockpit-sum-sep {
+  font-size: 0.57rem;
+  color: var(--text-muted);
+}
+
+.cockpit-sum-risk-wrap {
+  margin-left: auto;
+  font-size: 0.57rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+}
+
+.cockpit-sum-risk-label { margin-right: 0.05rem; }
 
 .cockpit-summary-val {
   font-family: var(--font-display);
   font-size: 0.63rem;
   font-weight: 600;
   color: var(--text-secondary);
-  text-align: right;
 }
 
-/* Amber warning when cost > risk_left */
-.cockpit-summary-warn .cockpit-summary-label { color: var(--warning, #f59e0b); }
+/* Amber warning when cost > risk_left — entire row turns amber */
+.cockpit-summary-warn .cockpit-sum-item      { color: var(--warning, #f59e0b); }
+.cockpit-summary-warn .cockpit-sum-sep       { color: var(--warning, #f59e0b); }
+.cockpit-summary-warn .cockpit-sum-risk-wrap { color: var(--warning, #f59e0b); }
 .cockpit-summary-warn .cockpit-summary-val   { color: var(--warning, #f59e0b); font-weight: 700; }
 
 /* ════════════════════════════════════════════════════════════════
