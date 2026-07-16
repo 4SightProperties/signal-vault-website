@@ -2872,18 +2872,21 @@
       return `<span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`;
     }
 
-    const _consumed  = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
-    const _remaining = _consumed != null ? Math.max(0, chainAtr - chainDayRange) : null;
+    const _consumed   = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
+    const _remaining  = _consumed != null ? Math.max(0, chainAtr - chainDayRange) : null;
+    const _exhausted  = _consumed != null && _consumed >= 0.95;
+    const _ATR_CUTOFF = 200;  // demand % above which cell goes blank and row dims
+
+    function _remAtrDemand(lvlPrice) {
+      if (!chainAtr || chainAtr <= 0 || _remaining === null) return null;  // no data → neutral
+      if (_exhausted || _remaining <= 0) return Infinity;                  // exhausted → all rows dim
+      return Math.abs(lvlPrice - chainCurrentPrice) / _remaining * 100;
+    }
     function fmtRemAtr(lvlPrice) {
-      if (!chainAtr || chainAtr <= 0 || _remaining === null) return '<span class="mat-na">—</span>';
-      if (_consumed >= 0.95) return '<span class="mat-rem mat-rem-exhausted">EXHAUSTED</span>';
-      const dist = Math.abs(lvlPrice - chainCurrentPrice);
-      const pct  = dist / _remaining * 100;
-      const disp = pct > 999 ? '>999%' : Math.round(pct) + '%';
-      const cls  = pct > 300 ? 'mat-rem mat-rem-red'
-                 : pct > 100 ? 'mat-rem mat-rem-amber'
-                 :              'mat-rem mat-rem-ok';
-      return `<span class="${cls}">${disp}</span>`;
+      const demand = _remAtrDemand(lvlPrice);
+      if (demand === null || demand > _ATR_CUTOFF) return '';
+      const cls = demand > 100 ? 'mat-rem mat-rem-amber' : 'mat-rem mat-rem-ok';
+      return `<span class="${cls}">${Math.round(demand)}%</span>`;
     }
 
     const rowsHtml = levels.map((lvl, i) => {
@@ -2897,6 +2900,11 @@
       else if (lvl.role === 'strike')     rowCls = 'mat-row-strike';
       else if (lvl.role === 'breakeven')  rowCls = 'mat-row-breakeven';
       else if (lvl.type === 'confluence') rowCls = 'mat-row-confluence';
+
+      const _demand = _remAtrDemand(lvl.price);
+      if (_demand !== null) {
+        rowCls += _demand <= _ATR_CUTOFF ? ' mat-row-reachable' : ' mat-row-unreachable';
+      }
 
       const priceStr = `$${lvl.price.toFixed(2)}${lvl.role === 'current' ? ' ◀' : ''}`;
 
@@ -2913,7 +2921,18 @@
 </tr>`;
     }).join('');
 
-    wrapEl.innerHTML = `
+    let _atrBannerHtml = '';
+    if (_consumed !== null) {
+      if (_exhausted) {
+        _atrBannerHtml = '<div class="mat-atr-banner mat-atr-banner-exhausted">ATR EXHAUSTED</div>';
+      } else {
+        const _usedPct = Math.round(_consumed * 100);
+        const _leftStr = _remaining != null ? `$${_remaining.toFixed(2)}` : '—';
+        _atrBannerHtml = `<div class="mat-atr-banner">ATR ${_usedPct}% used · ${_leftStr} left</div>`;
+      }
+    }
+
+    wrapEl.innerHTML = `${_atrBannerHtml}
 <table class="cockpit-level-matrix">
   <thead>
     <tr class="mat-thead-top">
