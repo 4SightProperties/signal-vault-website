@@ -83,7 +83,6 @@
   let chainCurrentPrice    = 0.0;   // stock price at chain load time
   let armedContract        = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
   let chainLastStrikesData = null;  // {strikes, bias, srCtx} — saved for compact-strip expand
-  let cockpitExitMode      = 'profit'; // persisted exit mode: 'profit' | 'stop' | 'manual'
   let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
   let cockpitExitLayer     = 'default'; // exit layer: 'default' | 'tight_trail' | 'cloud_break' | 'oco_bracket'
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
@@ -91,6 +90,7 @@
   let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
   let chainAtr             = null;  // Wilder EWM ATR14 from _sr_atr_context at chain load
   let chainDayRange        = null;  // today's RTH hi-lo range; updated on ↻ via chain/quote
+  let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
 
   // History tab state
   let isAdmin           = false;
@@ -582,6 +582,7 @@
 
       // ── Risk Left ────────────────────────────────────────────────
       const rl  = d.risk_left || {};
+      lastRiskLeft = rl.value != null ? rl.value : null;
       const rlHtml = rl.state === 'error' ? '—'
                    : rl.state === 'empty' ? '—'
                    : '$' + (rl.value || 0).toFixed(0);
@@ -2341,10 +2342,6 @@
   <div class="cockpit-qty-target-row">
     <span class="chain-cost-label">Qty</span>
     <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
-    <span class="chain-cost-label">cost</span>
-    <span class="chain-cost-value" id="chainCost">${fmtPrice(ask * 2 * 100)}</span>
-    <span class="chain-cost-label">max loss</span>
-    <span class="chain-cost-value" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span>
     <span class="cockpit-row-sep">|</span>
     <span class="chain-cost-label">Target $</span>
     <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
@@ -2359,15 +2356,6 @@
   <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
 
   <div class="cockpit-levels-section">
-    <div class="cockpit-level-btns" id="cockpitLevelBtns">
-      <span class="cockpit-section-label">Exit target</span>
-      <button class="cockpit-level-btn${cockpitExitMode === 'profit' ? ' active' : ''}" data-mode="profit">Profit-only</button>
-      <button class="cockpit-level-btn${cockpitExitMode === 'stop'   ? ' active' : ''}" data-mode="stop">+ Stop</button>
-      <button class="cockpit-level-btn${cockpitExitMode === 'manual' ? ' active' : ''}" data-mode="manual">Full manual</button>
-    </div>
-  </div>
-
-  <div class="cockpit-levels-section">
     <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
       <span class="cockpit-section-label">Entry price</span>
       <button class="cockpit-level-btn active" data-entry-mode="auto">AUTO</button>
@@ -2379,6 +2367,7 @@
       <input type="number" id="cockpitEntryPriceInput" class="cockpit-target-input"
              min="0.01" step="0.01" placeholder="0.00">
     </div>
+    <div class="cockpit-tif-note">day · rests until 4:00 pm, then cancels</div>
   </div>
 
   <div class="cockpit-levels-section">
@@ -2391,6 +2380,7 @@
         <option value="oco_bracket">OCO bracket</option>
       </select>
     </div>
+    <div class="cockpit-layer-subtitle" id="cockpitLayerSubtitle"></div>
     <div id="cockpitOcoTpRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.35rem;">
       <span class="cockpit-section-label">TP premium $</span>
       <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
@@ -2398,6 +2388,28 @@
       <span id="cockpitOcoTpHint" style="font-size:0.68rem; color:var(--text-muted)"></span>
     </div>
     <div id="cockpitOcoStopHint" style="display:none; font-size:0.68rem; color:var(--text-muted); margin-top:0.2rem;"></div>
+    <div id="cockpitGtcStopRow" class="cockpit-gtc-row">
+      GTC stop&nbsp; ≈$<span id="cockpitGtcStopPrice">${(ask * 0.70).toFixed(2)}</span>&nbsp; −30% · rests at broker
+      <span class="cockpit-gtc-note">est. from ask; server uses actual fill · skipped for ripster_sr_tiered / confluence_sr strategies</span>
+    </div>
+    <div id="cockpitOcoTifNote" class="cockpit-tif-note" style="display:none; margin-top:0.25rem;">
+      gtc · both legs rest until filled or cancelled
+    </div>
+  </div>
+
+  <div class="cockpit-summary-block" id="cockpitSummaryBlock">
+    <div class="cockpit-summary-row">
+      <span class="cockpit-summary-label">estimated cost</span>
+      <span class="cockpit-summary-val" id="chainCost">${fmtPrice(ask * 2 * 100)}</span>
+    </div>
+    <div class="cockpit-summary-row">
+      <span class="cockpit-summary-label">max loss</span>
+      <span class="cockpit-summary-val" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span>
+    </div>
+    <div class="cockpit-summary-row" id="cockpitSumRiskRow">
+      <span class="cockpit-summary-label">risk left today</span>
+      <span class="cockpit-summary-val" id="cockpitSumRisk">—</span>
+    </div>
   </div>
 
   <div class="cockpit-actions">
@@ -2409,6 +2421,10 @@
 </div>`;
 
     chainCockpit.innerHTML = cockpitHtml;
+
+    // Initialise layer subtitle and risk summary with current armed state
+    _updateLayerSubtitle('default');
+    _updateSummaryRisk(ask * 2 * 100);
 
     // Wire expand-chain button (lives in the compact strip, not in the cockpit)
     const expandBtn = document.getElementById('chainExpandBtn');
@@ -2425,28 +2441,19 @@
       });
     }
 
-    // Qty → update cost + max-loss; re-render matrix dollar totals if cached
+    // Qty → update summary block + re-render matrix dollar totals if cached
     document.getElementById('chainQty').addEventListener('input', () => {
       const qty  = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
       const cost = armedContract.ask * qty * 100;
       document.getElementById('chainCost').textContent    = fmtPrice(cost);
       document.getElementById('chainMaxLoss').textContent = fmtPrice(cost);
+      _updateSummaryRisk(cost);
       if (matrixProjCache) {
         const wrapEl = document.getElementById('cockpitProjWrap');
         const verdEl = document.getElementById('cockpitVerdict');
         const tgt    = parseFloat(document.getElementById('cockpitTarget').value) || chainCurrentPrice;
         renderProjectionMatrix(matrixProjCache.levels, matrixProjCache.projResults, qty, wrapEl, verdEl, tgt);
       }
-    });
-
-    // Exit-target mode buttons — persist selection as cockpitExitMode state
-    document.getElementById('cockpitLevelBtns').addEventListener('click', e => {
-      const btn = e.target.closest('.cockpit-level-btn');
-      if (!btn) return;
-      document.querySelectorAll('#cockpitLevelBtns .cockpit-level-btn')
-        .forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      cockpitExitMode = btn.dataset.mode;
     });
 
     // Entry price mode buttons — reset to AUTO on each arm, persist within session
@@ -2463,12 +2470,15 @@
         cockpitEntryMode === 'your_price' ? 'flex' : 'none';
     });
 
-    // Exit-layer select — reveal OCO TP row when oco_bracket chosen
+    // Exit-layer select — reveal OCO TP row; update subtitle, GTC stop, and TIF note
     document.getElementById('cockpitExitLayerSelect').addEventListener('change', e => {
       cockpitExitLayer = e.target.value;
       const isOco = cockpitExitLayer === 'oco_bracket';
       document.getElementById('cockpitOcoTpRow').style.display    = isOco ? 'flex'  : 'none';
       document.getElementById('cockpitOcoStopHint').style.display = isOco ? 'block' : 'none';
+      document.getElementById('cockpitGtcStopRow').style.display  = isOco ? 'none'  : 'block';
+      document.getElementById('cockpitOcoTifNote').style.display  = isOco ? 'block' : 'none';
+      _updateLayerSubtitle(cockpitExitLayer);
       if (isOco) _updateOcoHints();
     });
 
@@ -2483,6 +2493,36 @@
       tpInp.placeholder    = `${derivedTp}`;
       tpHint.textContent   = `blank = server default ≈$${derivedTp} (est. from ask; server uses actual fill)`;
       stopHint.textContent = `Stop: ≈$${derivedSl} (est. from ask; server uses actual fill — override with stop_price)`;
+    }
+
+    function _updateLayerSubtitle(layer) {
+      const el = document.getElementById('cockpitLayerSubtitle');
+      if (!el) return;
+      const subtitles = {
+        default:     'tp1/tp2 · trail arm · cloud break · atr stop · target and trail live in the bot',
+        tight_trail: '0.30 arm / 0.08 trail (flat, no tightening) · target and trail live in the bot',
+        cloud_break: 'cloud break + 0.08 trail · target and trail live in the bot',
+        oco_bracket: 'TP + stop rest at broker (GTC) · bot price exits suppressed',
+      };
+      el.textContent = subtitles[layer] || '';
+    }
+
+    // NOTE: refreshArmedQuote() contains an inline copy of this logic because it is
+    // outside armContract's closure. If you change this function, change that copy too.
+    function _updateSummaryRisk(cost) {
+      const riskEl = document.getElementById('cockpitSumRisk');
+      const rowEl  = document.getElementById('cockpitSumRiskRow');
+      if (!riskEl || !rowEl) return;
+      if (lastRiskLeft == null) {
+        riskEl.textContent = '—';
+        rowEl.classList.remove('cockpit-summary-warn');
+        return;
+      }
+      const overBudget = cost != null && cost > lastRiskLeft;
+      rowEl.classList.toggle('cockpit-summary-warn', overBudget);
+      riskEl.textContent = overBudget
+        ? '$' + lastRiskLeft.toFixed(0) + ' — spend gate will reject'
+        : '$' + lastRiskLeft.toFixed(0);
     }
 
     // Target override apply
@@ -2710,7 +2750,7 @@
           ` <span class="cockpit-quote-age" id="cockpitQuoteAge"> · live</span>`;
       }
 
-      // Refresh cost display with current qty
+      // Refresh cost + GTC stop estimate with current qty
       const qtyEl = document.getElementById('chainQty');
       if (qtyEl) {
         const qty  = Math.max(1, parseInt(qtyEl.value, 10) || 1);
@@ -2719,6 +2759,20 @@
         const mlEl   = document.getElementById('chainMaxLoss');
         if (costEl) costEl.textContent = fmtPrice(cost);
         if (mlEl)   mlEl.textContent   = fmtPrice(cost);
+        const gtcPriceEl = document.getElementById('cockpitGtcStopPrice');
+        if (gtcPriceEl && fresh.ask > 0) gtcPriceEl.textContent = (fresh.ask * 0.70).toFixed(2);
+        // Re-evaluate spend gate with refreshed cost.
+        // _updateSummaryRisk() lives inside armContract's closure — not reachable here.
+        // If you change this block, change _updateSummaryRisk() to match.
+        const riskEl = document.getElementById('cockpitSumRisk');
+        if (riskEl && lastRiskLeft != null) {
+          const overBudget = cost > lastRiskLeft;
+          const rowEl = document.getElementById('cockpitSumRiskRow');
+          if (rowEl) rowEl.classList.toggle('cockpit-summary-warn', overBudget);
+          riskEl.textContent = overBudget
+            ? '$' + lastRiskLeft.toFixed(0) + ' — spend gate will reject'
+            : '$' + lastRiskLeft.toFixed(0);
+        }
       }
     } catch (_) {
       if (ageEl) ageEl.textContent = ' · refresh failed';

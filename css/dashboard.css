@@ -1801,6 +1801,86 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin-top: 0;
 }
 
+/* Static TIF note — appears under entry price section and OCO path */
+.cockpit-tif-note {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  margin-top: 0.22rem;
+  padding-left: 0.1rem;
+}
+
+/* Layer subtitle — muted description line below the exit-layer select */
+.cockpit-layer-subtitle {
+  font-size: 0.57rem;
+  color: var(--text-muted);
+  margin-top: 0.18rem;
+  padding-left: 0.1rem;
+  line-height: 1.35;
+}
+
+/* GTC stop display row (non-OCO paths) */
+.cockpit-gtc-row {
+  display: block;
+  font-size: 0.62rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  color: var(--text-secondary);
+  margin-top: 0.3rem;
+  padding: 0.15rem 0.3rem;
+  background: rgba(148,163,184,0.04);
+  border-left: 2px solid rgba(148,163,184,0.2);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+}
+
+.cockpit-gtc-note {
+  display: block;
+  font-size: 0.54rem;
+  font-weight: 400;
+  color: var(--text-muted);
+  margin-top: 0.08rem;
+}
+
+/* Order summary block — cost / max loss / risk left */
+.cockpit-summary-block {
+  margin: 0.2rem 0 0.1rem;
+  padding: 0.2rem 0.3rem;
+  background: rgba(148,163,184,0.03);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+}
+
+.cockpit-summary-row {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 0.4rem;
+  padding: 0.06rem 0;
+}
+
+.cockpit-summary-row + .cockpit-summary-row {
+  border-top: 1px solid rgba(148,163,184,0.06);
+}
+
+.cockpit-summary-label {
+  font-size: 0.57rem;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  flex-shrink: 0;
+}
+
+.cockpit-summary-val {
+  font-family: var(--font-display);
+  font-size: 0.63rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-align: right;
+}
+
+/* Amber warning when cost > risk_left */
+.cockpit-summary-warn .cockpit-summary-label { color: var(--warning, #f59e0b); }
+.cockpit-summary-warn .cockpit-summary-val   { color: var(--warning, #f59e0b); font-weight: 700; }
+
 /* ════════════════════════════════════════════════════════════════
    Command Center layout extensions
    Migrated from dashboard2.css — cmd- prefix avoids conflicts.
