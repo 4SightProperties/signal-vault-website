@@ -89,6 +89,8 @@
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
   let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
+  let chainAtr             = null;  // Wilder EWM ATR14 from _sr_atr_context at chain load
+  let chainDayRange        = null;  // today's RTH hi-lo range; updated on ↻ via chain/quote
 
   // History tab state
   let isAdmin           = false;
@@ -1041,6 +1043,8 @@
     srLevelsCache   = null;
     focusGexCache   = null;
     matrixProjCache = null;
+    chainAtr        = null;
+    chainDayRange   = null;
 
     const searchInput = document.getElementById('tickerSearch');
     if (searchInput) searchInput.value = t;
@@ -2148,6 +2152,12 @@
     const atrReachable    = srCtx.atr_reachable != null ? srCtx.atr_reachable : null;
     const atrMultiple     = srCtx.atr_multiple      != null ? srCtx.atr_multiple     : null;
 
+    // Module-level ATR state for the projection matrix Rem ATR column.
+    // sr_atr is the daily Wilder EWM ATR14 — constant all session; guard > 0 against bad fetches.
+    // day_range grows intraday and is refreshed on every ↻ via chain/quote.
+    chainAtr      = (srCtx.sr_atr > 0) ? srCtx.sr_atr : null;
+    chainDayRange = srCtx.day_range ?? null;
+
     // When atr_reachable is explicitly false, grey the @TP1 column and suppress values.
     // The SR level exists but is outside today's ATR budget; projecting to it would be
     // arithmetically valid but practically misleading.
@@ -2681,6 +2691,9 @@
       });
       const fresh = await apiFetch(`/api/chain/quote?${params}`);
 
+      // Refresh day_range so Rem ATR column stays current (ATR itself is daily, unchanged)
+      if (fresh.day_range != null) chainDayRange = fresh.day_range;
+
       // Update in-place so qty handler and Open button use fresh ask/bid
       armedContract.bid = fresh.bid;
       armedContract.ask = fresh.ask;
@@ -2859,6 +2872,20 @@
       return `<span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`;
     }
 
+    const _consumed  = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
+    const _remaining = _consumed != null ? Math.max(0, chainAtr - chainDayRange) : null;
+    function fmtRemAtr(lvlPrice) {
+      if (!chainAtr || chainAtr <= 0 || _remaining === null) return '<span class="mat-na">—</span>';
+      if (_consumed >= 0.95) return '<span class="mat-rem mat-rem-exhausted">EXHAUSTED</span>';
+      const dist = Math.abs(lvlPrice - chainCurrentPrice);
+      const pct  = dist / _remaining * 100;
+      const disp = pct > 999 ? '>999%' : Math.round(pct) + '%';
+      const cls  = pct > 300 ? 'mat-rem mat-rem-red'
+                 : pct > 100 ? 'mat-rem mat-rem-amber'
+                 :              'mat-rem mat-rem-ok';
+      return `<span class="${cls}">${disp}</span>`;
+    }
+
     const rowsHtml = levels.map((lvl, i) => {
       const proj   = projResults[i];
       const nowRow = proj && proj.rows && proj.rows[0];
@@ -2876,6 +2903,7 @@
       return `<tr class="${rowCls}">
   <td class="mat-label">${lvl.label}</td>
   <td class="mat-stock">${priceStr}</td>
+  <td class="mat-rematr">${fmtRemAtr(lvl.price)}</td>
   <td class="mat-val">${fmtVal(nowRow)}</td>
   <td class="mat-pct-cell">${fmtPct(nowRow)}</td>
   <td class="mat-dol-cell">${fmtDol(nowRow)}</td>
@@ -2891,6 +2919,7 @@
     <tr class="mat-thead-top">
       <th rowspan="2" class="mat-th-level">Level</th>
       <th rowspan="2" class="mat-th-stock">Stock</th>
+      <th rowspan="2" class="mat-th-rematr">Rem ATR</th>
       <th colspan="3" class="mat-th-group">Now</th>
       <th colspan="3" class="mat-th-group mat-th-group-right">Expiry</th>
     </tr>
