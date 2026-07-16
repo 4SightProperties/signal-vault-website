@@ -2396,7 +2396,7 @@
     </div>
     <div class="cockpit-layer-subtitle" id="cockpitLayerSubtitle"></div>
     <div id="cockpitGtcStopRow" class="cockpit-gtc-row">
-      GTC stop&nbsp; ≈$<span id="cockpitGtcStopPrice">${(ask * 0.70).toFixed(2)}</span>&nbsp; −30% · rests at broker
+      stop&nbsp; ≈$<span id="cockpitGtcStopPrice">${(ask * 0.70).toFixed(2)}</span>&nbsp; −30% · bot-held · nothing rests at broker
     </div>
     <div id="cockpitOcoPairRow" style="display:none; margin-top:0.35rem;">
       <div class="cockpit-oco-cols">
@@ -2547,9 +2547,9 @@
       const el = document.getElementById('cockpitLayerSubtitle');
       if (!el) return;
       const subtitles = {
-        default:     'tp1/tp2 · trail arm · cloud break · atr stop · target and trail live in the bot',
-        tight_trail: '0.30 arm / 0.08 trail (flat, no tightening) · target and trail live in the bot',
-        cloud_break: 'cloud break + 0.08 trail · target and trail live in the bot',
+        default:     'tp1/tp2 · trail arm · cloud break · atr stop · target, trail and stop live in the bot',
+        tight_trail: '0.30 arm / 0.08 trail (flat, no tightening) · target, trail and stop live in the bot',
+        cloud_break: 'cloud break + 0.08 trail · target, trail and stop live in the bot',
         oco_bracket: 'TP + stop rest at broker (GTC) · bot price exits suppressed',
       };
       el.textContent = subtitles[layer] || '';
