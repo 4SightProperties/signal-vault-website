@@ -1657,6 +1657,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cockpit-level-matrix tr.mat-row-breakeven td { font-style: italic; }
 .cockpit-level-matrix tr.mat-row-confluence td { background: rgba(148,163,184,0.04); }
 
+/* ATR reachability — placed after role rules so reachability wins on color.
+   mat-row-reachable carries no background: contrast-by-dimming is sufficient and
+   avoids stomping target/current/confluence tints. mat-row-unreachable targets td AND
+   td span explicitly because .mat-pct.positive/.negative set color on spans directly
+   (inheritance from td does not reach them). */
+.cockpit-level-matrix tr.mat-row-unreachable td,
+.cockpit-level-matrix tr.mat-row-unreachable td span { color: var(--text-muted); }
+
+/* ATR session banner rendered above the level matrix */
+.mat-atr-banner           { font-size: 0.65rem; color: var(--text-muted); padding: 4px 0 8px; }
+.mat-atr-banner-exhausted { color: var(--danger); }
+
 /* Gain/loss color on % and $ spans only; everything else neutral */
 .mat-pct                               { font-size: 0.52rem; }
 .mat-total                             { font-size: 0.52rem; }
