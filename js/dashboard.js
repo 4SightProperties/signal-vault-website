@@ -3148,7 +3148,15 @@
     const maxP    = exitMax + pad;
     const span    = maxP - minP;
 
-    const W = 480, SVG_H = 78, AXIS_Y = 42;
+    // el is display:none on first call; measure the always-visible parent (#chainArmed)
+    // and subtract its computed horizontal padding so W ≈ the SVG's actual pixel width.
+    const _ps = window.getComputedStyle(el.parentElement);
+    const W = Math.round(
+      el.parentElement.clientWidth
+      - parseFloat(_ps.paddingLeft)
+      - parseFloat(_ps.paddingRight)
+    );  // #chainArmed is always visible when this runs — clientWidth is always a real value
+    const SVG_H = 88, AXIS_Y = 42;  // 88px at 1:1; stagger row bottoms at AXIS_Y+44=86<88
     function toX(v) { return (v - minP) / span * W; }
 
     // ── Below-axis S/R dots — two gates: remaining ATR, then axis range ───────
@@ -3180,6 +3188,44 @@
       srDots.push({ stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
     });
 
+    // ── Merge near-equal ticks, then stagger close-but-distinct pairs ───────────
+    // Sort ascending so adjacent entries in the loop are closest in option price.
+    srDots.sort((a, b) => a.optionPrice - b.optionPrice);
+
+    // Levels within $0.05 are indistinguishable on screen (<=4 px at any realistic W/span).
+    // Merge into one tick; combine abbreviations with '/'.
+    const MERGE_TOL = 0.05;
+    // Role priority for color when merging: lower index wins.
+    const MERGE_PRIORITY = ['breakeven','current','strike','support','resistance','round','call_wall','magnet','put_wall','target'];
+    const mergedSrDots = [];
+    for (const dot of srDots) {
+      dot.abbr = srAbbrev(dot);
+      const prev = mergedSrDots[mergedSrDots.length - 1];
+      if (prev && Math.abs(dot.optionPrice - prev.optionPrice) <= MERGE_TOL) {
+        if (dot.abbr) prev.abbr = prev.abbr ? prev.abbr + '/' + dot.abbr : dot.abbr;
+        const stkStr = '$' + dot.stockPrice.toFixed(0);
+        if (!prev.stkParts.includes(stkStr)) prev.stkParts.push(stkStr);
+        prev.optionPrice = (prev.optionPrice + dot.optionPrice) / 2;
+        const pi = MERGE_PRIORITY.indexOf(dot.role);
+        const pp = MERGE_PRIORITY.indexOf(prev.role);
+        if (pi !== -1 && (pp === -1 || pi < pp)) { prev.role = dot.role; prev.stockPrice = dot.stockPrice; }
+      } else {
+        mergedSrDots.push({ ...dot, stkParts: ['$' + dot.stockPrice.toFixed(0)] });
+      }
+    }
+
+    // Stagger label rows for ticks whose centers are closer than one label-width apart.
+    // ~12 chars x 5px/char = 60px minimum gap. Toggle between normal and shifted positions;
+    // resets to normal after any gap >= 60px.
+    const LABEL_PX = 60;
+    let _prevTickX = -Infinity, _staggerFlip = false;
+    mergedSrDots.forEach(dot => {
+      const x = toX(dot.optionPrice);
+      if (x - _prevTickX < LABEL_PX) { _staggerFlip = !_staggerFlip; dot.stagger = _staggerFlip; }
+      else                            { _staggerFlip = false;          dot.stagger = false; }
+      _prevTickX = x;
+    });
+
     const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
 
     const svgParts = [];
@@ -3194,14 +3240,15 @@
     svgParts.push(`<line x1="${slX.toFixed(1)}" y1="${AXIS_Y}" x2="${entryX.toFixed(1)}" y2="${AXIS_Y}" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>`);
     svgParts.push(`<line x1="${entryX.toFixed(1)}" y1="${AXIS_Y}" x2="${lastTpX.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>`);
 
-    // S/R ticks and labels below axis
-    srDots.forEach(sr => {
-      const x    = toX(sr.optionPrice);
-      const col  = srColor(sr.role, sr.stockPrice);
-      const abbr = srAbbrev(sr);
+    // S/R ticks and labels below axis — merged and stagger-aware
+    mergedSrDots.forEach(dot => {
+      const x    = toX(dot.optionPrice);
+      const col  = srColor(dot.role, dot.stockPrice);
+      const yLbl = dot.stagger ? AXIS_Y + 36 : AXIS_Y + 22;
+      const yPrc = dot.stagger ? AXIS_Y + 44 : AXIS_Y + 33;
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y + 3}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 22}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${abbr ? abbr + ' ' : ''}$${sr.stockPrice.toFixed(0)}</text>`);
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 33}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${sr.optionPrice.toFixed(2)}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yLbl}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.abbr ? dot.abbr + ' ' : ''}${dot.stkParts.join('/')}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yPrc}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${dot.optionPrice.toFixed(2)}</text>`);
     });
 
     // Edge markers — nearest off-scale level on each side, pinned to boundary, dimmed
