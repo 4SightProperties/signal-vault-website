@@ -3222,7 +3222,7 @@
     // case. Skip extension; exits-anchored axis + edge markers are the correct state.
     const _atrAxisHasData = chainDayRange != null;
     const _srAxisPrices = _atrAxisHasData
-      ? _lvlData.filter(d => !(d.demand !== null && isFinite(d.demand) && d.demand > REACH_PCT)).map(d => d.value)
+      ? _lvlData.filter(d => d.demand !== null && isFinite(d.demand) && d.demand <= REACH_PCT).map(d => d.value)
       : [];
 
     const exitMin   = Math.min(...exitDots.map(d => d.price));
