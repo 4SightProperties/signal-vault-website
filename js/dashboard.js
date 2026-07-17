@@ -3080,11 +3080,11 @@
 
     // ── Above-axis exit dots ──────────────────────────────────────────────────
     const exitDots = [];
-    exitDots.push({ price: sl,    label: `STOP \xd7${_slMult().toFixed(2)}`, role: 'stop',  mult: _slMult()           });
-    exitDots.push({ price: entry, label: 'ENTRY',                            role: 'entry'                            });
+    exitDots.push({ price: sl,    label: 'STOP',  role: 'stop',  mult: _slMult()        });
+    exitDots.push({ price: entry, label: 'ENTRY', role: 'entry'                         });
     tiers.forEach((t, i) => exitDots.push({
       price: t.price,
-      label: `TP${i + 1} \xd7${_tpMult(t.pct).toFixed(2)}`,
+      label: `TP${i + 1}`,
       role:  'tp',
       n:     t.n,
       mult:  _tpMult(t.pct),
@@ -3092,12 +3092,10 @@
     if (!lastTierAtTp2) {
       exitDots.push({
         price: tp2p,
-        label: tiers.length === 0
-          ? `EXIT \xd7${_tpMult(EXIT_TP_PCT).toFixed(2)}`
-          : `TP${tiers.length + 1} \xd7${_tpMult(EXIT_TP_PCT).toFixed(2)}`,
-        role: tiers.length === 0 ? 'exit' : 'tp',
-        n:    runner,
-        mult: _tpMult(EXIT_TP_PCT),
+        label: tiers.length === 0 ? 'EXIT' : `TP${tiers.length + 1}`,
+        role:  tiers.length === 0 ? 'exit' : 'tp',
+        n:     runner,
+        mult:  _tpMult(EXIT_TP_PCT),
       });
     }
     const lastExit = exitDots[exitDots.length - 1];
@@ -3109,7 +3107,19 @@
       return (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
     }
 
-    // ── Below-axis S/R dots (filtered to remaining ATR) ──────────────────────
+    // ── SVG coordinate system — axis set by exits; S/R levels are guests ─────
+    const exitMin = Math.min(...exitDots.map(d => d.price));
+    const exitMax = Math.max(...exitDots.map(d => d.price));
+    const pad     = (exitMax - exitMin) * 0.30;
+    const minP    = Math.max(0, exitMin - pad);
+    const maxP    = exitMax + pad;
+    const span    = maxP - minP;
+
+    const W = 480, SVG_H = 78, AXIS_Y = 42;
+    function toX(v) { return (v - minP) / span * W; }
+
+    // ── Below-axis S/R dots — two gates: remaining ATR, then axis range ───────
+    let offScale = 0;
     const srDots = [];
     levels.forEach((lvl, i) => {
       const proj   = projResults[i];
@@ -3117,21 +3127,9 @@
       if (!nowRow || nowRow.value == null) return;
       const demand = _remAtrDemand(lvl.price);
       if (demand !== null && demand > 100) return;
+      if (nowRow.value < minP || nowRow.value > maxP) { offScale++; return; }
       srDots.push({ stockPrice: lvl.price, optionPrice: nowRow.value, label: lvl.label, role: lvl.role });
     });
-
-    // ── SVG coordinate system ─────────────────────────────────────────────────
-    const allPrices = exitDots.map(d => d.price).concat(srDots.map(d => d.optionPrice));
-    const rawMin  = Math.min(...allPrices);
-    const rawMax  = Math.max(...allPrices);
-    const rawSpan = rawMax - rawMin || 1;
-    // Pad edges 8% so leftmost/rightmost dots aren't clipped
-    const minP = rawMin - rawSpan * 0.08;
-    const maxP = rawMax + rawSpan * 0.08;
-    const span = maxP - minP;
-
-    const W = 480, SVG_H = 78, AXIS_Y = 42;
-    function toX(v) { return (v - minP) / span * W; }
 
     const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
     function srColor(lvl) {
@@ -3194,7 +3192,8 @@
       tierDesc = `${qty}ct \xb7 ${tierParts.join(' \xb7 ')}`;
     }
 
-    el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}</div>`;
+    const offScaleStr = offScale > 0 ? ` \xb7 ${offScale} level${offScale === 1 ? '' : 's'} off-scale` : '';
+    el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>`;
     el.style.display = '';
   }
 
