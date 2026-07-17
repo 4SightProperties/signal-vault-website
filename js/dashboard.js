@@ -892,7 +892,7 @@
       }
 
       body.innerHTML = rows.map(r => {
-        const isLong   = !(r.direction || '').toLowerCase().startsWith('short');
+        const isLong   = !_isShortSetup(r.direction);
         const dirClass = isLong ? 'bull' : 'bear';
         const dirArrow = isLong ? '▲' : '▼';
         const dirLabel = isLong ? 'CALL' : 'PUT';
@@ -1015,6 +1015,7 @@
 
     // Chain bias / expiry selector changes
     document.getElementById('chainBias').addEventListener('change', () => {
+      _updateDirectionWarning();
       if (chainTicker) loadChain(chainTicker, chainCurrentPrice);
     });
     document.getElementById('chainExpiry').addEventListener('change', () => {
@@ -1057,7 +1058,7 @@
     const trigger  = wlRow && wlRow.trigger       ? parseFloat(wlRow.trigger)       : 0;
     let livePrice  = wlRow && wlRow.current_price  ? parseFloat(wlRow.current_price) : 0;
     let changePct  = wlRow && wlRow.change_pct != null ? parseFloat(wlRow.change_pct) : null;
-    const bias     = wlRow && (wlRow.direction || '').toLowerCase().includes('bear') ? 'bearish' : 'bullish';
+    const bias     = wlRow && _isShortSetup(wlRow.direction) ? 'bearish' : 'bullish';
 
     // Live-price fallback: off-watchlist tickers or cache missing current_price
     if (!livePrice) {
@@ -1074,6 +1075,7 @@
     // Seed bias selector from watchlist direction
     const biasEl = document.getElementById('chainBias');
     if (biasEl) biasEl.value = bias;
+    _updateDirectionWarning();
 
     // Show chain controls (including refresh button) and load expirations
     const controls = document.getElementById('chainControls');
@@ -1982,7 +1984,7 @@
 
     if (sourceEl) sourceEl.textContent = 'watchlist board';
 
-    const dirClass = (row.direction || '').toLowerCase().startsWith('bear') ? 'bear' : 'bull';
+    const dirClass = _isShortSetup(row.direction) ? 'bear' : 'bull';
 
     const fields = [
       { label: 'Direction', value: (row.direction || '—').replace(/_/g, ' ').toUpperCase(), cls: dirClass },
@@ -2026,8 +2028,7 @@
         if (roundItems.length) rows.push({ title: 'Round', items: roundItems });
 
         // Row 3: overhead/underfoot swings
-        const direction = (row.direction || '').toLowerCase();
-        const isBear = direction.startsWith('bear');
+        const isBear = _isShortSetup(row.direction);
         const swings = isBear
           ? (d.underfoot_swings || []).slice(0, 3)
           : (d.overhead_swings  || []).slice(0, 3);
@@ -2116,7 +2117,9 @@
       const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 13 });
       const data   = await apiFetch(`/api/chain?${params}`);
       renderChain(data.strikes || [], bias, data);
+      _updateDirectionWarning();
     } catch (err) {
+      _updateDirectionWarning();
       if (String(err).includes('403')) {
         chainBody.innerHTML = '<div class="dash-placeholder">Chain requires admin access</div>';
       } else {
@@ -2269,6 +2272,33 @@
     // Scroll ATM row into view so the center strike is always visible
     const atmRow = chainBody.querySelector('tr.chain-atm');
     if (atmRow) atmRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+  }
+
+  // watchlist direction is the "long" | "short" enum from alerts/watchlist_board.py:38.
+  // It is NOT "bull"/"bear"/"bullish"/"bearish" — testing for those silently returns
+  // false on every short setup. Five call sites drifted; this is the only test.
+  function _isShortSetup(direction) {
+    return String(direction || '').toLowerCase().startsWith('short');
+  }
+
+  function _updateDirectionWarning() {
+    const warnEl   = document.getElementById('chainDirWarning');
+    if (!warnEl) return;
+
+    const biasEl   = document.getElementById('chainBias');
+    const wlRow    = watchlistDataCache.find(r => r.ticker === chainTicker);
+    const setupDir = wlRow?.direction;   // undefined when ticker has no watchlist row
+
+    if (!setupDir) { warnEl.textContent = ''; return; }
+
+    const selectedIsBull = biasEl.value === 'bullish';
+    const setupIsBull    = !_isShortSetup(setupDir);
+
+    if (selectedIsBull === setupIsBull) { warnEl.textContent = ''; return; }
+
+    const selected = selectedIsBull ? 'CALLS' : 'PUTS';
+    const setup    = setupIsBull    ? 'LONG'  : 'SHORT';
+    warnEl.textContent = `⚠ ${selected} selected · setup is ${setup}`;
   }
 
   function _activateOrderTab() {

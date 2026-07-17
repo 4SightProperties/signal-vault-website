@@ -899,6 +899,12 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .chain-select:focus { outline: none; border-color: var(--accent); }
 
+.chain-dir-warning {
+  color: var(--danger);
+  font-size: 0.66rem;
+  font-weight: 600;
+  white-space: nowrap;
+}
 .chain-refresh-btn {
   background: transparent;
   border: 1px solid var(--border);
