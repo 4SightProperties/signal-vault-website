@@ -877,7 +877,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
 /* Collapsed layout: compact strip body + uncapped cockpit footer */
 .chain-collapsed #chainBody       { flex: 0 0 auto; }
-.chain-collapsed .chain-cockpit-footer { max-height: none; flex: 1; overflow-y: auto; }
+.chain-collapsed .chain-cockpit-footer { max-height: none; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
+.chain-collapsed .chain-cockpit-footer > *:not(.cockpit-proj-wrap) { flex-shrink: 0; }
 
 /* Chain controls row (bias + expiry selectors + refresh button) */
 .chain-controls {
@@ -1585,7 +1586,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* Scrollable matrix container — bounded height, ATR banner and verdict live outside */
 .cockpit-proj-wrap {
   margin: 0.1rem 0 0.08rem;
-  max-height: 40vh;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
 }
 
