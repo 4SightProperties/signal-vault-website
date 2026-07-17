@@ -1768,6 +1768,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 
 .cockpit-level-btns { display: flex; gap: 0.28rem; align-items: center; }
+/* Exit strategy has 4 buttons — render as 2×2 grid; fills remaining flex space after label */
+#cockpitExitLayerBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.2rem; flex: 1; }
 
 .cockpit-level-btn {
   flex: 0 0 auto;
@@ -1935,7 +1937,6 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   color: var(--text-muted);
   text-transform: uppercase;
   letter-spacing: 0.04em;
-  white-space: nowrap;
 }
 
 .cockpit-sum-risk-label { margin-right: 0.05rem; }
@@ -2107,7 +2108,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── Command Center 3-column grid ────────────────────────────── */
 .cmd-main {
   display: grid;
-  grid-template-columns: 220px 1fr 260px;
+  grid-template-columns: 220px 1fr 310px;
   gap: 0;
   flex: 1;
   overflow: hidden;
