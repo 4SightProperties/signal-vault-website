@@ -3129,6 +3129,20 @@
     return 'var(--text-muted)';                     // unhandled role — reads as absent
   }
 
+  // Assigns item.stagger (bool) for items sorted by ascending x-position.
+  // Any adjacent pair closer than minGapPx pixels alternates between stagger=false and true.
+  // Resets to false after any gap >= minGapPx. Shared by renderRrLine and renderPayoutCurve.
+  function _assignStagger(items, getX, minGapPx) {
+    if (minGapPx == null) minGapPx = 60;
+    let prevX = -Infinity, flip = false;
+    items.forEach(item => {
+      const x = getX(item);
+      if (x - prevX < minGapPx) { flip = !flip; item.stagger = flip; }
+      else                      { flip = false;  item.stagger = false; }
+      prevX = x;
+    });
+  }
+
   // Renders the R:R premium number line between #cockpitAtrBanner and #cockpitProjWrap.
   // Reads matrixProjCache for below-axis S/R levels; derives exits from _resolveEntryPrice().
   // No fetch — updates whenever renderProjectionMatrix updates, same data, same moment.
@@ -3263,17 +3277,7 @@
       }
     }
 
-    // Stagger label rows for ticks whose centers are closer than one label-width apart.
-    // ~12 chars x 5px/char = 60px minimum gap. Toggle between normal and shifted positions;
-    // resets to normal after any gap >= 60px.
-    const LABEL_PX = 60;
-    let _prevTickX = -Infinity, _staggerFlip = false;
-    mergedSrDots.forEach(dot => {
-      const x = toX(dot.optionPrice);
-      if (x - _prevTickX < LABEL_PX) { _staggerFlip = !_staggerFlip; dot.stagger = _staggerFlip; }
-      else                            { _staggerFlip = false;          dot.stagger = false; }
-      _prevTickX = x;
-    });
+    _assignStagger(mergedSrDots, d => toX(d.optionPrice));
 
     const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
 
@@ -3418,7 +3422,7 @@
     const W = wrapEl.clientWidth;
     const H = wrapEl.clientHeight;
     if (!W || !H) return;
-    const PAD_L = 10, PAD_R = 10, PAD_T = 22, PAD_B = 42;
+    const PAD_L = 48, PAD_R = 10, PAD_T = 26, PAD_B = 42;
     const plotW = W - PAD_L - PAD_R;
     const plotH = H - PAD_T - PAD_B;
     const axisY = PAD_T + plotH;
@@ -3443,26 +3447,57 @@
         const bx1 = toX(Math.max(stockLo, chainCurrentPrice - remAtr));
         const bx2 = toX(Math.min(stockHi, chainCurrentPrice + remAtr));
         if (bx2 > bx1) svgParts.push(
-          `<rect x="${bx1.toFixed(1)}" y="${PAD_T}" width="${(bx2 - bx1).toFixed(1)}" height="${plotH}" fill="rgba(100,130,200,0.10)"/>`
+          `<rect x="${bx1.toFixed(1)}" y="${PAD_T}" width="${(bx2 - bx1).toFixed(1)}" height="${plotH}" fill="rgba(100,130,200,0.18)"/>`
         );
       }
     }
 
-    // ── Zero line (breakeven is where the curve crosses it — not labelled twice) ──
+    // ── Y-axis: vertical line + ticks (max-loss floor, $0, gain steps) ─────────
+    svgParts.push(`<line x1="${PAD_L}" y1="${PAD_T}" x2="${PAD_L}" y2="${axisY}" stroke="var(--border-bright)" stroke-width="1" opacity="0.4"/>`);
+    function fmtPnl(v) {
+      const sign = v < 0 ? '-' : v > 0 ? '+' : '';
+      const abs  = Math.abs(v);
+      return sign + (abs >= 1000 ? `$${(abs / 1000).toFixed(1)}k` : `$${Math.round(abs)}`);
+    }
+    function niceGainStep(max, count) {
+      const rough = max / count;
+      const pow   = Math.pow(10, Math.floor(Math.log10(Math.max(rough, 1))));
+      const frac  = rough / pow;
+      return frac < 2 ? pow : frac < 5 ? 2 * pow : 5 * pow;
+    }
+    const gainStep  = yMax > 0 ? niceGainStep(yMax, 3) : 0;
+    const gainTicks = [];
+    if (gainStep > 0) {
+      for (let v = gainStep; v <= yMax + gainStep * 0.01; v += gainStep) gainTicks.push(Math.round(v));
+    }
+    const yTickVals = [...new Set([Math.round(yMin), 0, ...gainTicks])].sort((a, b) => a - b);
+    yTickVals.forEach(v => {
+      if (v < yMin - 1 || v > yMax + 1) return;
+      const ty = toY(v);
+      svgParts.push(
+        `<line x1="${(PAD_L - 3)}" y1="${ty.toFixed(1)}" x2="${PAD_L}" y2="${ty.toFixed(1)}" stroke="var(--border-bright)" stroke-width="1"/>`,
+        `<text x="${(PAD_L - 5)}" y="${(ty + 3).toFixed(1)}" text-anchor="end" font-size="7.5" font-family="monospace" fill="var(--text-muted)">${fmtPnl(v)}</text>`
+      );
+    });
+
+    // ── Zero line ─────────────────────────────────────────────────────────────
     svgParts.push(
-      `<line x1="${PAD_L}" y1="${zeroY.toFixed(1)}" x2="${(W - PAD_R).toFixed(1)}" y2="${zeroY.toFixed(1)}" stroke="var(--border-bright)" stroke-width="1" stroke-dasharray="4 3"/>`,
-      `<text x="${(PAD_L + 3)}" y="${(zeroY - 4).toFixed(1)}" font-size="8" font-family="monospace" fill="var(--text-muted)">$0</text>`
+      `<line x1="${PAD_L}" y1="${zeroY.toFixed(1)}" x2="${(W - PAD_R).toFixed(1)}" y2="${zeroY.toFixed(1)}" stroke="var(--border-bright)" stroke-width="1" stroke-dasharray="4 3"/>`
     );
 
     // ── S/R vertical markers — srColor / srAbbrev, same palette as renderRrLine ──
     const levels = (matrixProjCache && matrixProjCache.levels) || [];
-    levels.forEach(lvl => {
-      if (lvl.price <= stockLo || lvl.price >= stockHi) return;
-      const x   = toX(lvl.price);
-      const col = srColor(lvl.role, lvl.price);
-      const ab  = srAbbrev(lvl);
+    const visMarkers = levels
+      .filter(lvl => lvl.price > stockLo && lvl.price < stockHi)
+      .map(lvl => ({ ...lvl, abbr: srAbbrev(lvl) }))
+      .sort((a, b) => a.price - b.price);
+    _assignStagger(visMarkers, m => toX(m.price), 40);
+    visMarkers.forEach(m => {
+      const x    = toX(m.price);
+      const col  = srColor(m.role, m.price);
+      const lblY = m.stagger ? PAD_T - 14 : PAD_T - 5;
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${axisY}" stroke="${col}" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`);
-      if (ab) svgParts.push(`<text x="${x.toFixed(1)}" y="${(PAD_T - 6)}" text-anchor="middle" font-size="7.5" font-family="monospace" fill="${col}">${ab}</text>`);
+      if (m.abbr) svgParts.push(`<text x="${x.toFixed(1)}" y="${lblY}" text-anchor="middle" font-size="7.5" font-family="monospace" fill="${col}">${m.abbr}</text>`);
     });
 
     // ── Payout curve — red below zero, green above, split at crossing ─────────
@@ -3663,9 +3698,9 @@
       ? armedContract.strike + prem
       : armedContract.strike - prem;
 
-    // ±2×ATR around current price, clamped outward to include strike and breakeven
-    let lo = Math.min(price - 2 * atr, armedContract.strike, breakevenStock);
-    let hi = Math.max(price + 2 * atr, armedContract.strike, breakevenStock);
+    // ±1×ATR around current price, clamped outward to include strike and breakeven
+    let lo = Math.min(price - atr, armedContract.strike, breakevenStock);
+    let hi = Math.max(price + atr, armedContract.strike, breakevenStock);
     lo = Math.max(lo, 0.01);   // backend requires lo > 0
     if (hi <= lo) return;
 
