@@ -88,6 +88,7 @@
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
   let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
+  let payoutCurveCache     = null;  // range-mode response — for qty/as-of rerenders
   let chainAtr             = null;  // Wilder EWM ATR14 from _sr_atr_context at chain load
   let chainDayRange        = null;  // today's RTH hi-lo range; updated on ↻ via chain/quote
   let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
@@ -1044,8 +1045,9 @@
 
     srLevelsCache   = null;
     focusGexCache   = null;
-    matrixProjCache = null;
-    chainAtr        = null;
+    matrixProjCache  = null;
+    payoutCurveCache = null;
+    chainAtr         = null;
     chainDayRange   = null;
 
     const searchInput = document.getElementById('tickerSearch');
@@ -2065,6 +2067,7 @@
     expiryEl.innerHTML  = '<option value="">— loading —</option>';
     armedContract       = null;
     matrixProjCache     = null;
+    payoutCurveCache    = null;
     const cockpit0 = document.getElementById('chainCockpit');
     if (cockpit0) cockpit0.innerHTML = '';
 
@@ -2110,6 +2113,7 @@
     chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
     armedContract    = null;
     matrixProjCache  = null;
+    payoutCurveCache = null;
     const cockpit1 = document.getElementById('chainCockpit');
     if (cockpit1) cockpit1.innerHTML = '';
 
@@ -2317,6 +2321,31 @@
     if (posMeta)   posMeta.textContent     = '';
   }
 
+  function _onPayoutTab() {
+    const t = document.querySelector('#cockpitProjTabs .cpt-tab.active');
+    return !!(t && t.dataset.tab === 'payout');
+  }
+
+  function _activateCockpitProjTab(tab) {
+    document.querySelectorAll('#cockpitProjTabs .cpt-tab').forEach(b => {
+      b.classList.toggle('active', b.dataset.tab === tab);
+    });
+    const asOfEl = document.getElementById('cockpitPayoutAsOf');
+    const qty    = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+    if (tab === 'payout') {
+      if (asOfEl) asOfEl.style.display = '';
+      renderPayoutCurve(payoutCurveCache, qty);
+    } else {
+      if (asOfEl) asOfEl.style.display = 'none';
+      if (matrixProjCache) {
+        const wrapEl = document.getElementById('cockpitProjWrap');
+        const verdEl = document.getElementById('cockpitVerdict');
+        const tgt    = parseFloat((document.getElementById('cockpitTarget') || {}).value) || chainCurrentPrice;
+        renderProjectionMatrix(matrixProjCache.levels, matrixProjCache.projResults, qty, wrapEl, verdEl, tgt);
+      }
+    }
+  }
+
   async function armContract(strike, bias) {
     armedContract = { ...strike, bias };
 
@@ -2400,7 +2429,14 @@
   <!-- R:R premium number line — renders from matrixProjCache, no fetch -->
   <div id="cockpitRrLine" style="display:none"></div>
 
-  <!-- Scrollable matrix — bounded height; thead sticks via CSS -->
+  <!-- MATRIX / PAYOUT tab strip — flex-shrink:0, no vertical cost -->
+  <div class="cockpit-proj-tabs" id="cockpitProjTabs">
+    <button class="cpt-tab active" data-tab="matrix">MATRIX</button>
+    <button class="cpt-tab" data-tab="payout">PAYOUT</button>
+    <select class="cpt-asof" id="cockpitPayoutAsOf" style="display:none"></select>
+  </div>
+
+  <!-- Scrollable matrix / payout SVG — flex:1 1 auto -->
   <div class="cockpit-proj-wrap" id="cockpitProjWrap">
     <div class="dash-placeholder" style="padding:0.25rem 0">Loading projection…</div>
   </div>
@@ -2520,18 +2556,21 @@
       });
     }
 
-    // Qty → update all display fields + re-render matrix dollar totals if cached
+    // Qty → update all display fields + re-render active proj view if cached
     document.getElementById('chainQty').addEventListener('input', () => {
       _updateEntryDisplay();
       if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
+      const qty = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
       if (matrixProjCache) {
-        const qty    = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
-        const wrapEl = document.getElementById('cockpitProjWrap');
-        const verdEl = document.getElementById('cockpitVerdict');
-        const tgt    = parseFloat(document.getElementById('cockpitTarget').value) || chainCurrentPrice;
-        renderProjectionMatrix(matrixProjCache.levels, matrixProjCache.projResults, qty, wrapEl, verdEl, tgt);
+        if (!_onPayoutTab()) {
+          const wrapEl = document.getElementById('cockpitProjWrap');
+          const verdEl = document.getElementById('cockpitVerdict');
+          const tgt    = parseFloat(document.getElementById('cockpitTarget').value) || chainCurrentPrice;
+          renderProjectionMatrix(matrixProjCache.levels, matrixProjCache.projResults, qty, wrapEl, verdEl, tgt);
+        }
         renderRrLine(matrixProjCache.levels, matrixProjCache.projResults, qty);
       }
+      if (_onPayoutTab() && payoutCurveCache) renderPayoutCurve(payoutCurveCache, qty);
     });
 
     // Entry price mode buttons — reset to AUTO on each arm, persist within session
@@ -2668,10 +2707,16 @@
       if (e.key === 'Enter') document.getElementById('cockpitApplyTarget').click();
     });
 
-    // Cockpit refresh: re-fetch live quote then re-run matrix
+    // Cockpit refresh: re-fetch live quote then re-run matrix + payout curve
     document.getElementById('cockpitRefreshBtn').addEventListener('click', async () => {
       await refreshArmedQuote();
       loadProjectionMatrix();
+      loadPayoutCurve();
+    });
+
+    // MATRIX / PAYOUT tab strip
+    document.querySelectorAll('#cockpitProjTabs .cpt-tab').forEach(btn => {
+      btn.addEventListener('click', () => _activateCockpitProjTab(btn.dataset.tab));
     });
 
     // Open Position button
@@ -2822,9 +2867,10 @@
       });
     });
 
-    // Auto-refresh quote then load projection matrix on arm
+    // Auto-refresh quote then load projection matrix + payout curve on arm
     await refreshArmedQuote();
     loadProjectionMatrix();
+    loadPayoutCurve();
   }
 
   // Resolves the entry limit price from current cockpitEntryMode and armedContract.
@@ -2910,6 +2956,9 @@
     // R:R line also depends on displayPrice — refresh it if matrix data is ready.
     if (matrixProjCache) {
       renderRrLine(matrixProjCache.levels, matrixProjCache.projResults, qty);
+    }
+    if (payoutCurveCache && _onPayoutTab()) {
+      renderPayoutCurve(payoutCurveCache, qty);
     }
   }
 
@@ -3305,6 +3354,162 @@
     el.style.display = '';
   }
 
+  // Renders the payout profile SVG into #cockpitProjWrap (PAYOUT tab).
+  // Measures clientWidth × clientHeight of the wrap and fills both axes — no fixed height.
+  // Called from: _activateCockpitProjTab('payout'), qty listener, loadPayoutCurve on cache set.
+  function renderPayoutCurve(cache, qty) {
+    const wrapEl = document.getElementById('cockpitProjWrap');
+    const asOfEl = document.getElementById('cockpitPayoutAsOf');
+    if (!wrapEl) return;
+
+    if (!cache) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Loading payout curve…</div>';
+      return;
+    }
+    if (cache.error) {
+      wrapEl.innerHTML = `<div class="dash-placeholder" style="padding:0.4rem 0">${cache.error}</div>`;
+      return;
+    }
+
+    // ── As-of dropdown: gate index i ∈ {0,1,2} on i < dte_effective; 3 always ──
+    // If dte_effective is missing/non-finite, show only Now (i=0) and At expiry (i=3).
+    const dteEff = cache.dte_effective;
+    const dteEffFloor = Number.isFinite(dteEff) ? dteEff : 1;
+    const HLABELS = ['Now', 'Tomorrow', 'In 2 days', 'At expiry'];
+    if (asOfEl) {
+      const prev = asOfEl.value;
+      asOfEl.innerHTML = '';
+      [0, 1, 2, 3].forEach(i => {
+        if (i < 3 && i >= dteEffFloor) return;
+        const opt = document.createElement('option');
+        opt.value = String(i);
+        opt.textContent = HLABELS[i];
+        asOfEl.appendChild(opt);
+      });
+      if ([...asOfEl.options].some(o => o.value === prev)) asOfEl.value = prev;
+      asOfEl.onchange = () => {
+        const q = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+        renderPayoutCurve(cache, q);
+      };
+    }
+    const hIdx = asOfEl ? parseInt(asOfEl.value, 10) : 0;
+
+    // ── P&L base — _resolveEntryPrice().displayPrice, not ask ─────────────────
+    const { displayPrice } = _resolveEntryPrice();
+    if (!displayPrice || displayPrice <= 0) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">No bid</div>';
+      return;
+    }
+    const premium = displayPrice;
+
+    // ── P&L per point: (value − premium) × qty × 100 ─────────────────────────
+    const pnlPts = (cache.points || []).map(pt => ({
+      stock: pt.stock,
+      val:   pt.values[hIdx],
+      pnl:   pt.values[hIdx] != null ? (pt.values[hIdx] - premium) * qty * 100 : null,
+    }));
+    const hasPnl = pnlPts.filter(p => p.pnl != null);
+    if (!hasPnl.length) {
+      wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">IV solve failed — no data for this horizon</div>';
+      return;
+    }
+
+    // ── SVG dimensions: measure the wrap, fill both axes ─────────────────────
+    const W = wrapEl.clientWidth;
+    const H = wrapEl.clientHeight;
+    if (!W || !H) return;
+    const PAD_L = 10, PAD_R = 10, PAD_T = 22, PAD_B = 42;
+    const plotW = W - PAD_L - PAD_R;
+    const plotH = H - PAD_T - PAD_B;
+    const axisY = PAD_T + plotH;
+
+    const stockLo = pnlPts[0].stock;
+    const stockHi = pnlPts[pnlPts.length - 1].stock;
+    function toX(s) { return PAD_L + (s - stockLo) / (stockHi - stockLo) * plotW; }
+
+    const pnlVals = hasPnl.map(p => p.pnl);
+    const yMin  = Math.min(Math.min(...pnlVals), -1);
+    const yMax  = Math.max(Math.max(...pnlVals),  1);
+    const ySpan = yMax - yMin;
+    function toY(pnl) { return PAD_T + (yMax - pnl) / ySpan * plotH; }
+    const zeroY = toY(0);
+
+    const svgParts = [];
+
+    // ── ATR remaining band — same inputs as _remAtrDemand ─────────────────────
+    if (chainAtr && chainAtr > 0 && chainDayRange != null && chainCurrentPrice > 0) {
+      const remAtr = Math.max(0, chainAtr - chainDayRange);
+      if (remAtr > 0) {
+        const bx1 = toX(Math.max(stockLo, chainCurrentPrice - remAtr));
+        const bx2 = toX(Math.min(stockHi, chainCurrentPrice + remAtr));
+        if (bx2 > bx1) svgParts.push(
+          `<rect x="${bx1.toFixed(1)}" y="${PAD_T}" width="${(bx2 - bx1).toFixed(1)}" height="${plotH}" fill="rgba(100,130,200,0.10)"/>`
+        );
+      }
+    }
+
+    // ── Zero line (breakeven is where the curve crosses it — not labelled twice) ──
+    svgParts.push(
+      `<line x1="${PAD_L}" y1="${zeroY.toFixed(1)}" x2="${(W - PAD_R).toFixed(1)}" y2="${zeroY.toFixed(1)}" stroke="var(--border-bright)" stroke-width="1" stroke-dasharray="4 3"/>`,
+      `<text x="${(PAD_L + 3)}" y="${(zeroY - 4).toFixed(1)}" font-size="8" font-family="monospace" fill="var(--text-muted)">$0</text>`
+    );
+
+    // ── S/R vertical markers — srColor / srAbbrev, same palette as renderRrLine ──
+    const levels = (matrixProjCache && matrixProjCache.levels) || [];
+    levels.forEach(lvl => {
+      if (lvl.price <= stockLo || lvl.price >= stockHi) return;
+      const x   = toX(lvl.price);
+      const col = srColor(lvl.role, lvl.price);
+      const ab  = srAbbrev(lvl);
+      svgParts.push(`<line x1="${x.toFixed(1)}" y1="${PAD_T}" x2="${x.toFixed(1)}" y2="${axisY}" stroke="${col}" stroke-width="1" stroke-dasharray="3 3" opacity="0.7"/>`);
+      if (ab) svgParts.push(`<text x="${x.toFixed(1)}" y="${(PAD_T - 6)}" text-anchor="middle" font-size="7.5" font-family="monospace" fill="${col}">${ab}</text>`);
+    });
+
+    // ── Payout curve — red below zero, green above, split at crossing ─────────
+    const redPts = [], grnPts = [];
+    for (let i = 0; i < hasPnl.length; i++) {
+      const pt = hasPnl[i];
+      const x  = toX(pt.stock), y = toY(pt.pnl);
+      if (i > 0) {
+        const pp = hasPnl[i - 1];
+        if ((pp.pnl < 0) !== (pt.pnl < 0)) {
+          const t  = -pp.pnl / (pt.pnl - pp.pnl);
+          const xz = (toX(pp.stock) + t * (toX(pt.stock) - toX(pp.stock))).toFixed(1);
+          redPts.push(`${xz},${zeroY.toFixed(1)}`);
+          grnPts.push(`${xz},${zeroY.toFixed(1)}`);
+        }
+      }
+      if (pt.pnl < 0) redPts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+      else             grnPts.push(`${x.toFixed(1)},${y.toFixed(1)}`);
+    }
+    if (redPts.length >= 2) svgParts.push(`<polyline points="${redPts.join(' ')}" fill="none" stroke="#ef5350" stroke-width="2" stroke-linejoin="round"/>`);
+    if (grnPts.length >= 2) svgParts.push(`<polyline points="${grnPts.join(' ')}" fill="none" stroke="#26a69a" stroke-width="2" stroke-linejoin="round"/>`);
+
+    // ── X-axis ────────────────────────────────────────────────────────────────
+    svgParts.push(`<line x1="${PAD_L}" y1="${axisY}" x2="${(W - PAD_R).toFixed(1)}" y2="${axisY}" stroke="var(--border-bright)" stroke-width="1"/>`);
+
+    // ── Two-row x-axis ticks: row 1 = stock price, row 2 = option value ───────
+    const tStep = Math.max(1, Math.floor(pnlPts.length / 8));
+    pnlPts.forEach((pt, i) => {
+      if (i % tStep !== 0 && i !== pnlPts.length - 1) return;
+      const x      = toX(pt.stock);
+      const valTxt = pt.val != null ? `$${pt.val.toFixed(2)}` : '—';
+      svgParts.push(
+        `<line x1="${x.toFixed(1)}" y1="${axisY}" x2="${x.toFixed(1)}" y2="${(axisY + 4)}" stroke="var(--border-bright)" stroke-width="1"/>`,
+        `<text x="${x.toFixed(1)}" y="${(axisY + 13)}" text-anchor="middle" font-size="8" font-family="monospace" fill="var(--text-muted)">$${pt.stock.toFixed(0)}</text>`,
+        `<text x="${x.toFixed(1)}" y="${(axisY + 25)}" text-anchor="middle" font-size="7.5" font-family="monospace" fill="#64748b">${valTxt}</text>`
+      );
+    });
+
+    // ── Disclaimer: label the model honestly ──────────────────────────────────
+    const disc = hIdx === 3
+      ? 'At expiry: arithmetic — model-free'
+      : 'Black-Scholes at solved σ \xb7 σ will not hold';
+    svgParts.push(`<text x="${(W - PAD_R)}" y="${(H - 4)}" text-anchor="end" font-size="7" font-family="monospace" fill="var(--text-muted)" opacity="0.7">${disc}</text>`);
+
+    wrapEl.innerHTML = `<svg width="${W}" height="${H}" style="display:block;overflow:visible">${svgParts.join('')}</svg>`;
+  }
+
   // Fetches /api/projection for every structural + GEX + marker level in parallel
   // and renders the level × payoff matrix in the cockpit.
   async function loadProjectionMatrix() {
@@ -3431,11 +3636,69 @@
 
       const qtyEl = document.getElementById('chainQty');
       const qty   = qtyEl ? Math.max(1, parseInt(qtyEl.value, 10) || 1) : 1;
-      renderProjectionMatrix(allLevels, projResults, qty, wrapEl, verdEl, userTarget);
+      if (!_onPayoutTab()) {
+        renderProjectionMatrix(allLevels, projResults, qty, wrapEl, verdEl, userTarget);
+      }
       renderRrLine(allLevels, projResults, qty);
     } catch (err) {
       const detail = String(err).includes('403') ? 'Admin access required' : 'Projection unavailable';
       wrapEl.innerHTML = `<div class="dash-placeholder" style="padding:0.4rem 0">${detail}</div>`;
+    }
+  }
+
+  // Single range-mode fetch for the payout curve. Fires alongside loadProjectionMatrix on arm.
+  // premium = _resolveEntryPrice().displayPrice (not ask — the matrix bug is §3, not inherited here).
+  async function loadPayoutCurve() {
+    payoutCurveCache = null;
+    if (!armedContract || !armedContract.iv || armedContract.iv <= 0) return;
+
+    const optionType = armedContract.option_type || (armedContract.bias === 'bullish' ? 'call' : 'put');
+    const price      = chainCurrentPrice > 0 ? chainCurrentPrice : armedContract.strike;
+    const { displayPrice } = _resolveEntryPrice();
+    if (!displayPrice || displayPrice <= 0) return;
+    const prem = displayPrice;
+    const atr  = chainAtr && chainAtr > 0 ? chainAtr : 0;
+
+    const breakevenStock = optionType === 'call'
+      ? armedContract.strike + prem
+      : armedContract.strike - prem;
+
+    // ±2×ATR around current price, clamped outward to include strike and breakeven
+    let lo = Math.min(price - 2 * atr, armedContract.strike, breakevenStock);
+    let hi = Math.max(price + 2 * atr, armedContract.strike, breakevenStock);
+    lo = Math.max(lo, 0.01);   // backend requires lo > 0
+    if (hi <= lo) return;
+
+    const params = new URLSearchParams({
+      ticker:      chainTicker,
+      strike:      armedContract.strike,
+      expiry:      armedContract.expiration,
+      target:      price.toFixed(4),   // required param; not used in range mode
+      option_type: optionType,
+      iv:          armedContract.iv,
+      premium:     prem.toFixed(4),
+      dte:         armedContract.dte,
+      iv_crush:    0,
+      lo:          lo.toFixed(4),
+      hi:          hi.toFixed(4),
+      n:           60,
+    });
+    if (armedContract.bid != null) params.set('bid',  armedContract.bid);
+    if (price > 0)                 params.set('spot', price.toFixed(4));
+
+    try {
+      const data       = await apiFetch(`/api/projection?${params}`);
+      payoutCurveCache = data;
+      if (_onPayoutTab()) {
+        const qty = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+        renderPayoutCurve(payoutCurveCache, qty);
+      }
+    } catch (err) {
+      payoutCurveCache = { error: String(err).includes('403') ? 'Admin access required' : 'Payout curve unavailable' };
+      if (_onPayoutTab()) {
+        const qty = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+        renderPayoutCurve(payoutCurveCache, qty);
+      }
     }
   }
 

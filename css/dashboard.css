@@ -3349,3 +3349,38 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .pos-ticket-status.ok   { color: var(--accent); }
 .pos-ticket-status.error { color: var(--danger); }
 .pos-ticket-status.warn  { color: var(--warning); }
+
+/* ── MATRIX / PAYOUT tab strip ───────────────────────────────────── */
+.cockpit-proj-tabs {
+  display: flex;
+  align-items: center;
+  flex-shrink: 0;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.1rem;
+}
+.cpt-tab {
+  font-size: 0.55rem;
+  font-family: var(--font-display);
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0.1rem 0.4rem 0.12rem;
+  background: transparent;
+  border: none;
+  border-bottom: 2px solid transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  margin-bottom: -1px;
+}
+.cpt-tab.active          { color: var(--accent); border-bottom-color: var(--accent); }
+.cpt-tab:hover:not(.active) { color: var(--text); }
+.cpt-asof {
+  margin-left: auto;
+  font-size: 0.55rem;
+  font-family: var(--font-display);
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 0.06rem 0.25rem;
+  cursor: pointer;
+}
