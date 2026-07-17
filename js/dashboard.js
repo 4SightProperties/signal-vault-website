@@ -3120,6 +3120,8 @@
 
     // ── Below-axis S/R dots — two gates: remaining ATR, then axis range ───────
     let offScale = 0;
+    let edgeBelow = null;  // nearest off-scale below minP (highest optionPrice < minP)
+    let edgeAbove = null;  // nearest off-scale above maxP (lowest optionPrice > maxP)
     const srDots = [];
     levels.forEach((lvl, i) => {
       const proj   = projResults[i];
@@ -3127,8 +3129,20 @@
       if (!nowRow || nowRow.value == null) return;
       const demand = _remAtrDemand(lvl.price);
       if (demand !== null && demand > 100) return;
-      if (nowRow.value < minP || nowRow.value > maxP) { offScale++; return; }
-      srDots.push({ stockPrice: lvl.price, optionPrice: nowRow.value, label: lvl.label, role: lvl.role });
+      const op = nowRow.value;
+      if (op < minP) {
+        offScale++;
+        if (!edgeBelow || op > edgeBelow.optionPrice)
+          edgeBelow = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role };
+        return;
+      }
+      if (op > maxP) {
+        offScale++;
+        if (!edgeAbove || op < edgeAbove.optionPrice)
+          edgeAbove = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role };
+        return;
+      }
+      srDots.push({ stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role });
     });
 
     const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
@@ -3161,6 +3175,20 @@
       svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 33}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${sr.optionPrice.toFixed(2)}</text>`);
     });
 
+    // Edge markers — nearest off-scale level on each side, pinned to boundary, dimmed
+    if (edgeBelow) {
+      const col = srColor(edgeBelow);
+      svgParts.push(`<line x1="0" y1="${AXIS_Y + 3}" x2="0" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>`);
+      svgParts.push(`<text x="2" y="${AXIS_Y + 22}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">◂ $${edgeBelow.stockPrice.toFixed(0)}</text>`);
+      svgParts.push(`<text x="2" y="${AXIS_Y + 33}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeBelow.optionPrice.toFixed(2)}</text>`);
+    }
+    if (edgeAbove) {
+      const col = srColor(edgeAbove);
+      svgParts.push(`<line x1="${W}" y1="${AXIS_Y + 3}" x2="${W}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 22}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeAbove.stockPrice.toFixed(0)} ▸</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 33}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeAbove.optionPrice.toFixed(2)}</text>`);
+    }
+
     // Exit dots and labels above axis
     exitDots.forEach(dot => {
       const x   = toX(dot.price);
@@ -3192,7 +3220,9 @@
       tierDesc = `${qty}ct \xb7 ${tierParts.join(' \xb7 ')}`;
     }
 
-    const offScaleStr = offScale > 0 ? ` \xb7 ${offScale} level${offScale === 1 ? '' : 's'} off-scale` : '';
+    const edgesShown  = (edgeBelow ? 1 : 0) + (edgeAbove ? 1 : 0);
+    const moreOffScale = offScale - edgesShown;
+    const offScaleStr = moreOffScale > 0 ? ` \xb7 ${moreOffScale} more off-scale` : '';
     el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>`;
     el.style.display = '';
   }
