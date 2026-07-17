@@ -2568,8 +2568,8 @@
       const { displayPrice } = _resolveEntryPrice();
       const base      = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
       if (base <= 0) return;
-      const derivedTp = +(base * 1.50).toFixed(2);
-      const derivedSl = +(base * 0.70).toFixed(2);
+      const derivedTp = +(base * _tpMult(EXIT_TP_PCT)).toFixed(2);
+      const derivedSl = +(base * _slMult()).toFixed(2);
       tpInp.placeholder    = `${derivedTp}`;
       if (tpHint)   tpHint.textContent   = `blank = server default ≈$${derivedTp} (est. from limit; server uses actual fill)`;
       if (stopHint) stopHint.textContent = `Stop: ≈$${derivedSl} (est. from limit; server uses actual fill — override with stop_price)`;
@@ -2619,7 +2619,7 @@
       } else if (layer === 'oco_bracket') {
         if (brokerCol) brokerCol.classList.add('cockpit-broker-accent');
         const curAsk = armedContract ? armedContract.ask : 0;
-        const sl     = curAsk > 0 ? +(curAsk * 0.70).toFixed(2) : '';
+        const sl     = curAsk > 0 ? +(curAsk * _slMult()).toFixed(2) : '';
         brokerEl.innerHTML = `
           <div class="cockpit-oco-check">☑ stop-loss</div>
           <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
@@ -2724,8 +2724,8 @@
       if (cockpitExitLayer === 'oco_bracket') {
         const tpInp     = document.getElementById('cockpitOcoTpInput');
         const typed     = tpInp ? parseFloat(tpInp.value) : NaN;
-        const derivedTp = +(ask * 1.50).toFixed(2);
-        const derivedSl = +(ask * 0.70).toFixed(2);
+        const derivedTp = +(ask * _tpMult(EXIT_TP_PCT)).toFixed(2);
+        const derivedSl = +(ask * _slMult()).toFixed(2);
         if (typed > 0) ocoTpPayload = typed;
         const tpDisplay = ocoTpPayload !== undefined
           ? `$${ocoTpPayload.toFixed(2)} (your price)`
@@ -2980,10 +2980,10 @@
     const curBase = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
     if (curBase <= 0) return;
     const qty       = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
-    const sl        = +(curBase * 0.70).toFixed(2);
+    const sl        = +(curBase * _slMult()).toFixed(2);
     const tpInp     = document.getElementById('cockpitOcoTpInput');
     const tpVal     = tpInp ? parseFloat(tpInp.value) : 0;
-    const tp        = tpVal > 0 ? tpVal : +(curBase * 1.50).toFixed(2);
+    const tp        = tpVal > 0 ? tpVal : +(curBase * _tpMult(EXIT_TP_PCT)).toFixed(2);
     const slPnl     = Math.round((sl - curBase) * qty * 100);
     const tpPnl     = Math.round((tp - curBase) * qty * 100);
     const tpPct     = Math.round((tp / curBase - 1) * 100);
@@ -2999,6 +2999,15 @@
       tpSubEl.style.color = tpPnl < 0 ? 'var(--danger, #ef4444)' : '';
     }
   }
+
+  // Mirror of trading.py:698-699. If those change, this must change with them.
+  // tp_pct=50 / sl_pct=30 are the server's authoritative values; these are the
+  // client-side derivations of the same numbers for display estimates only.
+  // The server derives the real legs from the actual FILL, not from these.
+  const EXIT_TP_PCT = 50;
+  const EXIT_SL_PCT = 30;
+  const _slMult  = ()    => 1 - EXIT_SL_PCT / 100;        // 0.70
+  const _tpMult  = (pct) => 1 + pct / 100;                // 1.50 at pct=EXIT_TP_PCT
 
   // Confluence tolerance for display-only level merging (not a scored input).
   const CONFLUENCE_TOLERANCE_PCT = 0.0020; // 0.20% of price
