@@ -1234,17 +1234,18 @@
       .map(s => {
         const chg = parseFloat(s.pct) || 0;
         const cls = s.bias === 'bull' ? 'bull' : s.bias === 'bear' ? 'bear' : '';
+        const glyph = s.bias === 'bull' ? '▲' : s.bias === 'bear' ? '▼' : '—';
         const sign = chg >= 0 ? '+' : '';
         const raw = String(s.name).replace(/^Information /i, 'IT ').replace(/^Communication /i, 'Comm ');
         const abbr = SECTOR_ABBREV[s.name] || raw;
         return `<div class="sector-chip">`
           + `<span class="sector-chip-name">${abbr}</span>`
-          + `<span class="sector-chip-val ${cls}">${sign}${chg.toFixed(1)}%</span>`
+          + `<span class="sector-chip-val ${cls}">${glyph} ${sign}${chg.toFixed(1)}%</span>`
           + `</div>`;
       })
       .join('');
     bodyEl.innerHTML = `<div class="sector-strip">${chips}</div>`;
-    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : '% 1d';
+    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : '% vs prior close';
     if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
   }
 
