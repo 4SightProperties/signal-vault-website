@@ -3047,6 +3047,39 @@
     return [_tier(n, EXIT_TP_PCT * 0.5), _tier(n, EXIT_TP_PCT)];
   }
 
+  // Shared by renderRrLine (S/R ticks) and renderProjectionMatrix (LEVEL column).
+  // Source of truth: loadProjectionMatrix label strings — see ABBREV map below.
+  const ABBREV = {
+    'All-time high':  'ATH',  '52-week high':   '52wH', 'Prior-day high': 'PDH',
+    'Overhead 1':     'OH1',  'Overhead 2':     'OH2',  'Overhead 3':     'OH3',
+    'Underfoot 1':    'UF1',  'Underfoot 2':    'UF2',  'Underfoot 3':    'UF3',
+    'Round above':    '',     'Round below':    '',
+    'Prior-day low':  'PDL',  'All-time low':   'ATL',  '52-week low':    '52wL',
+    'Call Wall':      'C/W',  'Magnet':         'MAG',  'Put Wall':       'P/W',
+    'Target':         'TGT',  'Current':        'CUR',  'Strike':         'K',
+    'Breakeven':      'B/E',
+  };
+  function srAbbrev(lvl) {
+    if (lvl.srLabel !== undefined)
+      return [ABBREV[lvl.srLabel], ABBREV[lvl.gexLabel]].filter(Boolean).join('+');
+    return Object.prototype.hasOwnProperty.call(ABBREV, lvl.label) ? ABBREV[lvl.label] : '';
+  }
+
+  // Colour a structural/marker level by role. Shared by renderRrLine and renderProjectionMatrix.
+  // Callers must map their own field names to (role, stockPrice) explicitly.
+  // Strip palette (css/dashboard.css): support #26a69a · resistance #ef5350 · fused #94a3b8.
+  function srColor(role, stockPrice) {
+    if (role === 'resistance')  return '#ef5350';   // strip red
+    if (role === 'support')     return '#26a69a';   // strip teal-green
+    if (role === 'current')     return '#2a78d6';
+    if (role === 'strike')      return '#9085e9';
+    if (role === 'breakeven')   return '#eda100';
+    if (role === 'round')       return stockPrice > chainCurrentPrice ? '#1baf7a' : '#64748b';
+    if (role === 'call_wall' || role === 'magnet' || role === 'put_wall')
+                                return '#94a3b8';   // strip fused gray — GEX, not structural S/R
+    return 'var(--text-muted)';                     // unhandled role — reads as absent
+  }
+
   // Renders the R:R premium number line between #cockpitAtrBanner and #cockpitProjWrap.
   // Reads matrixProjCache for below-axis S/R levels; derives exits from _resolveEntryPrice().
   // No fetch — updates whenever renderProjectionMatrix updates, same data, same moment.
@@ -3132,27 +3165,22 @@
       const op = nowRow.value;
       if (op < minP) {
         offScale++;
-        if (!edgeBelow || op > edgeBelow.optionPrice)
-          edgeBelow = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role };
+        if (!edgeBelow || op > edgeBelow.optionPrice ||
+            (op === edgeBelow.optionPrice && Math.abs(lvl.price - chainCurrentPrice) < Math.abs(edgeBelow.stockPrice - chainCurrentPrice)))
+          edgeBelow = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel };
         return;
       }
       if (op > maxP) {
         offScale++;
-        if (!edgeAbove || op < edgeAbove.optionPrice)
-          edgeAbove = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role };
+        if (!edgeAbove || op < edgeAbove.optionPrice ||
+            (op === edgeAbove.optionPrice && Math.abs(lvl.price - chainCurrentPrice) < Math.abs(edgeAbove.stockPrice - chainCurrentPrice)))
+          edgeAbove = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel };
         return;
       }
-      srDots.push({ stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role });
+      srDots.push({ stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
     });
 
     const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
-    function srColor(lvl) {
-      if (lvl.role === 'current')   return '#2a78d6';
-      if (lvl.role === 'strike')    return '#9085e9';
-      if (lvl.role === 'breakeven') return '#eda100';
-      if (lvl.role === 'round')     return lvl.stockPrice > chainCurrentPrice ? '#1baf7a' : '#64748b';
-      return '#64748b';
-    }
 
     const svgParts = [];
 
@@ -3168,24 +3196,27 @@
 
     // S/R ticks and labels below axis
     srDots.forEach(sr => {
-      const x   = toX(sr.optionPrice);
-      const col = srColor(sr);
+      const x    = toX(sr.optionPrice);
+      const col  = srColor(sr.role, sr.stockPrice);
+      const abbr = srAbbrev(sr);
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y + 3}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 22}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${sr.stockPrice.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 22}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${abbr ? abbr + ' ' : ''}$${sr.stockPrice.toFixed(0)}</text>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 33}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${sr.optionPrice.toFixed(2)}</text>`);
     });
 
     // Edge markers — nearest off-scale level on each side, pinned to boundary, dimmed
     if (edgeBelow) {
-      const col = srColor(edgeBelow);
+      const col   = srColor(edgeBelow.role, edgeBelow.stockPrice);
+      const abbrB = srAbbrev(edgeBelow);
       svgParts.push(`<line x1="0" y1="${AXIS_Y + 3}" x2="0" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>`);
-      svgParts.push(`<text x="2" y="${AXIS_Y + 22}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">◂ $${edgeBelow.stockPrice.toFixed(0)}</text>`);
+      svgParts.push(`<text x="2" y="${AXIS_Y + 22}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">◂ ${abbrB ? abbrB + ' ' : ''}$${edgeBelow.stockPrice.toFixed(0)}</text>`);
       svgParts.push(`<text x="2" y="${AXIS_Y + 33}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeBelow.optionPrice.toFixed(2)}</text>`);
     }
     if (edgeAbove) {
-      const col = srColor(edgeAbove);
+      const col   = srColor(edgeAbove.role, edgeAbove.stockPrice);
+      const abbrA = srAbbrev(edgeAbove);
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y + 3}" x2="${W}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 22}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeAbove.stockPrice.toFixed(0)} ▸</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 22}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">${abbrA ? abbrA + ' ' : ''}$${edgeAbove.stockPrice.toFixed(0)} ▸</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 33}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeAbove.optionPrice.toFixed(2)}</text>`);
     }
 
@@ -3299,11 +3330,13 @@
       if (srIdx >= 0) {
         const sr = allLevels[srIdx];
         allLevels[srIdx] = {
-          label:   `${sr.label} + ${gLvl.label}`,
-          price:   (sr.price + gLvl.price) / 2,
-          type:    'confluence',
-          role:    sr.role,
-          gexRole: gLvl.role,
+          label:    `${sr.label} + ${gLvl.label}`,
+          srLabel:  sr.label,
+          gexLabel: gLvl.label,
+          price:    (sr.price + gLvl.price) / 2,
+          type:     'confluence',
+          role:     sr.role,
+          gexRole:  gLvl.role,
         };
         usedSrIdx.add(srIdx);
       } else {
@@ -3410,7 +3443,7 @@
       const priceStr = `$${lvl.price.toFixed(2)}${lvl.role === 'current' ? ' ◀' : ''}`;
 
       return `<tr class="${rowCls}">
-  <td class="mat-label">${lvl.label}</td>
+  <td class="mat-label" style="color:${srColor(lvl.role, lvl.price)}">${lvl.label}</td>
   <td class="mat-stock">${priceStr}</td>
   <td class="mat-rematr">${fmtRemAtr(lvl.price)}</td>
   <td class="mat-val">${fmtVal(nowRow)}</td>
