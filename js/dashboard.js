@@ -3143,6 +3143,10 @@
     });
   }
 
+  // Maximum ATR demand % for a level to extend the axis.  Controls axis width only —
+  // visibility is decided by the resulting [minP, maxP] bounds.
+  const REACH_PCT = 100;
+
   // Renders the R:R premium number line between #cockpitAtrBanner and #cockpitProjWrap.
   // Reads matrixProjCache for below-axis S/R levels; derives exits from _resolveEntryPrice().
   // No fetch — updates whenever renderProjectionMatrix updates, same data, same moment.
@@ -3218,7 +3222,7 @@
     // case. Skip extension; exits-anchored axis + edge markers are the correct state.
     const _atrAxisHasData = chainDayRange != null;
     const _srAxisPrices = _atrAxisHasData
-      ? _lvlData.filter(d => !(d.demand !== null && d.demand > 100)).map(d => d.value)
+      ? _lvlData.filter(d => !(d.demand !== null && isFinite(d.demand) && d.demand > REACH_PCT)).map(d => d.value)
       : [];
 
     const exitMin   = Math.min(...exitDots.map(d => d.price));
@@ -3247,20 +3251,16 @@
     const SVG_H = 96, AXIS_Y = 42;  // 96px: stagger third line bottoms at AXIS_Y+52=94<96
     function toX(v) { return (v - minP) / span * W; }
 
-    // The level at spot demands 0% ATR unless nothing is reachable — Infinity is the
-    // exhausted signal from _remAtrDemand. One owner, no threshold copy.
-    const _atrExhausted = _remAtrDemand(chainCurrentPrice) === Infinity;
-
-    // ── Below-axis S/R dots — two gates: remaining ATR, then axis range ───────
+    // ── Below-axis S/R dots — axis bounds control visibility; ATR reach annotates ──
     let offScale = 0;
     let edgeBelow = null;  // nearest off-scale below minP (highest optionPrice < minP)
     let edgeAbove = null;  // nearest off-scale above maxP (lowest optionPrice > maxP)
     const srDots = [];
-    const atrFilteredDots = [];  // levels that failed ATR gate — used by footer
+    const atrFilteredDots = [];  // levels beyond REACH_PCT — annotates footer note; not hidden
     _lvlData.forEach(({ lvl, value: op, demand }) => {
-      if (demand !== null && demand > 100) {
+      if (demand !== null && isFinite(demand) && demand > REACH_PCT) {
         atrFilteredDots.push({ stockPrice: lvl.price, optionPrice: op, demand, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
-        return;
+        // no return — axis bounds decide visibility
       }
       if (op < minP) {
         offScale++;
@@ -3331,22 +3331,23 @@
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y + 3}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${yLbl}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.abbr ? dot.abbr + ' ' : ''}${dot.stkParts.join('/')}</text>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${yPrc}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${dot.optionPrice.toFixed(2)}</text>`);
-      // R multiple + ATR demand — demand is null when ATR absent; never Infinity here
-      // (Infinity demand fails the ATR gate and can never reach srDots).
-      const rStr     = fmtR(dot.optionPrice);
-      const demandVal = dot.demand != null ? Math.round(dot.demand) : null;
+      // R multiple + ATR demand — null when ATR absent, Infinity when exhausted: both omit %.
+      // Beyond-REACH_PCT levels that landed in range: demand is finite and >REACH_PCT, show amber %.
+      const beyondReach = dot.demand != null && isFinite(dot.demand) && dot.demand > REACH_PCT;
+      const rStr        = fmtR(dot.optionPrice);
+      const demandVal   = (dot.demand != null && isFinite(dot.demand)) ? Math.round(dot.demand) : null;
       if (rStr || demandVal != null) {
         let extContent;
         if (rStr && demandVal != null) {
-          const dCol = dot.demand > 100 ? '#eda100' : col;
+          const dCol = beyondReach ? '#eda100' : col;
           extContent = `<tspan>${rStr} \xb7 </tspan><tspan fill="${dCol}">${demandVal}%</tspan>`;
         } else if (rStr) {
           extContent = rStr;
         } else {
-          const dCol = dot.demand > 100 ? '#eda100' : col;
+          const dCol = beyondReach ? '#eda100' : col;
           extContent = `<tspan fill="${dCol}">${demandVal}%</tspan>`;
         }
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yExt}" text-anchor="middle" fill="${col}" font-size="7" font-family="monospace">${extContent}</text>`);
+        svgParts.push(`<text x="${x.toFixed(1)}" y="${yExt}" text-anchor="middle" fill="${col}" font-size="7" font-family="monospace"${beyondReach ? ' opacity="0.75"' : ''}>${extContent}</text>`);
       }
     });
 
@@ -3413,19 +3414,14 @@
         }
       }
     });
-    // ATR exhausted: all levels have Infinity demand, srDots is empty, isFinite would
-    // silence the footer entirely. Emit explicitly and skip _firstUnreach — when exhausted,
-    // there is nothing to rank. When not exhausted, demand in atrFilteredDots is finite.
-    if (_atrExhausted) {
-      _footerParts.push("ATR exhausted — nothing reachable on today’s range");
-    } else {
-      const _firstUnreach = atrFilteredDots
-        .filter(d => d.optionPrice > entry)
-        .sort((a, b) => a.optionPrice - b.optionPrice)[0];
-      if (_firstUnreach) {
-        const _ua = srAbbrev(_firstUnreach) || _firstUnreach.label;
-        _footerParts.push(`${_ua} needs ${Math.round(_firstUnreach.demand)}% ATR`);
-      }
+    // First beyond-reach: lowest optionPrice > entry among levels that exceeded REACH_PCT.
+    // With the reach-annotates design these levels may be visible on the panel (amber %).
+    const _firstUnreach = atrFilteredDots
+      .filter(d => d.optionPrice > entry)
+      .sort((a, b) => a.optionPrice - b.optionPrice)[0];
+    if (_firstUnreach) {
+      const _ua = srAbbrev(_firstUnreach) || _firstUnreach.label;
+      _footerParts.push(`${_ua} needs ${Math.round(_firstUnreach.demand)}% ATR`);
     }
     const _noteHtml = _footerParts.length > 0
       ? `<div class="rrl-footer rrl-footer-note">${_footerParts.join(' \xb7 ')}</div>`
