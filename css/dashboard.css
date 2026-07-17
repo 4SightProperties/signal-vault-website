@@ -1589,6 +1589,27 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   text-overflow: ellipsis;
 }
 
+/* ── R:R premium number line ─────────────────────────────────────────────────── */
+#cockpitRrLine {
+  flex-shrink: 0;
+  margin: 0.2rem 0 0.1rem;
+  min-width: 0;
+}
+.rrl-no-price {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  padding: 0.15rem 0;
+}
+.rrl-footer {
+  font-size: 0.58rem;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+  margin-top: 0.1rem;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
 /* Projection wrap + cockpit level matrix */
 /* Scrollable matrix container — bounded height, ATR banner and verdict live outside */
 .cockpit-proj-wrap {

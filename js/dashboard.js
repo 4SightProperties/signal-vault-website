@@ -2397,6 +2397,9 @@
   <!-- ATR banner lives outside the scroll region — rendered separately from the table -->
   <div id="cockpitAtrBanner"></div>
 
+  <!-- R:R premium number line — renders from matrixProjCache, no fetch -->
+  <div id="cockpitRrLine" style="display:none"></div>
+
   <!-- Scrollable matrix — bounded height; thead sticks via CSS -->
   <div class="cockpit-proj-wrap" id="cockpitProjWrap">
     <div class="dash-placeholder" style="padding:0.25rem 0">Loading projection…</div>
@@ -2527,6 +2530,7 @@
         const verdEl = document.getElementById('cockpitVerdict');
         const tgt    = parseFloat(document.getElementById('cockpitTarget').value) || chainCurrentPrice;
         renderProjectionMatrix(matrixProjCache.levels, matrixProjCache.projResults, qty, wrapEl, verdEl, tgt);
+        renderRrLine(matrixProjCache.levels, matrixProjCache.projResults, qty);
       }
     });
 
@@ -2902,6 +2906,11 @@
     // Must be updated if trading.py:554 changes.
     const gateCost = gatePrice != null ? gatePrice * qty * 100 : ask * qty * 100;
     _updateSummaryRisk(gateCost);
+
+    // R:R line also depends on displayPrice — refresh it if matrix data is ready.
+    if (matrixProjCache) {
+      renderRrLine(matrixProjCache.levels, matrixProjCache.projResults, qty);
+    }
   }
 
   // Evaluates whether gate cost exceeds risk_left and styles the summary row accordingly.
@@ -3011,6 +3020,183 @@
 
   // Confluence tolerance for display-only level merging (not a scored input).
   const CONFLUENCE_TOLERANCE_PCT = 0.0020; // 0.20% of price
+
+  // Shared by renderProjectionMatrix (REM ATR column) and renderRrLine (S/R filter).
+  // Returns null when ATR data absent (neutral — show all), Infinity when exhausted (all dim).
+  function _remAtrDemand(lvlPrice) {
+    if (!chainAtr || chainAtr <= 0 || chainDayRange == null) return null;
+    const rem = Math.max(0, chainAtr - chainDayRange);
+    if (chainDayRange / chainAtr >= 0.95 || rem <= 0) return Infinity;
+    return Math.abs(lvlPrice - chainCurrentPrice) / rem * 100;
+  }
+
+  // Mirror of build_tiers() in tradebot/core/exit_strategy.py:45-75.
+  // Display estimate only — the server rebuilds tiers from the actual fill.
+  // qty 1 returns [] by design: tp1 collapses into tp2, no scale-out.
+  function _buildTiersMirror(qty, entryPrice) {
+    function _tier(n, pct) {
+      return { n, pct, price: +(entryPrice * _tpMult(pct)).toFixed(2) };
+    }
+    if (qty === 1)  return [];
+    if (qty === 2)  return [_tier(1, EXIT_TP_PCT * 0.5)];
+    if (qty === 3)  return [_tier(1, EXIT_TP_PCT * 0.5), _tier(1, EXIT_TP_PCT)];
+    if (qty === 4)  return [_tier(1, EXIT_TP_PCT * 0.5), _tier(1, EXIT_TP_PCT * 0.75), _tier(1, EXIT_TP_PCT)];
+    if (qty === 5)  return [_tier(1, EXIT_TP_PCT * 0.5), _tier(1, EXIT_TP_PCT * 0.75), _tier(1, EXIT_TP_PCT)];
+    if (qty === 6)  return [_tier(2, EXIT_TP_PCT * 0.5), _tier(2, EXIT_TP_PCT)];
+    const n = Math.floor(qty / 3);
+    return [_tier(n, EXIT_TP_PCT * 0.5), _tier(n, EXIT_TP_PCT)];
+  }
+
+  // Renders the R:R premium number line between #cockpitAtrBanner and #cockpitProjWrap.
+  // Reads matrixProjCache for below-axis S/R levels; derives exits from _resolveEntryPrice().
+  // No fetch — updates whenever renderProjectionMatrix updates, same data, same moment.
+  // 0DTE caveat: below-axis option prices are intrinsic only (projection endpoint T≤0 guard).
+  function renderRrLine(levels, projResults, qty) {
+    const el = document.getElementById('cockpitRrLine');
+    if (!el) return;
+    if (!levels || !projResults) { el.style.display = 'none'; return; }
+
+    const { displayPrice } = _resolveEntryPrice();
+    if (!displayPrice || displayPrice <= 0) {
+      const reason = cockpitEntryMode === 'auto'
+        ? 'No bid — switch to Ask or Your Price to see R:R line'
+        : '';
+      if (reason) {
+        el.innerHTML = `<div class="rrl-no-price">${reason}</div>`;
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+      return;
+    }
+
+    const entry = displayPrice;
+    const sl    = +(entry * _slMult()).toFixed(2);
+    const tiers = _buildTiersMirror(qty, entry);
+    const tp2p  = +(entry * _tpMult(EXIT_TP_PCT)).toFixed(2);
+    const runner = qty - tiers.reduce((s, t) => s + t.n, 0);
+    const lastTierAtTp2 = tiers.length > 0 &&
+      Math.abs(tiers[tiers.length - 1].pct - EXIT_TP_PCT) < 0.01;
+
+    // ── Above-axis exit dots ──────────────────────────────────────────────────
+    const exitDots = [];
+    exitDots.push({ price: sl,    label: `STOP \xd7${_slMult().toFixed(2)}`, role: 'stop',  mult: _slMult()           });
+    exitDots.push({ price: entry, label: 'ENTRY',                            role: 'entry'                            });
+    tiers.forEach((t, i) => exitDots.push({
+      price: t.price,
+      label: `TP${i + 1} \xd7${_tpMult(t.pct).toFixed(2)}`,
+      role:  'tp',
+      n:     t.n,
+      mult:  _tpMult(t.pct),
+    }));
+    if (!lastTierAtTp2) {
+      exitDots.push({
+        price: tp2p,
+        label: tiers.length === 0
+          ? `EXIT \xd7${_tpMult(EXIT_TP_PCT).toFixed(2)}`
+          : `TP${tiers.length + 1} \xd7${_tpMult(EXIT_TP_PCT).toFixed(2)}`,
+        role: tiers.length === 0 ? 'exit' : 'tp',
+        n:    runner,
+        mult: _tpMult(EXIT_TP_PCT),
+      });
+    }
+    const lastExit = exitDots[exitDots.length - 1];
+    const rDenom   = entry - sl;
+
+    function fmtR(price) {
+      if (rDenom <= 0) return '';
+      const r = (price - entry) / rDenom;
+      return (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
+    }
+
+    // ── Below-axis S/R dots (filtered to remaining ATR) ──────────────────────
+    const srDots = [];
+    levels.forEach((lvl, i) => {
+      const proj   = projResults[i];
+      const nowRow = proj && proj.rows && proj.rows[0];
+      if (!nowRow || nowRow.value == null) return;
+      const demand = _remAtrDemand(lvl.price);
+      if (demand !== null && demand > 100) return;
+      srDots.push({ stockPrice: lvl.price, optionPrice: nowRow.value, label: lvl.label, role: lvl.role });
+    });
+
+    // ── SVG coordinate system ─────────────────────────────────────────────────
+    const allPrices = exitDots.map(d => d.price).concat(srDots.map(d => d.optionPrice));
+    const rawMin  = Math.min(...allPrices);
+    const rawMax  = Math.max(...allPrices);
+    const rawSpan = rawMax - rawMin || 1;
+    // Pad edges 8% so leftmost/rightmost dots aren't clipped
+    const minP = rawMin - rawSpan * 0.08;
+    const maxP = rawMax + rawSpan * 0.08;
+    const span = maxP - minP;
+
+    const W = 480, SVG_H = 78, AXIS_Y = 42;
+    function toX(v) { return (v - minP) / span * W; }
+
+    const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
+    function srColor(lvl) {
+      if (lvl.role === 'current')   return '#2a78d6';
+      if (lvl.role === 'strike')    return '#9085e9';
+      if (lvl.role === 'breakeven') return '#eda100';
+      if (lvl.role === 'round')     return lvl.stockPrice > chainCurrentPrice ? '#1baf7a' : '#64748b';
+      return '#64748b';
+    }
+
+    const svgParts = [];
+
+    // Base axis
+    svgParts.push(`<line x1="0" y1="${AXIS_Y}" x2="${W}" y2="${AXIS_Y}" stroke="var(--border-bright)" stroke-width="1.2"/>`);
+
+    // Coloured segments
+    const slX     = toX(sl);
+    const entryX  = toX(entry);
+    const lastTpX = toX(lastExit.price);
+    svgParts.push(`<line x1="${slX.toFixed(1)}" y1="${AXIS_Y}" x2="${entryX.toFixed(1)}" y2="${AXIS_Y}" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>`);
+    svgParts.push(`<line x1="${entryX.toFixed(1)}" y1="${AXIS_Y}" x2="${lastTpX.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>`);
+
+    // S/R ticks and labels below axis
+    srDots.forEach(sr => {
+      const x   = toX(sr.optionPrice);
+      const col = srColor(sr);
+      svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y + 3}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 22}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${sr.stockPrice.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y + 33}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${sr.optionPrice.toFixed(2)}</text>`);
+    });
+
+    // Exit dots and labels above axis
+    exitDots.forEach(dot => {
+      const x   = toX(dot.price);
+      const col = DOT_COLOR[dot.role] || '#22c55e';
+      svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y - 6}" x2="${x.toFixed(1)}" y2="${AXIS_Y}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
+      svgParts.push(`<circle cx="${x.toFixed(1)}" cy="${AXIS_Y}" r="3.5" fill="${col}"/>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 30}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.label}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 19}" text-anchor="middle" fill="${col}" font-size="8.5" font-family="monospace">$${dot.price.toFixed(2)}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 9}" text-anchor="middle" fill="${col}" font-size="7" font-family="monospace">${fmtR(dot.price)}</text>`);
+    });
+
+    const svg = `<svg viewBox="0 0 ${W} ${SVG_H}" preserveAspectRatio="xMidYMid meet" width="100%" style="overflow:visible;display:block">${svgParts.join('')}</svg>`;
+
+    // ── Footer ────────────────────────────────────────────────────────────────
+    const rrRatio = rDenom > 0 ? ((lastExit.price - entry) / rDenom).toFixed(1) : '—';
+    const riskDol = rDenom > 0 ? Math.round(rDenom * qty * 100) : 0;
+    const rwdDol  = rDenom > 0 ? Math.round((lastExit.price - entry) * qty * 100) : 0;
+    const derivStr = exitDots
+      .filter(d => d.role !== 'entry')
+      .map(d => `\xd7${d.mult.toFixed(2)}`)
+      .join(' \xb7 ') + ` off $${entry.toFixed(2)}`;
+
+    let tierDesc;
+    if (tiers.length === 0) {
+      tierDesc = `${qty}ct \xb7 all at once`;
+    } else {
+      const tierParts = tiers.map(t => `${t.n}ct @ $${t.price.toFixed(2)}`);
+      if (runner > 0) tierParts.push(`${runner} rides`);
+      tierDesc = `${qty}ct \xb7 ${tierParts.join(' \xb7 ')}`;
+    }
+
+    el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}</div>`;
+    el.style.display = '';
+  }
 
   // Fetches /api/projection for every structural + GEX + marker level in parallel
   // and renders the level × payoff matrix in the cockpit.
@@ -3137,6 +3323,7 @@
       const qtyEl = document.getElementById('chainQty');
       const qty   = qtyEl ? Math.max(1, parseInt(qtyEl.value, 10) || 1) : 1;
       renderProjectionMatrix(allLevels, projResults, qty, wrapEl, verdEl, userTarget);
+      renderRrLine(allLevels, projResults, qty);
     } catch (err) {
       const detail = String(err).includes('403') ? 'Admin access required' : 'Projection unavailable';
       wrapEl.innerHTML = `<div class="dash-placeholder" style="padding:0.4rem 0">${detail}</div>`;
@@ -3165,16 +3352,8 @@
       return `<span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`;
     }
 
-    const _consumed   = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
-    const _remaining  = _consumed != null ? Math.max(0, chainAtr - chainDayRange) : null;
-    const _exhausted  = _consumed != null && _consumed >= 0.95;
     const _ATR_CUTOFF = 200;  // demand % above which cell goes blank and row dims
 
-    function _remAtrDemand(lvlPrice) {
-      if (!chainAtr || chainAtr <= 0 || _remaining === null) return null;  // no data → neutral
-      if (_exhausted || _remaining <= 0) return Infinity;                  // exhausted → all rows dim
-      return Math.abs(lvlPrice - chainCurrentPrice) / _remaining * 100;
-    }
     function fmtRemAtr(lvlPrice) {
       const demand = _remAtrDemand(lvlPrice);
       if (demand === null || demand > _ATR_CUTOFF) return '';
@@ -3215,13 +3394,13 @@
     }).join('');
 
     let _atrBannerHtml = '';
-    if (_consumed !== null) {
-      if (_exhausted) {
+    const _atrRatio = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
+    if (_atrRatio !== null) {
+      if (_atrRatio >= 0.95) {
         _atrBannerHtml = '<div class="mat-atr-banner mat-atr-banner-exhausted">ATR EXHAUSTED</div>';
       } else {
-        const _usedPct = Math.round(_consumed * 100);
-        const _leftStr = _remaining != null ? `$${_remaining.toFixed(2)}` : '—';
-        _atrBannerHtml = `<div class="mat-atr-banner">ATR ${_usedPct}% used · ${_leftStr} left</div>`;
+        const _leftStr = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
+        _atrBannerHtml = `<div class="mat-atr-banner">ATR ${Math.round(_atrRatio * 100)}% used · ${_leftStr} left</div>`;
       }
     }
 
