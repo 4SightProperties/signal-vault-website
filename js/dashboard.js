@@ -2271,6 +2271,22 @@
     if (atmRow) atmRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
   }
 
+  function _activateOrderTab() {
+    document.getElementById('tabOrder')?.classList.add('active');
+    document.getElementById('tabPositions')?.classList.remove('active');
+    document.getElementById('tabHistory')?.classList.remove('active');
+    const ordView  = document.getElementById('orderView');
+    const posBody  = document.getElementById('positionsBody');
+    const histView = document.getElementById('historyView');
+    if (ordView)   ordView.style.display   = '';
+    if (posBody)   posBody.style.display   = 'none';
+    if (histView)  histView.style.display  = 'none';
+    const orderPh  = document.getElementById('orderPlaceholder');
+    if (orderPh)   orderPh.style.display   = 'none';
+    const posMeta  = document.getElementById('positionsMeta');
+    if (posMeta)   posMeta.textContent     = '';
+  }
+
   async function armContract(strike, bias) {
     armedContract = { ...strike, bias };
 
@@ -2329,8 +2345,8 @@
     const structEl = document.getElementById('levelsStructural');
     if (structEl) structEl.style.display = 'none';
 
-    // ── Cockpit HTML ──────────────────────────────────────────────────────────
-    const cockpitHtml = `
+    // ── Centre column (Blocks A, C, D, E, F) — stays in #chainCockpit ──────
+    const centreHtml = `
 <div class="chain-armed" id="chainArmed">
   <div class="cockpit-header">
     <div class="cockpit-header-left">
@@ -2339,6 +2355,32 @@
     </div>
     <button class="cockpit-refresh-btn" id="cockpitRefreshBtn" title="Re-fetch live quote + projection">↻</button>
   </div>
+
+  <!-- Projection target -->
+  <div class="cockpit-qty-target-row">
+    <span class="chain-cost-label">Target $</span>
+    <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
+    <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
+    <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
+  </div>
+
+  <!-- ATR banner lives outside the scroll region — rendered separately from the table -->
+  <div id="cockpitAtrBanner"></div>
+
+  <!-- Scrollable matrix — bounded height; thead sticks via CSS -->
+  <div class="cockpit-proj-wrap" id="cockpitProjWrap">
+    <div class="dash-placeholder" style="padding:0.25rem 0">Loading projection…</div>
+  </div>
+
+  <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
+</div>`;
+
+    // ── Right column (identity + Blocks B, G, H, I) — injected into #orderFormMount
+    const rightHtml = `
+<div class="cockpit-order-identity">
+  <span class="cockpit-order-symbol">${sym}</span>
+  <span class="cockpit-order-meta">${dir.toUpperCase()} · ${strike.strike} · ${dte}DTE</span>
+</div>
 
   <!-- LIMIT PRICE: mode buttons + resolved price + bid/ask + qty on one row -->
   <div class="cockpit-levels-section">
@@ -2364,24 +2406,6 @@
              min="0.01" step="0.01" placeholder="0.00">
     </div>
   </div>
-
-  <!-- Projection target (qty moved to LIMIT PRICE row above) -->
-  <div class="cockpit-qty-target-row">
-    <span class="chain-cost-label">Target $</span>
-    <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
-    <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
-    <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
-  </div>
-
-  <!-- ATR banner lives outside the scroll region — rendered separately from the table -->
-  <div id="cockpitAtrBanner"></div>
-
-  <!-- Scrollable matrix — bounded height; thead sticks via CSS -->
-  <div class="cockpit-proj-wrap" id="cockpitProjWrap">
-    <div class="dash-placeholder" style="padding:0.25rem 0">Loading projection…</div>
-  </div>
-
-  <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
 
   <!-- EXIT STRATEGY: segmented buttons + two-column broker/bot readout -->
   <div class="cockpit-levels-section">
@@ -2430,9 +2454,19 @@
       <span class="pos-preview-tag">gated by kill-switch</span>
     </button>
   </div>
-</div>`;
+`;
 
-    chainCockpit.innerHTML = cockpitHtml;
+    chainCockpit.innerHTML = centreHtml;
+
+    const orderFormMount = document.getElementById('orderFormMount');
+    if (!orderFormMount) {
+      console.error('[armContract] #orderFormMount missing — ORDER tab HTML not injected. Stale dashboard.html?');
+      chainCockpit.innerHTML += '<p style="color:var(--danger);padding:0.5rem 0">Order panel failed to mount — reload the page.</p>';
+      return;
+    }
+    orderFormMount.innerHTML = rightHtml;
+
+    _activateOrderTab();
 
     // Initialise per-layer broker/bot readout and entry display with current armed state
     _updateBrokerBotCols('default');
@@ -3894,26 +3928,36 @@ ${isAdmin ? `
   function setupHistoryTab() {
     const tabPos   = document.getElementById('tabPositions');
     const tabHist  = document.getElementById('tabHistory');
+    const tabOrd   = document.getElementById('tabOrder');
     const posBody  = document.getElementById('positionsBody');
     const histView = document.getElementById('historyView');
+    const ordView  = document.getElementById('orderView');
     if (!tabPos || !tabHist) return;
 
     tabPos.addEventListener('click', () => {
       tabPos.classList.add('active');
       tabHist.classList.remove('active');
+      tabOrd?.classList.remove('active');
       posBody.style.display  = '';
       histView.style.display = 'none';
+      if (ordView) ordView.style.display = 'none';
       document.getElementById('positionsMeta').textContent = 'live';
     });
 
     tabHist.addEventListener('click', () => {
       tabHist.classList.add('active');
       tabPos.classList.remove('active');
+      tabOrd?.classList.remove('active');
       posBody.style.display  = 'none';
       histView.style.display = '';
+      if (ordView) ordView.style.display = 'none';
       document.getElementById('positionsMeta').textContent = 'closed';
       loadHistory(histCurrentPeriod);
     });
+
+    if (tabOrd) {
+      tabOrd.addEventListener('click', _activateOrderTab);
+    }
 
     histView.querySelectorAll('.hist-period-btn').forEach(btn => {
       btn.addEventListener('click', () => {

@@ -878,7 +878,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* Collapsed layout: compact strip body + uncapped cockpit footer */
 .chain-collapsed #chainBody       { flex: 0 0 auto; }
 .chain-collapsed .chain-cockpit-footer { max-height: none; flex: 1; overflow: hidden; display: flex; flex-direction: column; }
-.chain-collapsed .chain-cockpit-footer > *:not(.cockpit-proj-wrap) { flex-shrink: 0; }
+.chain-collapsed .chain-armed { display: flex; flex-direction: column; min-height: 0; flex: 1 1 auto; }
+.chain-collapsed .chain-armed > *:not(.cockpit-proj-wrap) { flex-shrink: 0; }
 
 /* Chain controls row (bias + expiry selectors + refresh button) */
 .chain-controls {
@@ -2010,6 +2011,28 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   background: rgba(250,160,0,0.025);
 }
 /* Blue accent: actual broker orders rest here (OCO bracket only) */
+/* ORDER tab identity line — two-line contract subject above the order form */
+.cockpit-order-identity {
+  padding: 0.3rem 0 0.25rem;
+  border-bottom: 1px solid var(--border);
+  margin-bottom: 0.06rem;
+}
+.cockpit-order-symbol {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.62rem;
+  color: var(--text-muted);
+  letter-spacing: 0.02em;
+}
+.cockpit-order-meta {
+  display: block;
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-secondary);
+  margin-top: 0.08rem;
+}
+
 .cockpit-broker-col.cockpit-broker-accent {
   border-color: rgba(59,130,246,0.3);
   background: rgba(59,130,246,0.04);

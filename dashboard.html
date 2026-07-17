@@ -272,6 +272,7 @@
         <div class="dash-tab-bar">
           <button class="dash-tab active" id="tabPositions">Positions</button>
           <button class="dash-tab" id="tabHistory">History</button>
+          <button class="dash-tab" id="tabOrder">Order</button>
         </div>
         <span class="dash-panel-meta" id="positionsMeta">live</span>
       </div>
@@ -299,6 +300,12 @@
         </div>
         <div id="histSummary" class="hist-summary-wrap"></div>
         <div id="histBody" class="hist-body"></div>
+      </div>
+
+      <!-- Order view (populated by armContract; hidden until a contract is armed) -->
+      <div id="orderView" class="dash-panel-body" style="display:none">
+        <div class="dash-placeholder" id="orderPlaceholder">Arm a contract from the chain to place an order</div>
+        <div id="orderFormMount"></div>
       </div>
     </section>
 
