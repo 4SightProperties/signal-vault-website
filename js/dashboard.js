@@ -3106,7 +3106,11 @@
       expiry:      armedContract.expiration,
       option_type: optionType,
       iv:          armedContract.iv,
-      premium:     armedContract.ask,
+      bid:         armedContract.bid,   // enables mid back-solve server-side (Phase 0)
+      premium:     armedContract.ask,   // NOTE js:3109 — should be resolved limit, not ask.
+                                        // Same ask-vs-limit gap that makes matrix B/E $874.00
+                                        // vs panel $874.38. Second change; deferred.
+      spot:        price,               // current stock price — required by implied_iv
       dte:         armedContract.dte,
       iv_crush:    0,
     };
