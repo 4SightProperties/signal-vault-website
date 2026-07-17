@@ -2282,6 +2282,7 @@
     const dir = bias === 'bullish' ? 'call' : 'put';
     const sym = strike.symbol || `${chainTicker} $${strike.strike}${dir[0].toUpperCase()} ${strike.expiration}`;
     const ask = parseFloat(strike.ask);
+    const bid = parseFloat(strike.bid) || 0;
     const iv  = parseFloat(strike.iv)  || 0;
     const dte = parseInt(strike.dte,10) || 0;
 
@@ -2339,10 +2340,33 @@
     <button class="cockpit-refresh-btn" id="cockpitRefreshBtn" title="Re-fetch live quote + projection">↻</button>
   </div>
 
+  <!-- LIMIT PRICE: mode buttons + resolved price + bid/ask + qty on one row -->
+  <div class="cockpit-levels-section">
+    <div class="cockpit-limit-row">
+      <span class="cockpit-section-label">limit price</span>
+      <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
+        <button class="cockpit-level-btn active" data-entry-mode="auto">Auto</button>
+        <button class="cockpit-level-btn" data-entry-mode="take_ask">Ask</button>
+        <button class="cockpit-level-btn" data-entry-mode="your_price">Yours</button>
+      </div>
+      <span class="cockpit-resolved-price" id="cockpitResolvedPrice">—</span>
+      <span class="cockpit-bid-ask" id="cockpitBidAskDisplay">${bid > 0 ? `bid ${bid.toFixed(2)} / ask ${ask.toFixed(2)}` : `ask ${ask.toFixed(2)}`}</span>
+      <span class="cockpit-section-label" style="margin-left:auto">qty</span>
+      <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
+    </div>
+    <div class="cockpit-entry-sublabels">
+      <span class="cockpit-entry-sublabel">limit order · day</span>
+      <span class="cockpit-entry-sublabel">market &amp; stop entry not supported</span>
+    </div>
+    <div id="cockpitEntryPriceRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.3rem;">
+      <span class="cockpit-section-label">Premium $</span>
+      <input type="number" id="cockpitEntryPriceInput" class="cockpit-target-input"
+             min="0.01" step="0.01" placeholder="0.00">
+    </div>
+  </div>
+
+  <!-- Projection target (qty moved to LIMIT PRICE row above) -->
   <div class="cockpit-qty-target-row">
-    <span class="chain-cost-label">Qty</span>
-    <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
-    <span class="cockpit-row-sep">|</span>
     <span class="chain-cost-label">Target $</span>
     <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
     <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
@@ -2355,82 +2379,45 @@
 
   <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
 
-  <div class="cockpit-levels-section cockpit-order-type-row">
-    <span class="cockpit-section-label">order type</span>
-    <div class="cockpit-seg-group">
-      <span class="cockpit-seg cockpit-seg-active">limit</span>
-      <span class="cockpit-seg cockpit-seg-dim">market</span>
-      <span class="cockpit-seg cockpit-seg-dim">stop</span>
-    </div>
-  </div>
-
+  <!-- EXIT STRATEGY: segmented buttons + two-column broker/bot readout -->
   <div class="cockpit-levels-section">
     <div class="cockpit-inline-row">
-      <span class="cockpit-section-label">entry price</span>
-      <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
-        <button class="cockpit-level-btn active" data-entry-mode="auto">auto</button>
-        <button class="cockpit-level-btn" data-entry-mode="take_ask">ask</button>
-        <button class="cockpit-level-btn" data-entry-mode="your_price">your price</button>
+      <span class="cockpit-section-label">exit strategy</span>
+      <div class="cockpit-level-btns" id="cockpitExitLayerBtns">
+        <button class="cockpit-level-btn active" data-exit-layer="default">Default</button>
+        <button class="cockpit-level-btn" data-exit-layer="tight_trail">Tight trail</button>
+        <button class="cockpit-level-btn" data-exit-layer="cloud_break">Cloud break</button>
+        <button class="cockpit-level-btn" data-exit-layer="oco_bracket">OCO bracket</button>
       </div>
     </div>
-    <div id="cockpitEntryPriceRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.35rem;">
-      <span class="cockpit-section-label">Premium $</span>
-      <input type="number" id="cockpitEntryPriceInput" class="cockpit-target-input"
-             min="0.01" step="0.01" placeholder="0.00">
-    </div>
-    <div class="cockpit-tif-row">
-      <span class="cockpit-section-label">tif</span>
-      <span class="cockpit-field-chip">day</span>
-    </div>
-  </div>
-
-  <div class="cockpit-levels-section">
-    <div class="cockpit-inline-row" style="margin-top:0.4rem;">
-      <span class="cockpit-section-label">exit</span>
-      <select id="cockpitExitLayerSelect" class="cockpit-target-input" style="flex:1; padding:0.2rem 0.3rem;">
-        <option value="default">Default</option>
-        <option value="tight_trail">Tight trail</option>
-        <option value="cloud_break">Cloud break</option>
-        <option value="oco_bracket">OCO bracket</option>
-      </select>
-    </div>
-    <div class="cockpit-layer-subtitle" id="cockpitLayerSubtitle"></div>
-    <div id="cockpitGtcStopRow" class="cockpit-gtc-row">
-      stop&nbsp; ≈$<span id="cockpitGtcStopPrice">${(ask * 0.70).toFixed(2)}</span>&nbsp; −30% · bot-held · nothing rests at broker
-    </div>
-    <div id="cockpitOcoPairRow" style="display:none; margin-top:0.35rem;">
-      <div class="cockpit-oco-cols">
-        <div class="cockpit-oco-col">
-          <div class="cockpit-oco-check">☑ stop-loss</div>
-          <input type="number" class="cockpit-target-input" id="cockpitOcoStopVal"
-                 disabled value="${(ask * 0.70).toFixed(2)}">
-          <div class="cockpit-oco-sub" id="cockpitOcoStopSub">−30% · est −$${Math.round(ask * 0.30 * 2 * 100)}</div>
-        </div>
-        <div class="cockpit-oco-col">
-          <div class="cockpit-oco-check">☑ take-profit</div>
-          <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
-                 min="0.01" step="0.01" placeholder="0.00">
-          <div class="cockpit-oco-sub" id="cockpitOcoTpSub">+50% · est +$${Math.round(ask * 0.50 * 2 * 100)}</div>
-        </div>
+    <!-- Per-layer content rendered by _updateBrokerBotCols -->
+    <div class="cockpit-broker-bot-cols">
+      <div class="cockpit-broker-col" id="cockpitBrokerCol">
+        <div class="cockpit-col-hd">Rests at broker</div>
+        <div class="cockpit-col-sub">survives the bot dying</div>
+        <div class="cockpit-col-items" id="cockpitBrokerContent"></div>
       </div>
-      <div class="cockpit-tif-row" style="margin-top:0.28rem;">
-        <span class="cockpit-section-label">tif (legs)</span>
-        <span class="cockpit-field-chip">gtc</span>
-        <span class="cockpit-tif-sub">blank = from actual fill</span>
+      <div class="cockpit-bot-col">
+        <div class="cockpit-col-hd">Bot watches</div>
+        <div class="cockpit-col-sub">dies if the droplet dies</div>
+        <div class="cockpit-col-items" id="cockpitBotContent"></div>
       </div>
     </div>
+    <!-- Hidden spans kept for _updateOcoHints compatibility -->
     <span id="cockpitOcoTpHint" style="display:none"></span>
     <span id="cockpitOcoStopHint" style="display:none"></span>
-    <span id="cockpitOcoTifNote" style="display:none"></span>
   </div>
 
   <div class="cockpit-summary-block" id="cockpitSummaryBlock">
     <div class="cockpit-summary-single" id="cockpitSumRiskRow">
       <span class="cockpit-sum-item">cost <span class="cockpit-summary-val" id="chainCost">${fmtPrice(ask * 2 * 100)}</span></span>
       <span class="cockpit-sum-sep">·</span>
-      <span class="cockpit-sum-item">max loss <span class="cockpit-summary-val" id="chainMaxLoss">${fmtPrice(ask * 2 * 100)}</span></span>
+      <span class="cockpit-sum-item">max loss <span class="cockpit-summary-val" id="chainMaxLoss">—</span><span class="cockpit-sum-gaps" id="cockpitCostIfGaps"></span></span>
+      <span class="cockpit-sum-sep">·</span>
+      <span class="cockpit-sum-item">B/E <span class="cockpit-summary-val" id="cockpitBE">—</span></span>
       <span class="cockpit-sum-risk-wrap"><span class="cockpit-sum-risk-label">⚠ risk left </span><span class="cockpit-summary-val" id="cockpitSumRisk">—</span></span>
     </div>
+    <div class="cockpit-provenance">est. from limit · server uses actual fill</div>
   </div>
 
   <div class="cockpit-actions">
@@ -2443,9 +2430,9 @@
 
     chainCockpit.innerHTML = cockpitHtml;
 
-    // Initialise layer subtitle and risk summary with current armed state
-    _updateLayerSubtitle('default');
-    _updateSummaryRisk(ask * 2 * 100);
+    // Initialise per-layer broker/bot readout and entry display with current armed state
+    _updateBrokerBotCols('default');
+    _updateEntryDisplay();
 
     // Wire expand-chain button (lives in the compact strip, not in the cockpit)
     const expandBtn = document.getElementById('chainExpandBtn');
@@ -2462,15 +2449,12 @@
       });
     }
 
-    // Qty → update summary block + re-render matrix dollar totals if cached
+    // Qty → update all display fields + re-render matrix dollar totals if cached
     document.getElementById('chainQty').addEventListener('input', () => {
-      const qty  = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
-      const cost = armedContract.ask * qty * 100;
-      document.getElementById('chainCost').textContent    = fmtPrice(cost);
-      document.getElementById('chainMaxLoss').textContent = fmtPrice(cost);
-      _updateSummaryRisk(cost);
+      _updateEntryDisplay();
       if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
       if (matrixProjCache) {
+        const qty    = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
         const wrapEl = document.getElementById('cockpitProjWrap');
         const verdEl = document.getElementById('cockpitVerdict');
         const tgt    = parseFloat(document.getElementById('cockpitTarget').value) || chainCurrentPrice;
@@ -2490,16 +2474,21 @@
       cockpitEntryMode = btn.dataset.entryMode;
       document.getElementById('cockpitEntryPriceRow').style.display =
         cockpitEntryMode === 'your_price' ? 'flex' : 'none';
+      _updateEntryDisplay();
     });
 
-    // Exit-layer select — reveal OCO bracket pair or GTC stop row; update subtitle
-    document.getElementById('cockpitExitLayerSelect').addEventListener('change', e => {
-      cockpitExitLayer = e.target.value;
-      const isOco = cockpitExitLayer === 'oco_bracket';
-      document.getElementById('cockpitOcoPairRow').style.display  = isOco ? 'block' : 'none';
-      document.getElementById('cockpitGtcStopRow').style.display  = isOco ? 'none'  : 'block';
-      _updateLayerSubtitle(cockpitExitLayer);
-      if (isOco) { _updateOcoHints(); _updateOcoPnl(); }
+    // your_price input — live-update resolved price, max loss, B/E as user types
+    document.getElementById('cockpitEntryPriceInput').addEventListener('input', _updateEntryDisplay);
+
+    // Exit-layer buttons — update broker/bot readout; _updateBrokerBotCols handles OCO wiring
+    document.getElementById('cockpitExitLayerBtns').addEventListener('click', e => {
+      const btn = e.target.closest('[data-exit-layer]');
+      if (!btn) return;
+      document.querySelectorAll('#cockpitExitLayerBtns .cockpit-level-btn')
+        .forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      cockpitExitLayer = btn.dataset.exitLayer;
+      _updateBrokerBotCols(cockpitExitLayer);
     });
 
     function _updateOcoHints() {
@@ -2515,62 +2504,80 @@
       stopHint.textContent = `Stop: ≈$${derivedSl} (est. from ask; server uses actual fill — override with stop_price)`;
     }
 
-    function _updateOcoPnl() {
-      const curAsk = armedContract ? armedContract.ask : 0;
-      if (curAsk <= 0) return;
-      const qty    = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
-      const sl     = +(curAsk * 0.70).toFixed(2);
-      const tpInp  = document.getElementById('cockpitOcoTpInput');
-      const tpVal  = tpInp ? parseFloat(tpInp.value) : 0;
-      const tp     = tpVal > 0 ? tpVal : +(curAsk * 1.50).toFixed(2);
-      const slPnl  = Math.round((sl - curAsk) * qty * 100);
-      const tpPnl  = Math.round((tp - curAsk) * qty * 100);
-      const tpPct  = Math.round((tp / curAsk - 1) * 100);
-      const stopSubEl = document.getElementById('cockpitOcoStopSub');
-      const tpSubEl   = document.getElementById('cockpitOcoTpSub');
-      const stopValEl = document.getElementById('cockpitOcoStopVal');
-      if (stopValEl) stopValEl.value = sl.toFixed(2);
-      if (stopSubEl) stopSubEl.textContent = `−30% · est −$${Math.abs(slPnl)}`;
-      if (tpSubEl) {
-        const pctStr  = tpPct  >= 0 ? `+${tpPct}%`          : `−${Math.abs(tpPct)}%`;
-        const dolStr  = tpPnl  >= 0 ? `+$${tpPnl}`          : `−$${Math.abs(tpPnl)}`;
-        tpSubEl.textContent = `${pctStr} · est ${dolStr}`;
-        tpSubEl.style.color = tpPnl < 0 ? 'var(--danger, #ef4444)' : '';
+    // Per-layer broker/bot readout — replaces _updateLayerSubtitle.
+    // OCO bracket: creates TP/stop inputs inside the broker column and wires their listeners.
+    // The three non-OCO layers render with amber treatment (nothing rests at broker).
+    // _ocoTpStash persists the typed TP value across OCO → other → OCO layer switches within
+    // one arm session. Resets on next armContract call (it is declared in armContract's scope).
+    let _ocoTpStash = null;
+    function _updateBrokerBotCols(layer) {
+      const brokerEl  = document.getElementById('cockpitBrokerContent');
+      const botEl     = document.getElementById('cockpitBotContent');
+      const brokerCol = document.getElementById('cockpitBrokerCol');
+      if (!brokerEl || !botEl) return;
+
+      // Stash typed TP before innerHTML replacement destroys cockpitOcoTpInput
+      const prevTpEl = document.getElementById('cockpitOcoTpInput');
+      if (prevTpEl && prevTpEl.value) _ocoTpStash = prevTpEl.value;
+
+      const nothing = `<div class="cockpit-col-nothing">nothing — bot-held only</div>`;
+      const botDefault = `
+        <div class="cockpit-col-item">tp1 / tp2</div>
+        <div class="cockpit-col-item">trail arm +35% · BE +5% · width 0.10</div>
+        <div class="cockpit-col-item">hard stop · stall exit</div>
+        <div class="cockpit-col-item">opt floor · dollar cap · time exits</div>`;
+
+      if (brokerCol) brokerCol.classList.remove('cockpit-broker-accent');
+
+      if (layer === 'default') {
+        brokerEl.innerHTML = nothing;
+        botEl.innerHTML    = botDefault;
+      } else if (layer === 'tight_trail') {
+        brokerEl.innerHTML = nothing;
+        botEl.innerHTML    = `
+          <div class="cockpit-col-item">tp1 / tp2</div>
+          <div class="cockpit-col-item">trail arm +30% · BE +5% · width 0.08 flat</div>
+          <div class="cockpit-col-item">hard stop · <s>stall exit</s></div>
+          <div class="cockpit-col-item">opt floor · dollar cap · time exits</div>`;
+      } else if (layer === 'cloud_break') {
+        brokerEl.innerHTML = nothing;
+        botEl.innerHTML    = `
+          <div class="cockpit-col-item">cloud break (10 m close through fast cloud)</div>
+          <div class="cockpit-col-item">0.08 trail backstop · <s>stall exit</s></div>
+          <div class="cockpit-col-item">opt floor · dollar cap · time exits</div>`;
+      } else if (layer === 'oco_bracket') {
+        if (brokerCol) brokerCol.classList.add('cockpit-broker-accent');
+        const curAsk = armedContract ? armedContract.ask : 0;
+        const sl     = curAsk > 0 ? +(curAsk * 0.70).toFixed(2) : '';
+        brokerEl.innerHTML = `
+          <div class="cockpit-oco-check">☑ stop-loss</div>
+          <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
+            <input type="number" class="cockpit-target-input" id="cockpitOcoStopVal"
+                   disabled value="${sl}" style="width:52px">
+            <span class="cockpit-oco-sub" id="cockpitOcoStopSub">−30% est</span>
+          </div>
+          <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit</div>
+          <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
+            <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
+                   min="0.01" step="0.01" style="width:52px">
+            <span class="cockpit-oco-sub" id="cockpitOcoTpSub">+50% est</span>
+          </div>
+          <div class="cockpit-tif-row" style="margin-top:0.22rem">
+            <span class="cockpit-section-label">tif (legs)</span>
+            <span class="cockpit-field-chip">gtc</span>
+            <span class="cockpit-tif-sub">blank = from actual fill</span>
+          </div>`;
+        botEl.innerHTML = `
+          <div class="cockpit-col-item">dollar cap · opt floor · time exits</div>
+          <div class="cockpit-col-item cockpit-col-suppressed">trail stop · hard stop · ATR stop</div>
+          <div class="cockpit-col-item cockpit-col-suppressed">stall exit · tp1 · tp2 · cloud break</div>`;
+        // Restore stashed TP then wire the freshly created inputs
+        const tpInpEl = document.getElementById('cockpitOcoTpInput');
+        if (tpInpEl && _ocoTpStash) tpInpEl.value = _ocoTpStash;
+        _updateOcoHints();
+        _updateOcoPnl();
+        if (tpInpEl) tpInpEl.addEventListener('input', _updateOcoPnl);
       }
-    }
-
-    // Update OCO P&L sub-labels when TP input changes
-    const _tpInputEl = document.getElementById('cockpitOcoTpInput');
-    if (_tpInputEl) _tpInputEl.addEventListener('input', _updateOcoPnl);
-
-    function _updateLayerSubtitle(layer) {
-      const el = document.getElementById('cockpitLayerSubtitle');
-      if (!el) return;
-      const subtitles = {
-        default:     'tp1/tp2 · trail arm · cloud break · atr stop · target, trail and stop live in the bot',
-        tight_trail: '0.30 arm / 0.08 trail (flat, no tightening) · target, trail and stop live in the bot',
-        cloud_break: 'cloud break + 0.08 trail · target, trail and stop live in the bot',
-        oco_bracket: 'TP + stop rest at broker (GTC) · bot price exits suppressed',
-      };
-      el.textContent = subtitles[layer] || '';
-    }
-
-    // NOTE: refreshArmedQuote() contains an inline copy of this logic because it is
-    // outside armContract's closure. If you change this function, change that copy too.
-    function _updateSummaryRisk(cost) {
-      const riskEl = document.getElementById('cockpitSumRisk');
-      const rowEl  = document.getElementById('cockpitSumRiskRow');
-      if (!riskEl || !rowEl) return;
-      if (lastRiskLeft == null) {
-        riskEl.textContent = '—';
-        rowEl.classList.remove('cockpit-summary-warn');
-        return;
-      }
-      const overBudget = cost != null && cost > lastRiskLeft;
-      rowEl.classList.toggle('cockpit-summary-warn', overBudget);
-      riskEl.textContent = overBudget
-        ? '$' + lastRiskLeft.toFixed(0) + ' — spend gate will reject'
-        : '$' + lastRiskLeft.toFixed(0);
     }
 
     // Target override apply
@@ -2615,39 +2622,25 @@
         }
       }
 
-      // ── Entry limit resolution ────────────────────────────────────────────────
-      let limitPricePayload;  // undefined → omit; server derives (byte-equivalent AUTO)
-      let entryPriceHtml;
-      let displayCostPrice;   // null = market order, no honest estimate possible
+      // ── Entry limit resolution — delegates formula to _resolveEntryPrice() ─────
+      const { payload: limitPricePayload, displayPrice: displayCostPrice } = _resolveEntryPrice();
 
+      // your_price: validate that a price was actually typed before opening the modal
+      if (cockpitEntryMode === 'your_price' && !(displayCostPrice > 0)) {
+        const inp = document.getElementById('cockpitEntryPriceInput');
+        if (inp) { inp.focus(); inp.setCustomValidity('Enter a valid premium price'); inp.reportValidity(); inp.setCustomValidity(''); }
+        return;
+      }
+
+      let entryPriceHtml;
       if (cockpitEntryMode === 'auto') {
-        if (bid <= 0) {
-          entryPriceHtml   = `<span style="color:var(--danger,#e05);font-weight:600">` +
-            `⚠ No bid — server will send a MARKET order, unbounded fill price</span>`;
-          displayCostPrice = null;
-        } else {
-          const mid     = (bid + ask) / 2;
-          const derived = Math.min(ask * 1.02, mid * 1.08);
-          entryPriceHtml   = `$${derived.toFixed(2)} (server-derived)`;
-          displayCostPrice = derived;
-        }
+        entryPriceHtml = bid <= 0
+          ? `<span style="color:var(--danger,#e05);font-weight:600">⚠ No bid — server will send a MARKET order, unbounded fill price</span>`
+          : `$${displayCostPrice.toFixed(2)} (server-derived)`;
       } else if (cockpitEntryMode === 'take_ask') {
-        limitPricePayload = ask * 1.02;
-        entryPriceHtml    = `$${limitPricePayload.toFixed(2)} (ask + 2% fill cushion)`;
-        displayCostPrice  = limitPricePayload;
+        entryPriceHtml = `$${displayCostPrice.toFixed(2)} (ask + 2% fill cushion)`;
       } else {
-        const inp   = document.getElementById('cockpitEntryPriceInput');
-        const typed = parseFloat(inp.value);
-        if (!typed || typed <= 0) {
-          inp.focus();
-          inp.setCustomValidity('Enter a valid premium price');
-          inp.reportValidity();
-          inp.setCustomValidity('');
-          return;
-        }
-        limitPricePayload = typed;
-        entryPriceHtml    = `$${typed.toFixed(2)} (your price — may rest unfilled)`;
-        displayCostPrice  = typed;
+        entryPriceHtml = `$${displayCostPrice.toFixed(2)} (your price — may rest unfilled)`;
       }
 
       const costHtml = displayCostPrice != null
@@ -2759,6 +2752,103 @@
     loadProjectionMatrix();
   }
 
+  // Resolves the entry limit price from current cockpitEntryMode and armedContract.
+  // Single source of truth for the formula — called by _updateEntryDisplay and the Open button.
+  // Mirrors the server gate at trading.py:554: AUTO omits limit_price → gate = bid_price (=ask);
+  // take_ask/your_price send limit_price → gate = that value. Update here if server changes.
+  function _resolveEntryPrice() {
+    if (!armedContract) return { payload: undefined, displayPrice: null, gatePrice: null };
+    const ask = armedContract.ask;
+    const bid = armedContract.bid ?? 0;
+    if (cockpitEntryMode === 'auto') {
+      if (bid <= 0) return { payload: undefined, displayPrice: null, gatePrice: ask };
+      const mid     = (bid + ask) / 2;
+      const derived = Math.min(ask * 1.02, mid * 1.08);
+      return { payload: undefined, displayPrice: derived, gatePrice: ask };
+    } else if (cockpitEntryMode === 'take_ask') {
+      const p = ask * 1.02;
+      return { payload: p, displayPrice: p, gatePrice: p };
+    } else {
+      const inp   = document.getElementById('cockpitEntryPriceInput');
+      const typed = inp ? parseFloat(inp.value) : NaN;
+      if (!(typed > 0)) return { payload: undefined, displayPrice: null, gatePrice: null };
+      return { payload: typed, displayPrice: typed, gatePrice: typed };
+    }
+  }
+
+  // Updates resolved price, bid/ask, cost, max loss (entry × 30% × qty × 100), B/E, and
+  // the spend gate warning. Called on: mode change, your_price input, qty change, quote refresh.
+  // Accessible at outer-closure scope so refreshArmedQuote can call it directly.
+  function _updateEntryDisplay() {
+    if (!armedContract) return;
+    const { displayPrice, gatePrice } = _resolveEntryPrice();
+    const qty    = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+    const ask    = armedContract.ask;
+    const bid    = armedContract.bid ?? 0;
+    const isCall = armedContract.bias === 'bullish';
+    const strike = parseFloat(armedContract.strike) || 0;
+    const ticker = chainTicker || '';
+
+    const priceEl = document.getElementById('cockpitResolvedPrice');
+    if (priceEl) {
+      priceEl.textContent = displayPrice != null
+        ? `$${displayPrice.toFixed(2)}`
+        : (cockpitEntryMode === 'auto' && bid <= 0 ? 'no bid' : '—');
+    }
+
+    const baEl = document.getElementById('cockpitBidAskDisplay');
+    if (baEl) {
+      baEl.textContent = bid > 0
+        ? `bid ${bid.toFixed(2)} / ask ${ask.toFixed(2)}`
+        : `ask ${ask.toFixed(2)}`;
+    }
+
+    const costEl    = document.getElementById('chainCost');
+    const maxLossEl = document.getElementById('chainMaxLoss');
+    const gapsEl    = document.getElementById('cockpitCostIfGaps');
+    const beEl      = document.getElementById('cockpitBE');
+
+    if (displayPrice != null && displayPrice > 0) {
+      const cost    = displayPrice * qty * 100;
+      // Max loss = what you lose if stop fills at entry × 0.70 → (entry − stop) × qty × 100
+      const maxLoss = displayPrice * 0.30 * qty * 100;
+      const be      = isCall ? strike + displayPrice : strike - displayPrice;
+      if (costEl)    costEl.textContent    = fmtPrice(cost);
+      if (maxLossEl) maxLossEl.textContent = fmtPrice(maxLoss);
+      if (gapsEl)    gapsEl.textContent    = ` · ${fmtPrice(cost)} if it gaps`;
+      if (beEl)      beEl.textContent      = `$${be.toFixed(2)} · ${ticker} at expiry`;
+    } else {
+      if (costEl)    costEl.textContent    = fmtPrice(ask * qty * 100);
+      if (maxLossEl) maxLossEl.textContent = '—';
+      if (gapsEl)    gapsEl.textContent    = '';
+      if (beEl)      beEl.textContent      = '—';
+    }
+
+    // Spend gate mirrors trading.py:554: AUTO gates on ask; take_ask/your_price gate on limit.
+    // Must be updated if trading.py:554 changes.
+    const gateCost = gatePrice != null ? gatePrice * qty * 100 : ask * qty * 100;
+    _updateSummaryRisk(gateCost);
+  }
+
+  // Evaluates whether gate cost exceeds risk_left and styles the summary row accordingly.
+  // Promoted to outer-closure scope so _updateEntryDisplay and future callers don't need
+  // an inline twin in refreshArmedQuote.
+  function _updateSummaryRisk(gateCost) {
+    const riskEl = document.getElementById('cockpitSumRisk');
+    const rowEl  = document.getElementById('cockpitSumRiskRow');
+    if (!riskEl || !rowEl) return;
+    if (lastRiskLeft == null) {
+      riskEl.textContent = '—';
+      rowEl.classList.remove('cockpit-summary-warn');
+      return;
+    }
+    const overBudget = gateCost != null && gateCost > lastRiskLeft;
+    rowEl.classList.toggle('cockpit-summary-warn', overBudget);
+    riskEl.textContent = overBudget
+      ? '$' + lastRiskLeft.toFixed(0) + ' — spend gate will reject'
+      : '$' + lastRiskLeft.toFixed(0);
+  }
+
   // Re-fetches the live quote for the armed contract from /api/chain/quote.
   // Updates armedContract.ask / .iv / .dte in place so subsequent projection
   // calls and the Open button use fresh data.
@@ -2798,34 +2888,38 @@
           ` <span class="cockpit-quote-age" id="cockpitQuoteAge"> · live</span>`;
       }
 
-      // Refresh cost + GTC stop estimate with current qty
-      const qtyEl = document.getElementById('chainQty');
-      if (qtyEl) {
-        const qty  = Math.max(1, parseInt(qtyEl.value, 10) || 1);
-        const cost = fresh.ask * qty * 100;
-        const costEl = document.getElementById('chainCost');
-        const mlEl   = document.getElementById('chainMaxLoss');
-        if (costEl) costEl.textContent = fmtPrice(cost);
-        if (mlEl)   mlEl.textContent   = fmtPrice(cost);
-        const gtcPriceEl = document.getElementById('cockpitGtcStopPrice');
-        if (gtcPriceEl && fresh.ask > 0) gtcPriceEl.textContent = (fresh.ask * 0.70).toFixed(2);
-        const ocoStopValEl = document.getElementById('cockpitOcoStopVal');
-        if (ocoStopValEl && fresh.ask > 0) ocoStopValEl.value = (fresh.ask * 0.70).toFixed(2);
-        // Re-evaluate spend gate with refreshed cost.
-        // _updateSummaryRisk() lives inside armContract's closure — not reachable here.
-        // If you change this block, change _updateSummaryRisk() to match.
-        const riskEl = document.getElementById('cockpitSumRisk');
-        if (riskEl && lastRiskLeft != null) {
-          const overBudget = cost > lastRiskLeft;
-          const rowEl = document.getElementById('cockpitSumRiskRow');
-          if (rowEl) rowEl.classList.toggle('cockpit-summary-warn', overBudget);
-          riskEl.textContent = overBudget
-            ? '$' + lastRiskLeft.toFixed(0) + ' — spend gate will reject'
-            : '$' + lastRiskLeft.toFixed(0);
-        }
-      }
+      // Refresh all display fields (resolved price, bid/ask, cost, max loss, B/E, spend gate)
+      _updateEntryDisplay();
+      // Refresh OCO P&L sub-labels if OCO bracket is active
+      if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
     } catch (_) {
       if (ageEl) ageEl.textContent = ' · refresh failed';
+    }
+  }
+
+  // Promoted to outer-closure scope so refreshArmedQuote and _updateBrokerBotCols (inner)
+  // both reach it without a shim. Only reads module-level variables and DOM elements.
+  function _updateOcoPnl() {
+    const curAsk = armedContract ? armedContract.ask : 0;
+    if (curAsk <= 0) return;
+    const qty       = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+    const sl        = +(curAsk * 0.70).toFixed(2);
+    const tpInp     = document.getElementById('cockpitOcoTpInput');
+    const tpVal     = tpInp ? parseFloat(tpInp.value) : 0;
+    const tp        = tpVal > 0 ? tpVal : +(curAsk * 1.50).toFixed(2);
+    const slPnl     = Math.round((sl - curAsk) * qty * 100);
+    const tpPnl     = Math.round((tp - curAsk) * qty * 100);
+    const tpPct     = Math.round((tp / curAsk - 1) * 100);
+    const stopSubEl = document.getElementById('cockpitOcoStopSub');
+    const tpSubEl   = document.getElementById('cockpitOcoTpSub');
+    const stopValEl = document.getElementById('cockpitOcoStopVal');
+    if (stopValEl) stopValEl.value = sl.toFixed(2);
+    if (stopSubEl) stopSubEl.textContent = `−30% · est −$${Math.abs(slPnl)}`;
+    if (tpSubEl) {
+      const pctStr = tpPct >= 0 ? `+${tpPct}%` : `−${Math.abs(tpPct)}%`;
+      const dolStr = tpPnl >= 0 ? `+$${tpPnl}` : `−$${Math.abs(tpPnl)}`;
+      tpSubEl.textContent = `${pctStr} · est ${dolStr}`;
+      tpSubEl.style.color = tpPnl < 0 ? 'var(--danger, #ef4444)' : '';
     }
   }
 

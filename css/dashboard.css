@@ -1938,6 +1938,119 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cockpit-summary-warn .cockpit-sum-risk-wrap { color: var(--warning, #f59e0b); }
 .cockpit-summary-warn .cockpit-summary-val   { color: var(--warning, #f59e0b); font-weight: 700; }
 
+/* LIMIT PRICE row — entry mode + resolved price + bid/ask + qty on one line */
+.cockpit-limit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  flex-wrap: wrap;
+}
+
+/* Sub-labels below LIMIT PRICE row */
+.cockpit-entry-sublabels {
+  display: flex;
+  flex-direction: column;
+  gap: 0.04rem;
+  margin-top: 0.16rem;
+  padding-left: 0.05rem;
+}
+.cockpit-entry-sublabel {
+  font-size: 0.54rem;
+  color: var(--text-muted);
+}
+
+/* Resolved limit price — primary display value */
+.cockpit-resolved-price {
+  font-family: var(--font-display);
+  font-size: 0.72rem;
+  font-weight: 700;
+  color: var(--text-primary);
+  margin-left: 0.1rem;
+  flex-shrink: 0;
+}
+
+/* Bid / ask context shown next to the resolved price */
+.cockpit-bid-ask {
+  font-size: 0.57rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* Two-column broker/bot readout */
+.cockpit-broker-bot-cols {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 0.36rem;
+  margin-top: 0.28rem;
+}
+.cockpit-broker-col,
+.cockpit-bot-col {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.2rem 0.28rem;
+}
+/* Amber: nothing rests here — same treatment as old cockpit-gtc-row */
+.cockpit-broker-col {
+  border-color: rgba(250,160,0,0.22);
+  background: rgba(250,160,0,0.025);
+}
+/* Blue accent: actual broker orders rest here (OCO bracket only) */
+.cockpit-broker-col.cockpit-broker-accent {
+  border-color: rgba(59,130,246,0.3);
+  background: rgba(59,130,246,0.04);
+}
+.cockpit-col-hd {
+  font-size: 0.5rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.07em;
+  color: var(--text-muted);
+  margin-bottom: 0.06rem;
+}
+.cockpit-col-sub {
+  font-size: 0.5rem;
+  color: var(--text-muted);
+  margin-bottom: 0.12rem;
+  line-height: 1.3;
+}
+.cockpit-col-items {
+  display: flex;
+  flex-direction: column;
+  gap: 0.05rem;
+}
+.cockpit-col-item {
+  font-size: 0.57rem;
+  color: var(--text-secondary);
+  line-height: 1.35;
+}
+.cockpit-col-nothing {
+  font-size: 0.57rem;
+  color: var(--text-muted);
+  font-style: italic;
+}
+.cockpit-col-suppressed {
+  color: var(--text-muted);
+  text-decoration: line-through;
+  opacity: 0.55;
+}
+
+/* "· $X if it gaps" text next to max-loss value */
+.cockpit-sum-gaps {
+  font-size: 0.54rem;
+  color: var(--text-muted);
+  margin-left: 0.08rem;
+}
+
+/* Provenance footer — once, below the summary block */
+.cockpit-provenance {
+  font-size: 0.51rem;
+  color: var(--text-muted);
+  margin-top: 0.1rem;
+  font-style: italic;
+  letter-spacing: 0.02em;
+}
+
 /* ════════════════════════════════════════════════════════════════
    Command Center layout extensions
    Migrated from dashboard2.css — cmd- prefix avoids conflicts.
