@@ -2373,6 +2373,10 @@
     <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
   </div>
 
+  <!-- ATR banner lives outside the scroll region — rendered separately from the table -->
+  <div id="cockpitAtrBanner"></div>
+
+  <!-- Scrollable matrix — bounded height; thead sticks via CSS -->
   <div class="cockpit-proj-wrap" id="cockpitProjWrap">
     <div class="dash-placeholder" style="padding:0.25rem 0">Loading projection…</div>
   </div>
@@ -2414,7 +2418,7 @@
       <span class="cockpit-sum-sep">·</span>
       <span class="cockpit-sum-item">max loss <span class="cockpit-summary-val" id="chainMaxLoss">—</span><span class="cockpit-sum-gaps" id="cockpitCostIfGaps"></span></span>
       <span class="cockpit-sum-sep">·</span>
-      <span class="cockpit-sum-item">B/E <span class="cockpit-summary-val" id="cockpitBE">—</span></span>
+      <span class="cockpit-sum-item">B/E <span class="cockpit-summary-val" id="cockpitBE">—</span><span class="cockpit-be-sub" id="cockpitBESub"></span></span>
       <span class="cockpit-sum-risk-wrap"><span class="cockpit-sum-risk-label">⚠ risk left </span><span class="cockpit-summary-val" id="cockpitSumRisk">—</span></span>
     </div>
     <div class="cockpit-provenance">est. from limit · server uses actual fill</div>
@@ -2492,16 +2496,19 @@
     });
 
     function _updateOcoHints() {
-      const ask      = armedContract ? armedContract.ask : 0;
       const tpInp    = document.getElementById('cockpitOcoTpInput');
       const tpHint   = document.getElementById('cockpitOcoTpHint');
       const stopHint = document.getElementById('cockpitOcoStopHint');
-      if (!tpInp || ask <= 0) return;
-      const derivedTp = +(ask * 1.50).toFixed(2);
-      const derivedSl = +(ask * 0.70).toFixed(2);
+      if (!tpInp) return;
+      // Use resolved limit as base; fall back to ask when displayPrice is null (AUTO, no bid)
+      const { displayPrice } = _resolveEntryPrice();
+      const base      = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
+      if (base <= 0) return;
+      const derivedTp = +(base * 1.50).toFixed(2);
+      const derivedSl = +(base * 0.70).toFixed(2);
       tpInp.placeholder    = `${derivedTp}`;
-      tpHint.textContent   = `blank = server default ≈$${derivedTp} (est. from ask; server uses actual fill)`;
-      stopHint.textContent = `Stop: ≈$${derivedSl} (est. from ask; server uses actual fill — override with stop_price)`;
+      if (tpHint)   tpHint.textContent   = `blank = server default ≈$${derivedTp} (est. from limit; server uses actual fill)`;
+      if (stopHint) stopHint.textContent = `Stop: ≈$${derivedSl} (est. from limit; server uses actual fill — override with stop_price)`;
     }
 
     // Per-layer broker/bot readout — replaces _updateLayerSubtitle.
@@ -2553,13 +2560,13 @@
           <div class="cockpit-oco-check">☑ stop-loss</div>
           <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
             <input type="number" class="cockpit-target-input" id="cockpitOcoStopVal"
-                   disabled value="${sl}" style="width:52px">
+                   disabled value="${sl}" style="width:68px">
             <span class="cockpit-oco-sub" id="cockpitOcoStopSub">−30% est</span>
           </div>
           <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit</div>
           <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
             <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
-                   min="0.01" step="0.01" style="width:52px">
+                   min="0.01" step="0.01" style="width:68px">
             <span class="cockpit-oco-sub" id="cockpitOcoTpSub">+50% est</span>
           </div>
           <div class="cockpit-tif-row" style="margin-top:0.22rem">
@@ -2807,6 +2814,7 @@
     const maxLossEl = document.getElementById('chainMaxLoss');
     const gapsEl    = document.getElementById('cockpitCostIfGaps');
     const beEl      = document.getElementById('cockpitBE');
+    const beSubEl   = document.getElementById('cockpitBESub');
 
     if (displayPrice != null && displayPrice > 0) {
       const cost    = displayPrice * qty * 100;
@@ -2816,12 +2824,14 @@
       if (costEl)    costEl.textContent    = fmtPrice(cost);
       if (maxLossEl) maxLossEl.textContent = fmtPrice(maxLoss);
       if (gapsEl)    gapsEl.textContent    = ` · ${fmtPrice(cost)} if it gaps`;
-      if (beEl)      beEl.textContent      = `$${be.toFixed(2)} · ${ticker} at expiry`;
+      if (beEl)      beEl.textContent      = `$${be.toFixed(2)}`;
+      if (beSubEl)   beSubEl.textContent   = ticker ? `${ticker} at expiry` : '';
     } else {
       if (costEl)    costEl.textContent    = fmtPrice(ask * qty * 100);
       if (maxLossEl) maxLossEl.textContent = '—';
       if (gapsEl)    gapsEl.textContent    = '';
       if (beEl)      beEl.textContent      = '—';
+      if (beSubEl)   beSubEl.textContent   = '';
     }
 
     // Spend gate mirrors trading.py:554: AUTO gates on ask; take_ask/your_price gate on limit.
@@ -2900,16 +2910,19 @@
   // Promoted to outer-closure scope so refreshArmedQuote and _updateBrokerBotCols (inner)
   // both reach it without a shim. Only reads module-level variables and DOM elements.
   function _updateOcoPnl() {
-    const curAsk = armedContract ? armedContract.ask : 0;
-    if (curAsk <= 0) return;
+    // Use resolved limit as base so stop/TP estimates match max loss and cost.
+    // Falls back to ask only when displayPrice is null (AUTO with no bid).
+    const { displayPrice } = _resolveEntryPrice();
+    const curBase = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
+    if (curBase <= 0) return;
     const qty       = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
-    const sl        = +(curAsk * 0.70).toFixed(2);
+    const sl        = +(curBase * 0.70).toFixed(2);
     const tpInp     = document.getElementById('cockpitOcoTpInput');
     const tpVal     = tpInp ? parseFloat(tpInp.value) : 0;
-    const tp        = tpVal > 0 ? tpVal : +(curAsk * 1.50).toFixed(2);
-    const slPnl     = Math.round((sl - curAsk) * qty * 100);
-    const tpPnl     = Math.round((tp - curAsk) * qty * 100);
-    const tpPct     = Math.round((tp / curAsk - 1) * 100);
+    const tp        = tpVal > 0 ? tpVal : +(curBase * 1.50).toFixed(2);
+    const slPnl     = Math.round((sl - curBase) * qty * 100);
+    const tpPnl     = Math.round((tp - curBase) * qty * 100);
+    const tpPct     = Math.round((tp / curBase - 1) * 100);
     const stopSubEl = document.getElementById('cockpitOcoStopSub');
     const tpSubEl   = document.getElementById('cockpitOcoTpSub');
     const stopValEl = document.getElementById('cockpitOcoStopVal');
@@ -2938,18 +2951,23 @@
       ? parseFloat(targetEl.value)
       : chainCurrentPrice;
 
+    const bannerEl = document.getElementById('cockpitAtrBanner');
+
     if (!userTarget || userTarget <= 0) {
+      if (bannerEl) bannerEl.innerHTML = '';
       wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Enter a target price above to see projection</div>';
       if (verdEl) verdEl.style.display = 'none';
       return;
     }
 
     if (!armedContract.iv || armedContract.iv <= 0) {
+      if (bannerEl) bannerEl.innerHTML = '';
       wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">IV unavailable — projection requires market hours data</div>';
       if (verdEl) verdEl.style.display = 'none';
       return;
     }
 
+    if (bannerEl) bannerEl.innerHTML = '';
     wrapEl.innerHTML = '<div class="dash-placeholder" style="padding:0.4rem 0">Loading level matrix…</div>';
 
     const price      = chainCurrentPrice > 0 ? chainCurrentPrice : armedContract.strike;
@@ -3130,7 +3148,11 @@
       }
     }
 
-    wrapEl.innerHTML = `${_atrBannerHtml}
+    // ATR banner is outside the scroll container — write to its own element
+    const _bannerEl = document.getElementById('cockpitAtrBanner');
+    if (_bannerEl) _bannerEl.innerHTML = _atrBannerHtml;
+
+    wrapEl.innerHTML = `
 <table class="cockpit-level-matrix">
   <thead>
     <tr class="mat-thead-top">
