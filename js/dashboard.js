@@ -3204,11 +3204,36 @@
     }
 
     // ── SVG coordinate system — axis set by exits; S/R levels are guests ─────
-    const exitMin = Math.min(...exitDots.map(d => d.price));
-    const exitMax = Math.max(...exitDots.map(d => d.price));
-    const pad     = (exitMax - exitMin) * 0.30;
-    const minP    = Math.max(0, exitMin - pad);
-    const maxP    = exitMax + pad;
+    // Single pass: demand computed once per level.  Both axis extension and dot
+    // partitioning key off this array — one gate predicate, one _remAtrDemand call.
+    const _lvlData = levels.map((lvl, i) => {
+      const _pr = projResults[i];
+      const _nr = _pr && _pr.rows && _pr.rows[0];
+      if (!_nr || _nr.value == null) return null;
+      return { lvl, value: _nr.value, demand: _remAtrDemand(lvl.price) };
+    }).filter(Boolean);
+
+    // When chainDayRange is null (pre-market) demand is null everywhere — every level
+    // passes the ATR gate and extending the axis would blow out to the $751-intrinsic
+    // case. Skip extension; exits-anchored axis + edge markers are the correct state.
+    const _atrAxisHasData = chainDayRange != null;
+    const _srAxisPrices = _atrAxisHasData
+      ? _lvlData.filter(d => !(d.demand !== null && d.demand > 100)).map(d => d.value)
+      : [];
+
+    const exitMin   = Math.min(...exitDots.map(d => d.price));
+    const exitMax   = Math.max(...exitDots.map(d => d.price));
+    const pad       = (exitMax - exitMin) * 0.30;
+    const _exitMinP = Math.max(0, exitMin - pad);
+    const _exitMaxP = exitMax + pad;
+    let minP, maxP;
+    if (_atrAxisHasData && _srAxisPrices.length > 0) {
+      minP = Math.max(0, Math.min(_exitMinP, Math.min(..._srAxisPrices)));
+      maxP = Math.max(_exitMaxP, Math.max(..._srAxisPrices));
+    } else {
+      minP = _exitMinP;
+      maxP = _exitMaxP;
+    }
     const span    = maxP - minP;
 
     // el is display:none on first call; measure the always-visible parent (#chainArmed)
@@ -3219,21 +3244,24 @@
       - parseFloat(_ps.paddingLeft)
       - parseFloat(_ps.paddingRight)
     );  // #chainArmed is always visible when this runs — clientWidth is always a real value
-    const SVG_H = 88, AXIS_Y = 42;  // 88px at 1:1; stagger row bottoms at AXIS_Y+44=86<88
+    const SVG_H = 96, AXIS_Y = 42;  // 96px: stagger third line bottoms at AXIS_Y+52=94<96
     function toX(v) { return (v - minP) / span * W; }
+
+    // The level at spot demands 0% ATR unless nothing is reachable — Infinity is the
+    // exhausted signal from _remAtrDemand. One owner, no threshold copy.
+    const _atrExhausted = _remAtrDemand(chainCurrentPrice) === Infinity;
 
     // ── Below-axis S/R dots — two gates: remaining ATR, then axis range ───────
     let offScale = 0;
     let edgeBelow = null;  // nearest off-scale below minP (highest optionPrice < minP)
     let edgeAbove = null;  // nearest off-scale above maxP (lowest optionPrice > maxP)
     const srDots = [];
-    levels.forEach((lvl, i) => {
-      const proj   = projResults[i];
-      const nowRow = proj && proj.rows && proj.rows[0];
-      if (!nowRow || nowRow.value == null) return;
-      const demand = _remAtrDemand(lvl.price);
-      if (demand !== null && demand > 100) return;
-      const op = nowRow.value;
+    const atrFilteredDots = [];  // levels that failed ATR gate — used by footer
+    _lvlData.forEach(({ lvl, value: op, demand }) => {
+      if (demand !== null && demand > 100) {
+        atrFilteredDots.push({ stockPrice: lvl.price, optionPrice: op, demand, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
+        return;
+      }
       if (op < minP) {
         offScale++;
         if (!edgeBelow || op > edgeBelow.optionPrice ||
@@ -3248,7 +3276,7 @@
           edgeAbove = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel };
         return;
       }
-      srDots.push({ stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
+      srDots.push({ stockPrice: lvl.price, optionPrice: op, demand, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
     });
 
     // ── Merge near-equal ticks, then stagger close-but-distinct pairs ───────────
@@ -3299,9 +3327,27 @@
       const col  = srColor(dot.role, dot.stockPrice);
       const yLbl = dot.stagger ? AXIS_Y + 36 : AXIS_Y + 22;
       const yPrc = dot.stagger ? AXIS_Y + 44 : AXIS_Y + 33;
+      const yExt = dot.stagger ? AXIS_Y + 52 : AXIS_Y + 44;
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y + 3}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${yLbl}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.abbr ? dot.abbr + ' ' : ''}${dot.stkParts.join('/')}</text>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${yPrc}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${dot.optionPrice.toFixed(2)}</text>`);
+      // R multiple + ATR demand — demand is null when ATR absent; never Infinity here
+      // (Infinity demand fails the ATR gate and can never reach srDots).
+      const rStr     = fmtR(dot.optionPrice);
+      const demandVal = dot.demand != null ? Math.round(dot.demand) : null;
+      if (rStr || demandVal != null) {
+        let extContent;
+        if (rStr && demandVal != null) {
+          const dCol = dot.demand > 100 ? '#eda100' : col;
+          extContent = `<tspan>${rStr} \xb7 </tspan><tspan fill="${dCol}">${demandVal}%</tspan>`;
+        } else if (rStr) {
+          extContent = rStr;
+        } else {
+          const dCol = dot.demand > 100 ? '#eda100' : col;
+          extContent = `<tspan fill="${dCol}">${demandVal}%</tspan>`;
+        }
+        svgParts.push(`<text x="${x.toFixed(1)}" y="${yExt}" text-anchor="middle" fill="${col}" font-size="7" font-family="monospace">${extContent}</text>`);
+      }
     });
 
     // Edge markers — nearest off-scale level on each side, pinned to boundary, dimmed
@@ -3354,7 +3400,38 @@
     const edgesShown  = (edgeBelow ? 1 : 0) + (edgeAbove ? 1 : 0);
     const moreOffScale = offScale - edgesShown;
     const offScaleStr = moreOffScale > 0 ? ` \xb7 ${moreOffScale} more off-scale` : '';
-    el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>`;
+
+    // ── Derived footer note — emitted only when there is something to say ──────
+    const _footerParts = [];
+    // Coincidence: TP/exit dot within ~5% of an on-scale S/R level's option price
+    exitDots.filter(d => d.role === 'tp' || d.role === 'exit').forEach(dot => {
+      for (const sr of mergedSrDots) {
+        if (Math.abs(dot.price - sr.optionPrice) / sr.optionPrice < 0.05) {
+          const srName = sr.abbr || (sr.stkParts && sr.stkParts[0]) || ('$' + sr.stockPrice.toFixed(0));
+          _footerParts.push(`${dot.label} ≈ ${srName}`);
+          break;
+        }
+      }
+    });
+    // ATR exhausted: all levels have Infinity demand, srDots is empty, isFinite would
+    // silence the footer entirely. Emit explicitly and skip _firstUnreach — when exhausted,
+    // there is nothing to rank. When not exhausted, demand in atrFilteredDots is finite.
+    if (_atrExhausted) {
+      _footerParts.push("ATR exhausted — nothing reachable on today’s range");
+    } else {
+      const _firstUnreach = atrFilteredDots
+        .filter(d => d.optionPrice > entry)
+        .sort((a, b) => a.optionPrice - b.optionPrice)[0];
+      if (_firstUnreach) {
+        const _ua = srAbbrev(_firstUnreach) || _firstUnreach.label;
+        _footerParts.push(`${_ua} needs ${Math.round(_firstUnreach.demand)}% ATR`);
+      }
+    }
+    const _noteHtml = _footerParts.length > 0
+      ? `<div class="rrl-footer rrl-footer-note">${_footerParts.join(' \xb7 ')}</div>`
+      : '';
+
+    el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
     el.style.display = '';
   }
 
