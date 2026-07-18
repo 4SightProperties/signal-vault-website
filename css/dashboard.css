@@ -2513,7 +2513,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── Bottom flow row — 3 equal cells ────────────────────────── */
 .cmd-bottom-row {
   display: grid;
-  grid-template-columns: 1fr 1fr 1fr;
+  grid-template-columns: 320px 1fr 360px;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
   height: 94px;
@@ -2527,6 +2527,19 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   overflow: hidden;
 }
 .cmd-bottom-cell:last-child { border-right: none; }
+
+/* FLOW cell: stack the two stat-rows vertically at the narrower fixed width */
+#flowCellFlow .cmd-bottom-body {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+}
+
+/* Baskets cell: let the grid fill the full body area */
+#flowCellSector .cmd-bottom-body {
+  align-items: stretch;
+  padding: 0.2rem 0.5rem;
+}
 
 .cmd-bottom-body {
   flex: 1;
@@ -2577,40 +2590,116 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .flow-stat-label { color: var(--text-muted); min-width: 5rem; flex-shrink: 0; }
 .flow-sep        { color: var(--text-muted); }
 
-/* ── Sector chips (3×2 grid) ─────────────────────────── */
-.sector-strip {
+/* ── Sector baskets two-column panel ────────────────── */
+.basket-grid {
   display: flex;
-  flex-wrap: wrap;
+  gap: 0.7rem;
   width: 100%;
-  align-content: center;
+  height: 100%;
 }
-.sector-chip {
+.basket-col {
   display: flex;
   flex-direction: column;
-  align-items: center;
-  flex: 0 0 33.333%;
-  box-sizing: border-box;
-  padding: 0.05rem 0.1rem;
+  justify-content: center;
+  gap: 0.08rem;
+  flex: 1;
+  min-width: 0;
 }
-.sector-chip-name {
-  font-size: 0.53rem;
-  color: var(--text-muted);
+.basket-row {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.61rem;
   white-space: nowrap;
   overflow: hidden;
-  text-overflow: ellipsis;
-  max-width: 100%;
-  line-height: 1.35;
+  min-height: 0;
 }
-.sector-chip-val {
-  font-family: var(--font-display);
-  font-size: 0.59rem;
-  font-weight: 700;
-  white-space: nowrap;
-  line-height: 1.35;
+.basket-name {
   color: var(--text-secondary);
+  text-decoration-line: underline;
+  text-decoration-style: dotted;
+  text-decoration-color: var(--text-muted);
+  cursor: default;
+  flex-shrink: 1;
+  min-width: 2.5rem;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
-.sector-chip-val.bull { color: var(--accent); }
-.sector-chip-val.bear { color: var(--danger); }
+.basket-etf {
+  color: var(--accent);
+  font-family: var(--font-display);
+  font-size: 0.58rem;
+  flex-shrink: 0;
+}
+.basket-n {
+  color: var(--text-muted);
+  font-size: 0.58rem;
+  flex-shrink: 0;
+}
+.basket-rs {
+  font-family: var(--font-display);
+  font-size: 0.61rem;
+  font-weight: 600;
+  flex-shrink: 0;
+  min-width: 2.4rem;
+  text-align: right;
+}
+.basket-rs.bull { color: var(--accent); }
+.basket-rs.bear { color: var(--danger); }
+.basket-align {
+  color: var(--text-muted);
+  font-size: 0.59rem;
+  flex-shrink: 0;
+}
+.basket-align.bull { color: var(--accent); }
+.basket-align.bear { color: var(--danger); }
+.basket-armed {
+  color: var(--text-muted);
+  font-size: 0.57rem;
+  flex-shrink: 0;
+}
+
+/* basket hover tooltip — position:fixed to escape overflow:hidden on the bar */
+.basket-tip {
+  display: none;
+  position: fixed;
+  z-index: 200;
+  min-width: 190px;
+  max-width: 280px;
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  padding: 0.5rem 0.65rem;
+  box-shadow: 0 4px 16px rgba(0,0,0,0.4);
+}
+.basket-tip.visible { display: block; }
+.basket-tip-hd {
+  font-size: 0.6rem;
+  color: var(--text-secondary);
+  padding-bottom: 0.25rem;
+  margin-bottom: 0.25rem;
+  border-bottom: 1px solid var(--border);
+}
+.basket-tip-note {
+  font-size: 0.57rem;
+  color: var(--warning);
+  margin-bottom: 0.18rem;
+}
+.basket-tip-tf {
+  font-size: 0.56rem;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+.basket-tip-members { display: flex; flex-direction: column; gap: 0.1rem; }
+.basket-tip-member  { display: flex; align-items: center; gap: 0.3rem; font-size: 0.6rem; }
+.basket-tip-bias    { flex-shrink: 0; width: 0.7rem; text-align: center; }
+.basket-tip-bias.bull    { color: var(--accent); }
+.basket-tip-bias.bear    { color: var(--danger); }
+.basket-tip-bias.neutral { color: var(--text-muted); }
+.basket-tip-bias.muted   { color: var(--text-muted); }
+.basket-tip-nd     { color: var(--text-muted); font-size: 0.57rem; }
+.basket-tip-ticker { color: var(--text-secondary); flex: 1; }
+.basket-tip-pct    { flex-shrink: 0; font-family: var(--font-display); font-size: 0.6rem; }
 
 /* ── Trade card modal ─────────────────────────────────────────────────────── */
 .card-modal-overlay {

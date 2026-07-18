@@ -82,6 +82,8 @@
   let chainTicker          = null;  // ticker for which chain is loaded
   let chainCurrentPrice    = 0.0;   // stock price at chain load time
   let armedContract        = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
+  let _lastBaskets         = null;  // sorted basket array from last _renderBaskets call
+  let _lastBasketsTimeframe = '?'; // timeframe string from last baskets payload
   let chainLastStrikesData = null;  // {strikes, bias, srCtx} — saved for compact-strip expand
   let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
   let cockpitExitLayer     = 'default'; // exit layer: 'default' | 'tight_trail' | 'cloud_break' | 'oco_bracket'
@@ -266,6 +268,7 @@
     setupModal();
     setupGexModal();
     setupHealthPopover();
+    setupBasketTooltip();
     setupDrawer();
     setupWorkingOrdersPanel();
   }
@@ -1207,45 +1210,72 @@
     if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
   }
 
-  function _renderSector(cell) {
+  function _renderBaskets(cell) {
     const bodyEl = document.getElementById('flowSectorBody');
     const metaEl = document.getElementById('flowSectorMeta');
     const cellEl = document.getElementById('flowCellSector');
     if (!bodyEl) return;
 
-    if (!cell || cell.state === 'error') {
+    if (!cell) {
+      bodyEl.innerHTML = '<span class="flow-empty">Loading baskets…</span>';
+      return;
+    }
+    if (cell.state === 'error') {
       bodyEl.innerHTML = '<span class="flow-empty">—</span>';
       return;
     }
-    if (cell.state === 'empty' || !Array.isArray(cell.value) || !cell.value.length) {
-      bodyEl.innerHTML = '<span class="flow-empty">— awaiting market hours —</span>';
+    if (cell.state === 'empty') {
+      bodyEl.innerHTML = '<span class="flow-empty">file absent or not today\'s</span>';
       return;
     }
 
-    const SECTOR_ABBREV = {
-      'Technology': 'Tech', 'Financials': 'Fin', 'Energy': 'Energy',
-      'Consumer Disc': 'Cons', 'Comm Services': 'Comm', 'Biotech': 'Bio',
-      'Information Technology': 'IT', 'Communication Services': 'Comm',
-      'Consumer Discretionary': 'Cons', 'Industrials': 'Ind',
-      'Materials': 'Mat', 'Utilities': 'Util', 'Real Estate': 'RE',
-      'Health Care': 'HC',
-    };
-    const chips = cell.value
-      .map(s => {
-        const chg = parseFloat(s.pct) || 0;
-        const cls = s.bias === 'bull' ? 'bull' : s.bias === 'bear' ? 'bear' : '';
-        const glyph = s.bias === 'bull' ? '▲' : s.bias === 'bear' ? '▼' : '—';
-        const sign = chg >= 0 ? '+' : '';
-        const raw = String(s.name).replace(/^Information /i, 'IT ').replace(/^Communication /i, 'Comm ');
-        const abbr = SECTOR_ABBREV[s.name] || raw;
-        return `<div class="sector-chip">`
-          + `<span class="sector-chip-name">${abbr}</span>`
-          + `<span class="sector-chip-val ${cls}">${glyph} ${sign}${chg.toFixed(1)}%</span>`
-          + `</div>`;
-      })
-      .join('');
-    bodyEl.innerHTML = `<div class="sector-strip">${chips}</div>`;
-    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : '% vs prior close';
+    const val      = cell.value || {};
+    const raw      = Array.isArray(val.baskets) ? val.baskets : [];
+    const timeframe = val.timeframe || '?';
+
+    if (!raw.length) {
+      bodyEl.innerHTML = '<span class="flow-empty">Loading baskets…</span>';
+      return;
+    }
+
+    const sorted = [...raw].sort((a, b) => (b.rs_vs_spy ?? -Infinity) - (a.rs_vs_spy ?? -Infinity));
+    _lastBaskets = sorted;
+    _lastBasketsTimeframe = timeframe;
+
+    const hasWatchlist = watchlistDataCache.length > 0;
+    const armedSet = hasWatchlist
+      ? new Set(watchlistDataCache.filter(r => r.arm_state === 'armed').map(r => r.ticker))
+      : null;
+
+    function rowHtml(b, idx) {
+      const etfLabel = b.etf
+        ? `<span class="basket-etf">${b.etf}</span>`
+        : `<span class="basket-n">n=${b.total}</span>`;
+      const rsVal = b.rs_vs_spy != null ? b.rs_vs_spy : null;
+      const rsStr = rsVal != null ? (rsVal >= 0 ? '+' : '') + rsVal.toFixed(1) : '—';
+      const rsCls = rsVal == null ? '' : rsVal > 0 ? 'bull' : rsVal < 0 ? 'bear' : '';
+      const glyph = b.aligned > b.bearish ? '▲' : b.bearish > b.aligned ? '▼' : '—';
+      const alignCls = b.aligned > b.bearish ? 'bull' : b.bearish > b.aligned ? 'bear' : '';
+      const ac = armedSet ? (b.members || []).filter(m => armedSet.has(m.ticker)).length : null;
+      const armedSpan = (ac !== null && ac > 0) ? `<span class="basket-armed">${ac} armed</span>` : '';
+      return `<div class="basket-row">
+        <span class="basket-name" data-bidx="${idx}">${b.name}</span>
+        ${etfLabel}
+        <span class="basket-rs ${rsCls}">${rsStr}</span>
+        <span class="basket-align ${alignCls}">${b.aligned}/${b.total} ${glyph}</span>
+        ${armedSpan}
+      </div>`;
+    }
+
+    const leftCol  = sorted.slice(0, 5).map((b, i) => rowHtml(b, i)).join('');
+    const rightCol = sorted.slice(5).map((b, i) => rowHtml(b, i + 5)).join('');
+
+    bodyEl.innerHTML = `<div class="basket-grid">
+      <div class="basket-col">${leftCol}</div>
+      <div class="basket-col">${rightCol}</div>
+    </div>`;
+
+    if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : `clouds ${timeframe}`;
     if (cellEl) cellEl.classList.toggle('stale', cell.state === 'stale');
   }
 
@@ -1295,7 +1325,7 @@
       const data = await apiFetch('/api/flow');
       if (!data) return;
       _renderTide(data.tide);
-      _renderSector(data.sector);
+      _renderBaskets(data.baskets);
       _renderFlowGex(data.flow);
     } catch (_) {
       // Silent fail — flow row shows stale state from last render
@@ -5037,6 +5067,86 @@ ${isAdmin ? `
       if (!cell.contains(e.target) && !popover.contains(e.target)) {
         hidePopover();
       }
+    });
+  }
+
+  function setupBasketTooltip() {
+    const tip  = document.getElementById('basketTip');
+    const body = document.getElementById('flowSectorBody');
+    if (!tip || !body) return;
+
+    let activeEl = null;
+
+    function show(nameEl) {
+      const idx = parseInt(nameEl.dataset.bidx, 10);
+      if (!_lastBaskets || isNaN(idx)) return;
+      const b = _lastBaskets[idx];
+      if (!b) return;
+
+      const tf  = _lastBasketsTimeframe;
+      const rs  = b.rs_vs_spy != null ? (b.rs_vs_spy >= 0 ? '+' : '') + b.rs_vs_spy.toFixed(1) + '%' : '—';
+      const hd  = b.etf
+        ? `${b.etf} ${rs} vs SPY · your ${b.total} names`
+        : `no liquid ETF — mean of ${b.pct_n} monitored names`;
+      const coverNote   = (b.etf && b.pct_n < b.total)
+        ? `<div class="basket-tip-note">mean covers ${b.pct_n} of ${b.total}</div>` : '';
+      const missingNote = (b.missing > 0)
+        ? `<div class="basket-tip-note">${b.missing} members had no scan data</div>` : '';
+
+      const memberRows = (b.members || []).map(m => {
+        let biasHtml;
+        if (m.bias === null || m.bias === undefined) {
+          biasHtml = `<span class="basket-tip-bias muted">—</span><span class="basket-tip-nd">n/d</span>`;
+        } else {
+          const g = m.bias === 'bull' ? '▲' : m.bias === 'bear' ? '▼' : '—';
+          biasHtml = `<span class="basket-tip-bias ${m.bias}">${g}</span>`;
+        }
+        const pctStr = m.pct != null ? (m.pct >= 0 ? '+' : '') + m.pct.toFixed(1) + '%' : '—';
+        return `<div class="basket-tip-member">${biasHtml}<span class="basket-tip-ticker">${m.ticker}</span><span class="basket-tip-pct">${pctStr}</span></div>`;
+      }).join('');
+
+      tip.innerHTML = `<div class="basket-tip-hd">${hd}</div>${coverNote}${missingNote}<div class="basket-tip-tf">clouds ${tf}</div><div class="basket-tip-members">${memberRows}</div>`;
+
+      // Measure height while invisible — position:fixed with no insets defaults to
+      // viewport origin on first show, so don't rely on the user-visible path.
+      tip.style.visibility = 'hidden';
+      tip.style.display    = 'block';
+      const tipH = tip.offsetHeight;
+      tip.style.visibility = '';
+      tip.style.display    = '';
+
+      const r = nameEl.getBoundingClientRect();
+      tip.style.left = Math.min(r.left, window.innerWidth - 290) + 'px';
+      if (tipH <= r.top - 10) {
+        tip.style.bottom = (window.innerHeight - r.top + 6) + 'px';
+        tip.style.top    = '';
+      } else {
+        tip.style.top    = (r.bottom + 6) + 'px';
+        tip.style.bottom = '';
+      }
+      tip.classList.add('visible');
+      tip.setAttribute('aria-hidden', 'false');
+      activeEl = nameEl;
+    }
+
+    function hide() {
+      tip.classList.remove('visible');
+      tip.setAttribute('aria-hidden', 'true');
+      activeEl = null;
+    }
+
+    body.addEventListener('mouseover', e => {
+      const nameEl = e.target.closest('.basket-name');
+      if (nameEl && nameEl !== activeEl) show(nameEl);
+    });
+    body.addEventListener('mouseleave', e => {
+      if (!tip.contains(e.relatedTarget)) hide();
+    });
+    tip.addEventListener('mouseleave', e => {
+      if (!body.contains(e.relatedTarget)) hide();
+    });
+    document.addEventListener('click', e => {
+      if (!body.contains(e.target) && !tip.contains(e.target)) hide();
     });
   }
 
