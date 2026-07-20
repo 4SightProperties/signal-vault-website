@@ -3323,6 +3323,17 @@
 
     const lastExit = exitDots[exitDots.length - 1];
 
+    // ── Actionable zone + TP2 on-scale gate ──────────────────────────────────
+    // TP2 as runner (label='TP2', _tp1N>0) can price to enormous premiums when the
+    // SR level is far from current price. Gate: on-scale only if within 1 actionable
+    // span beyond TP1. _actSpan = stop..tp1, the zone you actively manage.
+    // qty=1: _tp1N=0, TP2 dot is labeled 'EXIT' not 'TP2', _tp2IsRunner=false → always on-scale.
+    const _actMin      = Math.min(sl, entry, _tp1 ? _tp1.price : entry);
+    const _actMax      = Math.max(sl, entry, _tp1 ? _tp1.price : entry);
+    const _actSpan     = _actMax - _actMin;
+    const _tp2IsRunner = _tp2 != null && _tp1N > 0;
+    const _tp2OnScale  = _tp2IsRunner ? (_tp2.price <= _actMax + _actSpan) : true;
+
     // ── SVG coordinate system — axis set by exits; S/R levels are guests ─────
 
     // When chainDayRange is null (pre-market) demand is null everywhere — every level
@@ -3330,11 +3341,14 @@
     // case. Skip extension; exits-anchored axis + edge markers are the correct state.
     const _atrAxisHasData = chainDayRange != null;
     const _srAxisPrices = _atrAxisHasData
-      ? _lvlData.filter(d => d.demand !== null && isFinite(d.demand) && d.demand <= REACH_PCT).map(d => d.value)
+      ? _lvlData.filter(d => d.demand !== null && isFinite(d.demand) && d.demand <= REACH_PCT
+          && (_actSpan <= 0 || d.value <= _actMax + _actSpan))
+        .map(d => d.value)
       : [];
 
-    const exitMin   = Math.min(...exitDots.map(d => d.price));
-    const exitMax   = Math.max(...exitDots.map(d => d.price));
+    const _axisExits = exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale));
+    const exitMin   = Math.min(..._axisExits.map(d => d.price));
+    const exitMax   = Math.max(..._axisExits.map(d => d.price));
     const pad       = (exitMax - exitMin) * 0.30;
     const _exitMinP = Math.max(0, exitMin - pad);
     const _exitMaxP = exitMax + pad;
@@ -3475,7 +3489,7 @@
     // Coloured segments
     const slX     = toX(sl);
     const entryX  = toX(entry);
-    const lastTpX = toX(lastExit.price);
+    const lastTpX = (_tp2IsRunner && !_tp2OnScale) ? W : toX(lastExit.price);
     svgParts.push(`<line x1="${slX.toFixed(1)}" y1="${AXIS_Y}" x2="${entryX.toFixed(1)}" y2="${AXIS_Y}" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>`);
     svgParts.push(`<line x1="${entryX.toFixed(1)}" y1="${AXIS_Y}" x2="${lastTpX.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>`);
 
@@ -3525,8 +3539,18 @@
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 33}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeAbove.optionPrice.toFixed(2)}</text>`);
     }
 
-    // Exit dots and labels above axis
-    exitDots.forEach(dot => {
+    // Far TP2 runner edge marker — pinned to right edge, mirrors on-scale dot layout
+    if (_tp2IsRunner && !_tp2OnScale) {
+      const _tp2Col = DOT_COLOR['tp'];
+      const _tp2Lbl = _tp2.abbr ? `▸ TP2 · ${_tp2.abbr}` : '▸ TP2';
+      svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_tp2Col}" stroke-width="1" opacity="0.4"/>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 30}" text-anchor="end" fill="${_tp2Col}" font-size="7.5" font-family="monospace">${_tp2Lbl}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 19}" text-anchor="end" fill="${_tp2Col}" font-size="8.5" font-family="monospace">$${_tp2.price.toFixed(2)}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 9}" text-anchor="end" fill="${_tp2Col}" font-size="7" font-family="monospace">${fmtR(_tp2.price)}</text>`);
+    }
+
+    // Exit dots and labels above axis — off-scale TP2 rendered as edge marker above
+    exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale)).forEach(dot => {
       const x   = toX(dot.price);
       const col = DOT_COLOR[dot.role] || '#22c55e';
       const _dotLabel = dot.srLabel ? `${dot.label} · ${dot.srLabel}` : dot.label;
