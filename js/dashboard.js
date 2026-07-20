@@ -1257,7 +1257,7 @@
       const glyph = b.aligned > b.bearish ? '▲' : b.bearish > b.aligned ? '▼' : '—';
       const alignCls = b.aligned > b.bearish ? 'bull' : b.bearish > b.aligned ? 'bear' : '';
       const ac = armedSet ? (b.members || []).filter(m => armedSet.has(m.ticker)).length : null;
-      const armedSpan = (ac !== null && ac > 0) ? `<span class="basket-armed">${ac} armed</span>` : '';
+      const armedSpan = `<span class="basket-armed">${(ac !== null && ac > 0) ? `${ac} armed` : ''}</span>`;
       return `<div class="basket-row">
         <span class="basket-name" data-bidx="${idx}">${b.name}</span>
         ${etfLabel}

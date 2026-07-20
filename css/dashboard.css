@@ -2606,9 +2606,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   min-width: 0;
 }
 .basket-row {
-  display: flex;
+  display: grid;
+  grid-template-columns: 64px 34px 42px 40px 52px;
   align-items: center;
-  gap: 0.3rem;
   font-size: 0.61rem;
   white-space: nowrap;
   overflow: hidden;
@@ -2620,8 +2620,6 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   text-decoration-style: dotted;
   text-decoration-color: var(--text-muted);
   cursor: default;
-  flex-shrink: 1;
-  min-width: 2.5rem;
   overflow: hidden;
   text-overflow: ellipsis;
 }
@@ -2629,19 +2627,15 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   color: var(--accent);
   font-family: var(--font-display);
   font-size: 0.58rem;
-  flex-shrink: 0;
 }
 .basket-n {
   color: var(--text-muted);
   font-size: 0.58rem;
-  flex-shrink: 0;
 }
 .basket-rs {
   font-family: var(--font-display);
   font-size: 0.61rem;
   font-weight: 600;
-  flex-shrink: 0;
-  min-width: 2.4rem;
   text-align: right;
 }
 .basket-rs.bull { color: var(--accent); }
@@ -2649,14 +2643,14 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .basket-align {
   color: var(--text-muted);
   font-size: 0.59rem;
-  flex-shrink: 0;
+  text-align: right;
 }
 .basket-align.bull { color: var(--accent); }
 .basket-align.bear { color: var(--danger); }
 .basket-armed {
   color: var(--text-muted);
   font-size: 0.57rem;
-  flex-shrink: 0;
+  text-align: right;
 }
 
 /* basket hover tooltip — position:fixed to escape overflow:hidden on the bar */
