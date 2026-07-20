@@ -2227,14 +2227,14 @@
         const dStr = srDistPct != null
           ? `(${dSign}${(srDistPct * 100).toFixed(2)}%)`
           : '';
+        const _atrAmber = atrMultiple != null && atrMultiple > 1.0;
         const aStr = atrMultiple != null
-          ? `· ${atrMultiple.toFixed(2)} ATR`
-          : '';
-        const unreachTag = atrReachable === false
-          ? ' <span class="chain-hdr-unreachable">— not reachable today</span>'
+          ? (_atrAmber
+              ? `· <span style="color:#eda100">${atrMultiple.toFixed(2)} ATR</span>`
+              : `· ${atrMultiple.toFixed(2)} ATR`)
           : '';
         parts.push(
-          [`next R $${nextSr.price.toFixed(2)}`, dStr, aStr].filter(Boolean).join(' ') + unreachTag
+          [`next R $${nextSr.price.toFixed(2)}`, dStr, aStr].filter(Boolean).join(' ')
         );
       }
 
@@ -3208,36 +3208,9 @@
       return;
     }
 
-    const entry = displayPrice;
-    const sl    = +(entry * _slMult()).toFixed(2);
-    const tiers = _buildTiersMirror(qty, entry);
-    const tp2p  = +(entry * _tpMult(EXIT_TP_PCT)).toFixed(2);
-    const runner = qty - tiers.reduce((s, t) => s + t.n, 0);
-    const lastTierAtTp2 = tiers.length > 0 &&
-      Math.abs(tiers[tiers.length - 1].pct - EXIT_TP_PCT) < 0.01;
-
-    // ── Above-axis exit dots ──────────────────────────────────────────────────
-    const exitDots = [];
-    exitDots.push({ price: sl,    label: 'STOP',  role: 'stop',  mult: _slMult()        });
-    exitDots.push({ price: entry, label: 'ENTRY', role: 'entry'                         });
-    tiers.forEach((t, i) => exitDots.push({
-      price: t.price,
-      label: `TP${i + 1}`,
-      role:  'tp',
-      n:     t.n,
-      mult:  _tpMult(t.pct),
-    }));
-    if (!lastTierAtTp2) {
-      exitDots.push({
-        price: tp2p,
-        label: tiers.length === 0 ? 'EXIT' : `TP${tiers.length + 1}`,
-        role:  tiers.length === 0 ? 'exit' : 'tp',
-        n:     runner,
-        mult:  _tpMult(EXIT_TP_PCT),
-      });
-    }
-    const lastExit = exitDots[exitDots.length - 1];
-    const rDenom   = entry - sl;
+    const entry  = displayPrice;
+    const sl     = +(entry * _slMult()).toFixed(2);
+    const rDenom = entry - sl;
 
     function fmtR(price) {
       if (rDenom <= 0) return '';
@@ -3245,7 +3218,7 @@
       return (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
     }
 
-    // ── SVG coordinate system — axis set by exits; S/R levels are guests ─────
+    // ── Pre-compute projection values — needed for SR-based TP selection ─────
     // Single pass: demand computed once per level.  Both axis extension and dot
     // partitioning key off this array — one gate predicate, one _remAtrDemand call.
     const _lvlData = levels.map((lvl, i) => {
@@ -3254,6 +3227,99 @@
       if (!_nr || _nr.value == null) return null;
       return { lvl, value: _nr.value, demand: _remAtrDemand(lvl.price) };
     }).filter(Boolean);
+
+    // ── SR-based TP selection ─────────────────────────────────────────────────
+    const _optType = armedContract
+      ? (armedContract.option_type || (armedContract.bias === 'bullish' ? 'call' : 'put'))
+      : 'call';
+    const _isCall = _optType === 'call';
+
+    // Profit-side structural levels, nearest first; exclude marker roles (Current, Strike, etc.)
+    const _profitSide = _lvlData
+      .filter(d => d.lvl.type !== 'marker'
+        && (_isCall ? d.lvl.price > chainCurrentPrice : d.lvl.price < chainCurrentPrice)
+        && d.value > 0)
+      .sort((a, b) => _isCall
+        ? a.lvl.price - b.lvl.price    // ascending for calls — nearest overhead first
+        : b.lvl.price - a.lvl.price);  // descending for puts — nearest underfoot first
+
+    const _tp1Cand = _profitSide[0] || null;
+    const _tp1Val  = _tp1Cand ? _tp1Cand.value : null;
+    // TP2 must be ≥1.20× TP1 option value — same-shelf levels (e.g. Week-high and Day-high
+    // 65¢ apart on stock, ~10% apart on premium) are skipped until the premium gap is real.
+    const _tp2Cand = _tp1Cand
+      ? (_profitSide.slice(1).find(d => d.value >= _tp1Val * 1.20) || null)
+      : null;
+
+    // Linear interpolation of option value at an arbitrary stock price from existing projections.
+    // Used only for ATR-reach fallback — no new fetches required.
+    function _interpOptVal(stockTarget) {
+      const pts = [..._lvlData].sort((a, b) => a.lvl.price - b.lvl.price);
+      if (!pts.length) return null;
+      if (stockTarget <= pts[0].lvl.price) return pts[0].value;
+      if (stockTarget >= pts[pts.length - 1].lvl.price) return pts[pts.length - 1].value;
+      for (let i = 0; i < pts.length - 1; i++) {
+        if (stockTarget <= pts[i + 1].lvl.price) {
+          const t = (stockTarget - pts[i].lvl.price) / (pts[i + 1].lvl.price - pts[i].lvl.price);
+          return +(pts[i].value + t * (pts[i + 1].value - pts[i].value)).toFixed(2);
+        }
+      }
+      return pts[pts.length - 1].value;
+    }
+
+    const _atrReach1Stk = chainAtr && chainCurrentPrice
+      ? (_isCall ? chainCurrentPrice + chainAtr : chainCurrentPrice - chainAtr)
+      : null;
+    const _atrReach2Stk = chainAtr && chainCurrentPrice
+      ? (_isCall ? chainCurrentPrice + 2 * chainAtr : chainCurrentPrice - 2 * chainAtr)
+      : null;
+
+    // Resolve TP1 / TP2 with fallback ladder:
+    //   2 SR levels ≥1.20× apart  → both SR
+    //   1 SR level                 → TP1 SR, TP2 +1 ATR labeled ATR
+    //   0 SR levels                → TP1 +1 ATR, TP2 +2 ATR, both labeled ATR
+    let _tp1 = null, _tp2 = null;
+    if (_tp1Cand && _tp2Cand) {
+      _tp1 = { price: +_tp1Cand.value.toFixed(2), abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label };
+      _tp2 = { price: +_tp2Cand.value.toFixed(2), abbr: srAbbrev(_tp2Cand.lvl) || _tp2Cand.lvl.label };
+    } else if (_tp1Cand) {
+      _tp1 = { price: +_tp1Cand.value.toFixed(2), abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label };
+      const _v = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
+      if (_v) _tp2 = { price: +_v.toFixed(2), abbr: '+1 ATR' };
+    } else {
+      const _v1 = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
+      const _v2 = _atrReach2Stk ? _interpOptVal(_atrReach2Stk) : null;
+      if (_v1) _tp1 = { price: +_v1.toFixed(2), abbr: '+1 ATR' };
+      if (_v2) _tp2 = { price: +_v2.toFixed(2), abbr: '+2 ATR' };
+    }
+
+    // Scale-out: mirror build_tiers' first-tier count (exit_strategy.py:61-75).
+    // qty 2-5 → 1; qty 6 → 2; qty ≥ 7 → qty // 3. Runner rides to TP2.
+    const _tp1N = (_tp1 && _tp2 && qty > 1)
+      ? (qty <= 5 ? 1 : qty === 6 ? 2 : Math.floor(qty / 3))
+      : 0;
+    const _runner = qty - _tp1N;
+
+    // ── Above-axis exit dots ──────────────────────────────────────────────────
+    const exitDots = [];
+    exitDots.push({ price: sl,    label: 'STOP',  role: 'stop',  mult: _slMult() });
+    exitDots.push({ price: entry, label: 'ENTRY', role: 'entry' });
+    if (_tp1N > 0 && _tp1) {
+      exitDots.push({ price: _tp1.price, label: 'TP1', role: 'tp',   n: _tp1N,   srLabel: _tp1.abbr });
+    }
+    if (_tp2) {
+      exitDots.push({ price: _tp2.price, label: _tp1N > 0 ? 'TP2' : 'EXIT', role: _tp1N > 0 ? 'tp' : 'exit', n: _runner, srLabel: _tp2.abbr });
+    } else if (_tp1) {
+      exitDots.push({ price: _tp1.price, label: 'EXIT', role: 'exit', n: _runner, srLabel: _tp1.abbr });
+    } else {
+      // Ultimate fallback when both SR and ATR resolution failed (no ATR data, no SR levels).
+      // srLabel: '×1.50' renders as "EXIT · ×1.50" so the dot is visibly arbitrary, not structural.
+      exitDots.push({ price: +(entry * _tpMult(EXIT_TP_PCT)).toFixed(2), label: 'EXIT', role: 'exit', n: qty, mult: _tpMult(EXIT_TP_PCT), srLabel: '\xd71.50' });
+    }
+
+    const lastExit = exitDots[exitDots.length - 1];
+
+    // ── SVG coordinate system — axis set by exits; S/R levels are guests ─────
 
     // When chainDayRange is null (pre-market) demand is null everywhere — every level
     // passes the ATR gate and extending the axis would blow out to the $751-intrinsic
@@ -3409,9 +3475,10 @@
     exitDots.forEach(dot => {
       const x   = toX(dot.price);
       const col = DOT_COLOR[dot.role] || '#22c55e';
+      const _dotLabel = dot.srLabel ? `${dot.label} · ${dot.srLabel}` : dot.label;
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y - 6}" x2="${x.toFixed(1)}" y2="${AXIS_Y}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
       svgParts.push(`<circle cx="${x.toFixed(1)}" cy="${AXIS_Y}" r="3.5" fill="${col}"/>`);
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 30}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.label}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 30}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${_dotLabel}</text>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 19}" text-anchor="middle" fill="${col}" font-size="8.5" font-family="monospace">$${dot.price.toFixed(2)}</text>`);
       svgParts.push(`<text x="${x.toFixed(1)}" y="${AXIS_Y - 9}" text-anchor="middle" fill="${col}" font-size="7" font-family="monospace">${fmtR(dot.price)}</text>`);
     });
@@ -3422,18 +3489,17 @@
     const rrRatio = rDenom > 0 ? ((lastExit.price - entry) / rDenom).toFixed(1) : '—';
     const riskDol = rDenom > 0 ? Math.round(rDenom * qty * 100) : 0;
     const rwdDol  = rDenom > 0 ? Math.round((lastExit.price - entry) * qty * 100) : 0;
+    // STOP keeps its ×mult label; SR-based TP/EXIT dots show their level abbreviation.
     const derivStr = exitDots
       .filter(d => d.role !== 'entry')
-      .map(d => `\xd7${d.mult.toFixed(2)}`)
+      .map(d => d.mult != null ? `\xd7${d.mult.toFixed(2)}` : (d.srLabel || d.label))
       .join(' \xb7 ') + ` off $${entry.toFixed(2)}`;
 
     let tierDesc;
-    if (tiers.length === 0) {
-      tierDesc = `${qty}ct \xb7 all at once`;
+    if (_tp1N > 0 && _tp1) {
+      tierDesc = `${qty}ct \xb7 ${_tp1N}ct @ $${_tp1.price.toFixed(2)} \xb7 ${_runner} rides`;
     } else {
-      const tierParts = tiers.map(t => `${t.n}ct @ $${t.price.toFixed(2)}`);
-      if (runner > 0) tierParts.push(`${runner} rides`);
-      tierDesc = `${qty}ct \xb7 ${tierParts.join(' \xb7 ')}`;
+      tierDesc = `${qty}ct \xb7 all at once`;
     }
 
     const edgesShown  = (edgeBelow ? 1 : 0) + (edgeAbove ? 1 : 0);
