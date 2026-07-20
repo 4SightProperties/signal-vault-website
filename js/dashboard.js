@@ -80,7 +80,8 @@
 
   // Chain state
   let chainTicker          = null;  // ticker for which chain is loaded
-  let chainCurrentPrice    = 0.0;   // stock price at chain load time
+  let chainCurrentPrice    = 0.0;   // live stock price — updated on every quote refresh
+  let chainArmStock        = 0.0;   // stock price at arm time — frozen, feeds oneAtrX
   let armedContract        = null;  // {symbol, strike, direction, expiry, ask, delta, dte}
   let _lastBaskets         = null;  // sorted basket array from last _renderBaskets call
   let _lastBasketsTimeframe = '?'; // timeframe string from last baskets payload
@@ -2118,6 +2119,7 @@
       // Load chain for the first expiry
       chainTicker       = ticker;
       chainCurrentPrice = price;
+      chainArmStock     = price;    // frozen reference for oneAtrX
       await loadChain(ticker, price);
     } catch (err) {
       if (String(err).includes('403')) {
@@ -3040,7 +3042,9 @@
       const fresh = await apiFetch(`/api/chain/quote?${params}`);
 
       // Refresh day_range so Rem ATR column stays current (ATR itself is daily, unchanged)
-      if (fresh.day_range != null) chainDayRange = fresh.day_range;
+      if (fresh.day_range   != null) chainDayRange    = fresh.day_range;
+      // Live underlying — null pre-market or on fetch failure; leave chainCurrentPrice unchanged then.
+      if (fresh.underlying  != null) chainCurrentPrice = fresh.underlying;
 
       // Update in-place so qty handler and Open button use fresh ask/bid
       armedContract.bid = fresh.bid;
@@ -3415,6 +3419,55 @@
 
     const svgParts = [];
 
+    // ── ATR-consumed gauge — track + fill + marks, behind all else ───────────
+    // _gaugeAtrRatio: same formula as cockpitAtrBanner (renderProjectionMatrix:3981).
+    // null pre-market (chainDayRange == null) → entire overlay omitted, no 0% ghost.
+    const _gaugeAtrRatio  = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
+    const _gaugeExhausted = _gaugeAtrRatio !== null && _gaugeAtrRatio >= 1;
+    if (_gaugeAtrRatio !== null) {
+      const _gaugeStopX      = toX(sl);
+      // nowX: live stock → option premium via _interpOptVal. chainCurrentPrice refreshes on ↻.
+      const _gaugeNowPrem    = chainCurrentPrice > 0 ? _interpOptVal(chainCurrentPrice) : null;
+      const _gaugeNowX       = _gaugeNowPrem != null
+        ? Math.min(W, Math.max(0, toX(_gaugeNowPrem))) : Math.min(W, Math.max(0, toX(entry)));
+      // oneAtrX: arm-time stock + full ATR → fixed mark. chainArmStock frozen at arm.
+      const _gaugeOneAtrStk  = chainArmStock > 0
+        ? (_isCall ? chainArmStock + chainAtr : chainArmStock - chainAtr)
+        : null;
+      const _gaugeOneAtrPrem = _gaugeOneAtrStk != null ? _interpOptVal(_gaugeOneAtrStk) : null;
+      const _gaugeOneAtrX    = _gaugeOneAtrPrem != null
+        ? Math.min(W, Math.max(0, toX(_gaugeOneAtrPrem))) : null;
+
+      // 1. Gray track — full width
+      svgParts.push(`<line x1="0" y1="${AXIS_Y}" x2="${W}" y2="${AXIS_Y}" stroke="#334155" stroke-width="11" stroke-linecap="butt"/>`);
+
+      // 2. Fill — green STOP→min(now,oneAtr); amber oneAtr→now if now past mark
+      if (_gaugeOneAtrX != null) {
+        const _greenEnd = Math.min(_gaugeNowX, _gaugeOneAtrX);
+        if (_greenEnd > _gaugeStopX) {
+          svgParts.push(`<line x1="${_gaugeStopX.toFixed(1)}" y1="${AXIS_Y}" x2="${_greenEnd.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
+        }
+        if (_gaugeNowX > _gaugeOneAtrX) {
+          svgParts.push(`<line x1="${_gaugeOneAtrX.toFixed(1)}" y1="${AXIS_Y}" x2="${_gaugeNowX.toFixed(1)}" y2="${AXIS_Y}" stroke="#eda100" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
+        }
+      } else if (_gaugeNowX > _gaugeStopX) {
+        svgParts.push(`<line x1="${_gaugeStopX.toFixed(1)}" y1="${AXIS_Y}" x2="${_gaugeNowX.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
+      }
+
+      // 3. 1-ATR dashed vertical — clamped to right edge with ▸ if off-scale (reuse edge-marker pattern)
+      if (_gaugeOneAtrX != null) {
+        if (_gaugeOneAtrX < W - 2) {
+          svgParts.push(`<line x1="${_gaugeOneAtrX.toFixed(1)}" y1="${AXIS_Y - 8}" x2="${_gaugeOneAtrX.toFixed(1)}" y2="${AXIS_Y + 8}" stroke="#eda100" stroke-width="1.5" stroke-dasharray="3 2" stroke-linecap="round"/>`);
+        } else {
+          svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 11}" text-anchor="end" fill="#eda100" font-size="7.5" font-family="monospace" opacity="0.85">▸ 1ATR</text>`);
+        }
+      }
+
+      // 4. `now` tick — extends ±12 px above/below axis so it shows when now≈entry dot
+      const _nowCol = _gaugeExhausted ? '#eda100' : '#e2e8f0';
+      svgParts.push(`<line x1="${_gaugeNowX.toFixed(1)}" y1="${AXIS_Y - 12}" x2="${_gaugeNowX.toFixed(1)}" y2="${AXIS_Y + 12}" stroke="${_nowCol}" stroke-width="2" stroke-linecap="round"/>`);
+    }
+
     // Base axis
     svgParts.push(`<line x1="0" y1="${AXIS_Y}" x2="${W}" y2="${AXIS_Y}" stroke="var(--border-bright)" stroke-width="1.2"/>`);
 
@@ -3531,7 +3584,15 @@
       ? `<div class="rrl-footer rrl-footer-note">${_footerParts.join(' \xb7 ')}</div>`
       : '';
 
-    el.innerHTML = `${svg}<div class="rrl-footer">R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
+    // ATR footer prefix — same ratio source as cockpitAtrBanner; amber whole line when exhausted.
+    let _atrFooterPfx = '';
+    if (_gaugeAtrRatio !== null) {
+      const _atrPct  = Math.round(_gaugeAtrRatio * 100);
+      const _atrLeft = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
+      _atrFooterPfx  = `ATR ${_atrPct}% used \xb7 ${_atrLeft} left \xb7 `;
+    }
+    const _footerAmberStyle = _gaugeExhausted ? ' style="color:#eda100"' : '';
+    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
     el.style.display = '';
   }
 
