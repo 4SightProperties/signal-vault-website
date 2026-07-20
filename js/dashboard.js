@@ -3425,12 +3425,8 @@
     const _gaugeAtrRatio  = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
     const _gaugeExhausted = _gaugeAtrRatio !== null && _gaugeAtrRatio >= 1;
     if (_gaugeAtrRatio !== null) {
-      const _gaugeStopX      = toX(sl);
-      // nowX: live stock → option premium via _interpOptVal. chainCurrentPrice refreshes on ↻.
-      const _gaugeNowPrem    = chainCurrentPrice > 0 ? _interpOptVal(chainCurrentPrice) : null;
-      const _gaugeNowX       = _gaugeNowPrem != null
-        ? Math.min(W, Math.max(0, toX(_gaugeNowPrem))) : Math.min(W, Math.max(0, toX(entry)));
-      // oneAtrX: arm-time stock + full ATR → fixed mark. chainArmStock frozen at arm.
+      const _gaugeEntryX     = toX(entry);
+      // oneAtrX: arm-time stock ± ATR → premium-space target mark. Unchanged — location only.
       const _gaugeOneAtrStk  = chainArmStock > 0
         ? (_isCall ? chainArmStock + chainAtr : chainArmStock - chainAtr)
         : null;
@@ -3438,20 +3434,25 @@
       const _gaugeOneAtrX    = _gaugeOneAtrPrem != null
         ? Math.min(W, Math.max(0, toX(_gaugeOneAtrPrem))) : null;
 
+      // nowX: same ratio as header (chainDayRange/chainAtr) projected entry→1-ATR mark.
+      // Fill length === header %. No chainCurrentPrice, no _interpOptVal.
+      const _gaugeNowX = _gaugeOneAtrX != null
+        ? Math.min(W, Math.max(_gaugeEntryX,
+            _gaugeEntryX + Math.min(_gaugeAtrRatio, 1.5) * (_gaugeOneAtrX - _gaugeEntryX)))
+        : _gaugeEntryX;
+
       // 1. Gray track — full width
       svgParts.push(`<line x1="0" y1="${AXIS_Y}" x2="${W}" y2="${AXIS_Y}" stroke="#334155" stroke-width="11" stroke-linecap="butt"/>`);
 
-      // 2. Fill — green STOP→min(now,oneAtr); amber oneAtr→now if now past mark
+      // 2. Fill — green entryX→min(now,oneAtr); amber oneAtr→now if progress > 1.0
       if (_gaugeOneAtrX != null) {
         const _greenEnd = Math.min(_gaugeNowX, _gaugeOneAtrX);
-        if (_greenEnd > _gaugeStopX) {
-          svgParts.push(`<line x1="${_gaugeStopX.toFixed(1)}" y1="${AXIS_Y}" x2="${_greenEnd.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
+        if (_greenEnd > _gaugeEntryX) {
+          svgParts.push(`<line x1="${_gaugeEntryX.toFixed(1)}" y1="${AXIS_Y}" x2="${_greenEnd.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
         }
         if (_gaugeNowX > _gaugeOneAtrX) {
           svgParts.push(`<line x1="${_gaugeOneAtrX.toFixed(1)}" y1="${AXIS_Y}" x2="${_gaugeNowX.toFixed(1)}" y2="${AXIS_Y}" stroke="#eda100" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
         }
-      } else if (_gaugeNowX > _gaugeStopX) {
-        svgParts.push(`<line x1="${_gaugeStopX.toFixed(1)}" y1="${AXIS_Y}" x2="${_gaugeNowX.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
       }
 
       // 3. 1-ATR dashed vertical — clamped to right edge with ▸ if off-scale (reuse edge-marker pattern)
@@ -3589,7 +3590,7 @@
     if (_gaugeAtrRatio !== null) {
       const _atrPct  = Math.round(_gaugeAtrRatio * 100);
       const _atrLeft = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
-      _atrFooterPfx  = `ATR ${_atrPct}% used \xb7 ${_atrLeft} left \xb7 `;
+      _atrFooterPfx  = `day range ${_atrPct}% used \xb7 ${_atrLeft} left \xb7 `;
     }
     const _footerAmberStyle = _gaugeExhausted ? ' style="color:#eda100"' : '';
     el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
@@ -4045,7 +4046,7 @@
         _atrBannerHtml = '<div class="mat-atr-banner mat-atr-banner-exhausted">ATR EXHAUSTED</div>';
       } else {
         const _leftStr = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
-        _atrBannerHtml = `<div class="mat-atr-banner">ATR ${Math.round(_atrRatio * 100)}% used · ${_leftStr} left</div>`;
+        _atrBannerHtml = `<div class="mat-atr-banner">day range ${Math.round(_atrRatio * 100)}% used · ${_leftStr} left</div>`;
       }
     }
 
