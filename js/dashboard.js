@@ -2392,8 +2392,15 @@
     const iv  = parseFloat(strike.iv)  || 0;
     const dte = parseInt(strike.dte,10) || 0;
 
-    const defaultTarget = chainCurrentPrice > 0 ? chainCurrentPrice.toFixed(2) : '';
-    const targetSrc     = chainCurrentPrice > 0 ? 'watchlist trigger' : 'enter target';
+    const _remAtr  = chainAtr > 0 && chainDayRange != null ? Math.max(0, chainAtr - chainDayRange) : 0;
+    const _srUp    = srLevelsCache?.overhead_swings?.[0] ?? srLevelsCache?.round_above ?? null;
+    const _srDn    = srLevelsCache?.underfoot_swings?.[0] ?? srLevelsCache?.round_below ?? null;
+    const _seedUp  = _srUp  ?? (_remAtr > 0 ? chainCurrentPrice + _remAtr : chainCurrentPrice * 1.0025);
+    const _seedDn  = _srDn  ?? (_remAtr > 0 ? chainCurrentPrice - _remAtr : chainCurrentPrice * 0.9975);
+    const defaultTarget = chainCurrentPrice > 0 ? (bias === 'bullish' ? _seedUp : _seedDn).toFixed(2) : '';
+    const _srcUp   = _srUp  ? 'seed · overhead SR' : (_remAtr > 0 ? 'seed · ATR reach' : 'seed · above spot');
+    const _srcDn   = _srDn  ? 'seed · support SR'  : (_remAtr > 0 ? 'seed · ATR reach' : 'seed · below spot');
+    const targetSrc = chainCurrentPrice > 0 ? (bias === 'bullish' ? _srcUp : _srcDn) : 'enter target';
 
     // ── Compact strip — collapse chain body to armed ± 2 neighbors ───────────
     if (chainPanelEl && chainLastStrikesData) {
