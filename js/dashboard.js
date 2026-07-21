@@ -95,6 +95,8 @@
   let chainAtr             = null;  // Wilder EWM ATR14 from _sr_atr_context at chain load
   let chainDayRange        = null;  // today's RTH hi-lo range; updated on ↻ via chain/quote
   let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
+  let _armedRefreshTimer   = null;  // interval handle — ticks refreshArmedQuote every 30s while armed
+  let _armedQuoteRefreshing = false; // in-flight guard — prevents overlapping /api/chain/quote calls
 
   // History tab state
   let isAdmin           = false;
@@ -2097,6 +2099,7 @@
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading expirations…</div>';
     expiryEl.innerHTML  = '<option value="">— loading —</option>';
+    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
     armedContract       = null;
     matrixProjCache     = null;
     payoutCurveCache    = null;
@@ -2144,6 +2147,7 @@
     }
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
+    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
     armedContract    = null;
     matrixProjCache  = null;
     payoutCurveCache = null;
@@ -2380,7 +2384,9 @@
   }
 
   async function armContract(strike, bias) {
+    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
     armedContract = { ...strike, bias };
+    _armedRefreshTimer = setInterval(() => { if (armedContract) refreshArmedQuote(); }, 30000);
 
     const chainBody    = document.getElementById('chainBody');
     const chainCockpit = document.getElementById('chainCockpit');
@@ -3026,6 +3032,8 @@
   // calls and the Open button use fresh data.
   async function refreshArmedQuote() {
     if (!armedContract || !chainTicker) return;
+    if (_armedQuoteRefreshing) return;
+    _armedQuoteRefreshing = true;
     const ageEl = document.getElementById('cockpitQuoteAge');
     if (ageEl) ageEl.textContent = ' · refreshing…';
 
@@ -3068,6 +3076,8 @@
       if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
     } catch (_) {
       if (ageEl) ageEl.textContent = ' · refresh failed';
+    } finally {
+      _armedQuoteRefreshing = false;
     }
   }
 
