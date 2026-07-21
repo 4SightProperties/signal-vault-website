@@ -97,6 +97,8 @@
   let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
   let _armedRefreshTimer   = null;  // interval handle — ticks refreshArmedQuote every 30s while armed
   let _armedQuoteRefreshing = false; // in-flight guard — prevents overlapping /api/chain/quote calls
+  let _rrProfitSide       = null;  // profit-side SR levels hoisted from renderRrLine; read by OCO buttons
+  let _ocoButtonRefreshFn = null;  // set by armContract so renderRrLine can trigger OCO button re-render
 
   // History tab state
   let isAdmin           = false;
@@ -2385,6 +2387,7 @@
 
   async function armContract(strike, bias) {
     if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
+    _ocoButtonRefreshFn = null;
     armedContract = { ...strike, bias };
     _armedRefreshTimer = setInterval(() => { if (armedContract) refreshArmedQuote(); }, 30000);
 
@@ -2667,9 +2670,12 @@
     // Per-layer broker/bot readout — replaces _updateLayerSubtitle.
     // OCO bracket: creates TP/stop inputs inside the broker column and wires their listeners.
     // The three non-OCO layers render with amber treatment (nothing rests at broker).
-    // _ocoTpStash persists the typed TP value across OCO → other → OCO layer switches within
-    // one arm session. Resets on next armContract call (it is declared in armContract's scope).
-    let _ocoTpStash = null;
+    // _ocoTpStash: last-selected TP price string — stashed on layer-switch via the hidden input.
+    // _ocoLvlStash: last-selected level label (e.g. 'UF1', '×1.50') — primary restore key for
+    //   SR button active state across layer-switches and 30s button re-renders.
+    // Both reset on next armContract call (declared in armContract's scope).
+    let _ocoTpStash  = null;
+    let _ocoLvlStash = null;
     function _updateBrokerBotCols(layer) {
       const brokerEl  = document.getElementById('cockpitBrokerContent');
       const botEl     = document.getElementById('cockpitBotContent');
@@ -2709,6 +2715,42 @@
         if (brokerCol) brokerCol.classList.add('cockpit-broker-accent');
         const curAsk = armedContract ? armedContract.ask : 0;
         const sl     = curAsk > 0 ? +(curAsk * _slMult()).toFixed(2) : '';
+
+        // Build SR-level TP buttons from hoisted _rrProfitSide.
+        // entry via _resolveEntryPrice() — same call used by _updateOcoHints (line below).
+        const { displayPrice: _btEntry } = _resolveEntryPrice();
+        const _lvls = _rrProfitSide || [];
+        const _srBtns = _lvls.map(d => {
+          const canPrice = d.value != null;
+          const lbl      = d.lvl.label || '?';
+          const stkStr   = `$${(+d.lvl.price).toFixed(0)}`;
+          if (canPrice) {
+            const pct    = _btEntry > 0
+              ? `${d.value >= _btEntry ? '+' : ''}${((d.value / _btEntry - 1) * 100).toFixed(0)}%`
+              : '';
+            return `<button class="cockpit-level-btn cockpit-oco-tp-btn" type="button"
+                      data-lvl-label="${lbl}" data-lvl-price="${d.value}"
+                    ><span class="oco-btn-lbl">${lbl}</span
+                    ><span class="oco-btn-stk">${stkStr}</span
+                    ><span class="oco-btn-val">$${d.value.toFixed(2)}</span
+                    ><span class="oco-btn-pct">${pct}</span></button>`;
+          } else {
+            return `<button class="cockpit-level-btn cockpit-oco-tp-btn" type="button"
+                      data-lvl-label="${lbl}" disabled
+                    ><span class="oco-btn-lbl">${lbl}</span
+                    ><span class="oco-btn-stk">${stkStr}</span
+                    ><span class="oco-btn-val oco-btn-val--unpriced">prices at open</span></button>`;
+          }
+        }).join('');
+        // ×1.50 fallback — always present; blank tp_price → server computes from actual fill
+        const _defTp  = _btEntry > 0 ? `$${(_btEntry * _tpMult(EXIT_TP_PCT)).toFixed(2)}` : '—';
+        const _defBtn = `<button class="cockpit-level-btn cockpit-oco-tp-btn" type="button"
+                           data-lvl-label="×1.50"
+                         ><span class="oco-btn-lbl">×1.50</span
+                         ><span class="oco-btn-stk">default</span
+                         ><span class="oco-btn-val">${_defTp}</span
+                         ><span class="oco-btn-pct">+${EXIT_TP_PCT}% est</span></button>`;
+
         brokerEl.innerHTML = `
           <div class="cockpit-oco-check">☑ stop-loss</div>
           <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
@@ -2716,29 +2758,62 @@
                    disabled value="${sl}" style="width:68px">
             <span class="cockpit-oco-sub" id="cockpitOcoStopSub">−30% est</span>
           </div>
-          <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit</div>
-          <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
-            <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
-                   min="0.01" step="0.01" style="width:68px">
-            <span class="cockpit-oco-sub" id="cockpitOcoTpSub">+50% est</span>
-          </div>
+          <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit — pick a level</div>
+          <div class="cockpit-oco-tp-list">${_srBtns}${_defBtn}</div>
+          <input type="number" id="cockpitOcoTpInput" style="display:none" min="0.01" step="0.01">
           <div class="cockpit-tif-row" style="margin-top:0.22rem">
             <span class="cockpit-section-label">tif (legs)</span>
             <span class="cockpit-field-chip">gtc</span>
-            <span class="cockpit-tif-sub">blank = from actual fill</span>
+            <span class="cockpit-tif-sub">level price = resting limit; ×1.50 = fill × 1.50</span>
           </div>`;
         botEl.innerHTML = `
           <div class="cockpit-col-item">dollar cap · opt floor · time exits</div>
           <div class="cockpit-col-item cockpit-col-suppressed">trail stop · hard stop · ATR stop</div>
           <div class="cockpit-col-item cockpit-col-suppressed">stall exit · tp1 · tp2 · cloud break</div>`;
-        // Restore stashed TP then wire the freshly created inputs
+
+        // Wire click handlers — bind-time gate: return before addEventListener on disabled buttons.
+        // A null-value (unpriced) level has disabled=true in HTML; no handler is ever attached.
         const tpInpEl = document.getElementById('cockpitOcoTpInput');
-        if (tpInpEl && _ocoTpStash) tpInpEl.value = _ocoTpStash;
-        _updateOcoHints();
+        brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(btn => {
+          if (btn.disabled) return;   // bind-time gate — no handler on unpriced levels
+          btn.addEventListener('click', () => {
+            const lbl   = btn.dataset.lvlLabel;
+            const price = lbl === '×1.50' ? null : parseFloat(btn.dataset.lvlPrice);
+            _ocoLvlStash = lbl;
+            _ocoTpStash  = price != null ? String(price) : null;
+            if (tpInpEl) tpInpEl.value = price != null ? price : '';
+            brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(b => b.classList.remove('active'));
+            btn.classList.add('active');
+            _updateOcoPnl();
+          });
+        });
+
+        // Restore last selection; fall back to ×1.50 if previous level is now unpriced or gone.
+        const _allBtns = Array.from(brokerEl.querySelectorAll('.cockpit-oco-tp-btn'));
+        const _matchBtn = _ocoLvlStash
+          ? _allBtns.find(b => b.dataset.lvlLabel === _ocoLvlStash && !b.disabled)
+          : null;
+        if (_matchBtn) {
+          _matchBtn.classList.add('active');
+          const _rp = _matchBtn.dataset.lvlPrice;
+          if (_rp && tpInpEl) tpInpEl.value = _rp;
+          _ocoTpStash = _rp || null;
+        } else {
+          // No stash or previously selected level is now unpriced — default to ×1.50
+          _ocoLvlStash = null;
+          _ocoTpStash  = null;
+          const _defBtnEl = _allBtns.find(b => b.dataset.lvlLabel === '×1.50');
+          if (_defBtnEl) _defBtnEl.classList.add('active');
+        }
+
         _updateOcoPnl();
-        if (tpInpEl) tpInpEl.addEventListener('input', _updateOcoPnl);
       }
     }
+    // Let renderRrLine trigger an OCO button re-render when _rrProfitSide refreshes (30s cycle).
+    // Captures this arm's _updateBrokerBotCols closure; cleared at next armContract call.
+    _ocoButtonRefreshFn = () => {
+      if (cockpitExitLayer === 'oco_bracket') _updateBrokerBotCols('oco_bracket');
+    };
 
     // Target override apply
     document.getElementById('cockpitApplyTarget').addEventListener('click', () => {
@@ -2823,7 +2898,7 @@
         const derivedSl = +(ask * _slMult()).toFixed(2);
         if (typed > 0) ocoTpPayload = typed;
         const tpDisplay = ocoTpPayload !== undefined
-          ? `$${ocoTpPayload.toFixed(2)} (your price)`
+          ? `$${ocoTpPayload.toFixed(2)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
           : `≈$${derivedTp.toFixed(2)} (est. from ask; server uses actual fill)`;
         ocoBracketHtml =
           `OCO bracket: TP <strong>${tpDisplay}</strong>, ` +
@@ -3261,6 +3336,9 @@
       .sort((a, b) => _isCall
         ? a.lvl.price - b.lvl.price    // ascending for calls — nearest overhead first
         : b.lvl.price - a.lvl.price);  // descending for puts — nearest underfoot first
+    // Expose to OCO panel; call refresh hook so buttons update on every renderRrLine (incl. 30s).
+    _rrProfitSide = _profitSide;
+    if (_ocoButtonRefreshFn) _ocoButtonRefreshFn();
 
     const _tp1Cand = _profitSide[0] || null;
     const _tp1Val  = _tp1Cand ? _tp1Cand.value : null;
