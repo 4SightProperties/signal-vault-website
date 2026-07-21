@@ -3480,11 +3480,17 @@
     function stripX(pct) { return Math.min(W, (pct / 150) * W); }
     const _stripOneAtrX = stripX(100);  // fixed at W×0.6667
 
-    // Stock price at strip major-tick, spot-anchored (open unavailable — dayRange is hi-lo scalar).
+    // Stock price at strip major-tick.
+    // In-session: anchored to chainCurrentPrice at the live consumed-% position.
+    // Pre-session (chainDayRange null → _atrConsumedPct null): anchored to chainArmStock
+    // with consumed treated as 0, showing the static ATR ladder from close.
     // Ticks before `now` are approximate (assumes monotonic move from open); labeled with ~.
     function _stripStkAtPct(pct) {
-      if (!chainCurrentPrice || !chainAtr || _atrConsumedPct == null) return null;
-      return chainCurrentPrice + ((pct - _atrConsumedPct) / 100) * chainAtr * (_isCall ? 1 : -1);
+      if (!chainAtr) return null;
+      const anchor   = _atrConsumedPct != null ? chainCurrentPrice : chainArmStock;
+      const consumed = _atrConsumedPct ?? 0;
+      if (!anchor) return null;
+      return anchor + ((pct - consumed) / 100) * chainAtr * (_isCall ? 1 : -1);
     }
 
     // 1. Gray track
