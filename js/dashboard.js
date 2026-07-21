@@ -1004,6 +1004,15 @@
 
   // ── Center panel — chart, levels, chain ───────────────────────────────────
 
+  function _syncBiasButtons() {
+    const val     = (document.getElementById('chainBias') || {}).value;
+    const callBtn = document.getElementById('chainBiasCall');
+    const putBtn  = document.getElementById('chainBiasPut');
+    if (!callBtn || !putBtn) return;
+    callBtn.className = val === 'bullish' ? 'chain-bias-btn active-call' : 'chain-bias-btn inactive';
+    putBtn.className  = val === 'bearish' ? 'chain-bias-btn active-put'  : 'chain-bias-btn inactive';
+  }
+
   function setupCenterPanel() {
     const searchBtn   = document.getElementById('tickerSearchBtn');
     const searchInput = document.getElementById('tickerSearch');
@@ -1029,6 +1038,18 @@
     });
     document.getElementById('chainExpiry').addEventListener('change', () => {
       if (chainTicker) loadChain(chainTicker, chainCurrentPrice);
+    });
+
+    // Bias toggle buttons — set hidden select then fire its change handler; sync visual state
+    document.getElementById('chainBiasCall').addEventListener('click', () => {
+      document.getElementById('chainBias').value = 'bullish';
+      document.getElementById('chainBias').dispatchEvent(new Event('change'));
+      _syncBiasButtons();
+    });
+    document.getElementById('chainBiasPut').addEventListener('click', () => {
+      document.getElementById('chainBias').value = 'bearish';
+      document.getElementById('chainBias').dispatchEvent(new Event('change'));
+      _syncBiasButtons();
     });
 
     // Chain refresh button
@@ -1085,6 +1106,7 @@
     // Seed bias selector from watchlist direction
     const biasEl = document.getElementById('chainBias');
     if (biasEl) biasEl.value = bias;
+    _syncBiasButtons();
     _updateDirectionWarning();
 
     // Show chain controls (including refresh button) and load expirations
@@ -2529,12 +2551,12 @@
   <div class="cockpit-levels-section">
     <div class="cockpit-inline-row">
       <span class="cockpit-section-label">exit strategy</span>
-      <div class="cockpit-level-btns" id="cockpitExitLayerBtns">
-        <button class="cockpit-level-btn active" data-exit-layer="default">Default</button>
-        <button class="cockpit-level-btn" data-exit-layer="tight_trail">Tight trail</button>
-        <button class="cockpit-level-btn" data-exit-layer="cloud_break">Cloud break</button>
-        <button class="cockpit-level-btn" data-exit-layer="oco_bracket">OCO bracket</button>
-      </div>
+      <select id="cockpitExitLayerSelect" class="chain-select" style="flex:1">
+        <option value="default">Default</option>
+        <option value="tight_trail">Tight trail</option>
+        <option value="cloud_break">Cloud break</option>
+        <option value="oco_bracket">OCO bracket</option>
+      </select>
     </div>
     <!-- Per-layer content rendered by _updateBrokerBotCols -->
     <div class="cockpit-broker-bot-cols">
@@ -2640,14 +2662,9 @@
     // your_price input — live-update resolved price, max loss, B/E as user types
     document.getElementById('cockpitEntryPriceInput').addEventListener('input', _updateEntryDisplay);
 
-    // Exit-layer buttons — update broker/bot readout; _updateBrokerBotCols handles OCO wiring
-    document.getElementById('cockpitExitLayerBtns').addEventListener('click', e => {
-      const btn = e.target.closest('[data-exit-layer]');
-      if (!btn) return;
-      document.querySelectorAll('#cockpitExitLayerBtns .cockpit-level-btn')
-        .forEach(b => b.classList.remove('active'));
-      btn.classList.add('active');
-      cockpitExitLayer = btn.dataset.exitLayer;
+    // Exit-layer select — update broker/bot readout; _updateBrokerBotCols handles OCO wiring
+    document.getElementById('cockpitExitLayerSelect').addEventListener('change', e => {
+      cockpitExitLayer = e.target.value;
       _updateBrokerBotCols(cockpitExitLayer);
     });
 

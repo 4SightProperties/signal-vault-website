@@ -899,6 +899,29 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .chain-select:focus { outline: none; border-color: var(--accent); }
 
+.chain-bias-btn {
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.66rem;
+  font-weight: 600;
+  padding: 0.15rem 0.5rem;
+  transition: border-color 0.15s, background 0.15s, color 0.15s, opacity 0.15s;
+}
+.chain-bias-btn.inactive { opacity: 0.45; }
+.chain-bias-btn.active-call {
+  border-color: rgba(74,222,128,0.5);
+  background: rgba(74,222,128,0.1);
+  color: var(--accent);
+}
+.chain-bias-btn.active-put {
+  border-color: rgba(239,68,68,0.5);
+  background: rgba(239,68,68,0.1);
+  color: var(--danger);
+}
+
 .chain-dir-warning {
   color: var(--danger);
   font-size: 0.66rem;
@@ -1795,8 +1818,6 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 
 .cockpit-level-btns { display: flex; gap: 0.28rem; align-items: center; }
-/* Exit strategy has 4 buttons — render as 2×2 grid; fills remaining flex space after label */
-#cockpitExitLayerBtns { display: grid; grid-template-columns: 1fr 1fr; gap: 0.2rem; flex: 1; }
 
 .cockpit-level-btn {
   flex: 0 0 auto;

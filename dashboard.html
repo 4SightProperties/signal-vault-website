@@ -226,10 +226,12 @@
       <div class="dash-panel-header">
         <span class="dash-panel-title">Option Chain</span>
         <div class="chain-controls" id="chainControls" style="display:none">
-          <select class="chain-select" id="chainBias">
+          <select class="chain-select" id="chainBias" style="display:none">
             <option value="bullish">CALL</option>
             <option value="bearish">PUT</option>
           </select>
+          <button class="chain-bias-btn" id="chainBiasCall" data-bias="bullish">calls</button>
+          <button class="chain-bias-btn" id="chainBiasPut" data-bias="bearish">puts</button>
           <span id="chainDirWarning" class="chain-dir-warning"></span>
           <select class="chain-select" id="chainExpiry">
             <option value="">— expiry —</option>
