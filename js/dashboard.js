@@ -3315,8 +3315,8 @@
 
     // Resolve TP1 / TP2 with fallback ladder:
     //   2 SR levels ≥1.20× apart  → both SR (price may be null pre-session)
-    //   1 SR level                 → TP1 SR; TP2 +1 ATR only when TP1 is priced
-    //   0 SR levels                → TP1 +1 ATR, TP2 +2 ATR, both labeled ATR
+    //   1 SR level                 → TP1 SR; TP2 +1 ATR only when TP1 is priced AND +1 ATR ≥1.20× TP1
+    //   0 SR levels                → TP1 +1 ATR; TP2 +2 ATR only when +2 ATR ≥1.20× +1 ATR
     // price=null means SR is identified by stock position but option value unavailable.
     let _tp1 = null, _tp2 = null;
     if (_tp1Cand && _tp2Cand) {
@@ -3326,13 +3326,15 @@
       _tp1 = { price: _tp1Cand.value != null ? +_tp1Cand.value.toFixed(2) : null, abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label, stockPrice: _tp1Cand.lvl.price };
       if (_tp1.price != null) {
         const _v = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
-        if (_v) _tp2 = { price: +_v.toFixed(2), abbr: '+1 ATR', stockPrice: _atrReach1Stk };
+        // Same 1.20× floor as SR path: skip ATR TP2 when it's not a meaningfully higher exit.
+        if (_v != null && _v >= _tp1.price * 1.20) _tp2 = { price: +_v.toFixed(2), abbr: '+1 ATR', stockPrice: _atrReach1Stk };
       }
     } else {
       const _v1 = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
       const _v2 = _atrReach2Stk ? _interpOptVal(_atrReach2Stk) : null;
       if (_v1) _tp1 = { price: +_v1.toFixed(2), abbr: '+1 ATR', stockPrice: _atrReach1Stk };
-      if (_v2) _tp2 = { price: +_v2.toFixed(2), abbr: '+2 ATR', stockPrice: _atrReach2Stk };
+      // TP2 only when +2 ATR is a meaningfully different exit — same 1.20× floor as SR path.
+      if (_v2 != null && _v1 != null && _v2 >= _v1 * 1.20) _tp2 = { price: +_v2.toFixed(2), abbr: '+2 ATR', stockPrice: _atrReach2Stk };
     }
 
     // Scale-out: mirror build_tiers' first-tier count (exit_strategy.py:61-75).
