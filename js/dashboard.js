@@ -95,6 +95,7 @@
   let payoutCurveCache     = null;  // range-mode response — for qty/as-of rerenders
   let chainAtr             = null;  // Wilder EWM ATR14 from _sr_atr_context at chain load
   let chainDayRange        = null;  // today's RTH hi-lo range; updated on ↻ via chain/quote
+  let chainDayOpen         = null;  // today's session open stock price; null until backend supplies day_open
   let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
   let _armedRefreshTimer   = null;  // interval handle — ticks refreshArmedQuote every 30s while armed
   let _armedQuoteRefreshing = false; // in-flight guard — prevents overlapping /api/chain/quote calls
@@ -1080,6 +1081,7 @@
     payoutCurveCache = null;
     chainAtr         = null;
     chainDayRange   = null;
+    chainDayOpen     = null;
 
     const searchInput = document.getElementById('tickerSearch');
     if (searchInput) searchInput.value = t;
@@ -2230,6 +2232,7 @@
     // day_range grows intraday and is refreshed on every ↻ via chain/quote.
     chainAtr      = (srCtx.sr_atr > 0) ? srCtx.sr_atr : null;
     chainDayRange = srCtx.day_range ?? null;
+    chainDayOpen  = srCtx.day_open  ?? null;
 
     // When atr_reachable is explicitly false, grey the @TP1 column and suppress values.
     // The SR level exists but is outside today's ATR budget; projecting to it would be
@@ -2419,7 +2422,7 @@
     chainArmedCloudLevels = (srLevelsCache?.cloud_levels || []).map(c => ({
       label: c.label,
       price: _isCall ? Math.min(c.ema_short, c.ema_long) : Math.max(c.ema_short, c.ema_long),
-      type:  'sr',
+      type:  'cloud',
       role:  _isCall ? 'support' : 'resistance',
     })).filter(c => c.price > 0);
     _armedRefreshTimer = setInterval(() => { if (armedContract) refreshArmedQuote(); }, 30000);
@@ -3154,6 +3157,7 @@
 
       // Refresh day_range so Rem ATR column stays current (ATR itself is daily, unchanged)
       if (fresh.day_range   != null) chainDayRange    = fresh.day_range;
+      if (fresh.day_open    != null) chainDayOpen     = fresh.day_open;
       // Live underlying — null pre-market or on fetch failure; leave chainCurrentPrice unchanged then.
       if (fresh.underlying  != null) chainCurrentPrice = fresh.underlying;
 
@@ -3475,314 +3479,264 @@
 
     const lastExit = exitDots[exitDots.length - 1];
 
-    // ── Actionable zone + TP2 on-scale gate ──────────────────────────────────
-    // TP2 as runner (label='TP2', _tp1N>0) can price to enormous premiums when the
-    // SR level is far from current price. Gate: on-scale only if within 1 actionable
-    // span beyond TP1. _actSpan = stop..tp1, the zone you actively manage.
-    // qty=1: _tp1N=0, TP2 dot is labeled 'EXIT' not 'TP2', _tp2IsRunner=false → always on-scale.
-    const _actMin      = Math.min(sl, entry, (_tp1 && _tp1.price != null) ? _tp1.price : entry);
-    const _actMax      = Math.max(sl, entry, (_tp1 && _tp1.price != null) ? _tp1.price : entry);
-    const _actSpan     = _actMax - _actMin;
+    // ── TP2 on-scale gate — stock-price space ────────────────────────────────
+    // TP2 runner blows domain if its SR level is deep OTM. Gate: on-scale when stock
+    // price is within 2 ATR of spot. qty=1 → _tp2IsRunner=false → always on-scale.
     const _tp2IsRunner = _tp2 != null && _tp1N > 0;
-    const _tp2OnScale  = _tp2IsRunner ? (_tp2.price <= _actMax + _actSpan) : true;
+    const _tp2OnScale  = _tp2IsRunner
+      ? (_tp2.stockPrice != null && (chainAtr
+          ? (_isCall ? _tp2.stockPrice <= chainCurrentPrice + 2 * chainAtr
+                     : _tp2.stockPrice >= chainCurrentPrice - 2 * chainAtr)
+          : true))
+      : true;
 
-    // ── SVG coordinate system — axis set by exits; S/R levels are guests ─────
+    // ── §0 Stock-price domain ──────────────────────────────────────────────────
+    // x-axis is always low→high left→right; direction emerges from stock positions.
+    const _spot = chainCurrentPrice;
 
-    // When chainDayRange is null (pre-market) demand is null everywhere — every level
-    // passes the ATR gate and extending the axis would blow out to the $751-intrinsic
-    // case. Skip extension; exits-anchored axis + edge markers are the correct state.
-    const _atrAxisHasData = chainDayRange != null;
-    const _srAxisPrices = _atrAxisHasData
-      ? _lvlValued.filter(d => d.demand !== null && isFinite(d.demand) && d.demand <= REACH_PCT
-          && (_actSpan <= 0 || d.value <= _actMax + _actSpan))
-        .map(d => d.value)
-      : [];
+    // ATR zone bounds in the profit direction from spot
+    const _atr075Stk = chainAtr && _spot
+      ? (_isCall ? _spot + 0.75 * chainAtr : _spot - 0.75 * chainAtr) : null;
+    const _atr100Stk = chainAtr && _spot
+      ? (_isCall ? _spot + 1.0  * chainAtr : _spot - 1.0  * chainAtr) : null;
+    const _atr150Stk = chainAtr && _spot
+      ? (_isCall ? _spot + 1.5  * chainAtr : _spot - 1.5  * chainAtr) : null;
 
-    const _axisExits = exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale));
-    const exitMin   = Math.min(..._axisExits.map(d => d.price));
-    const exitMax   = Math.max(..._axisExits.map(d => d.price));
-    const pad       = (exitMax - exitMin) * 0.30;
-    const _exitMinP = Math.max(0, exitMin - pad);
-    const _exitMaxP = exitMax + pad;
-    let minP, maxP;
-    if (_atrAxisHasData && _srAxisPrices.length > 0) {
-      minP = Math.max(0, Math.min(_exitMinP, Math.min(..._srAxisPrices)));
-      maxP = Math.max(_exitMaxP, Math.max(..._srAxisPrices));
-    } else {
-      minP = _exitMinP;
-      maxP = _exitMaxP;
+    // Profit-side SR/cloud split: within 1.5 ATR → dots; beyond → edge markers
+    const _srOnScale  = _profitSide.filter(d =>
+      _atr150Stk == null || (_isCall ? d.lvl.price <= _atr150Stk : d.lvl.price >= _atr150Stk));
+    const _srOffScale = _profitSide.filter(d => !_srOnScale.includes(d));
+
+    // Domain: seed from all plotted stock positions
+    const _stopStk = exitDots.find(d => d.role === 'stop')?.stockPrice ?? null;
+    const _domainPts = [_spot];
+    if (_stopStk != null) {
+      _domainPts.push(_stopStk);
+    } else if (_spot && chainAtr) {
+      // Provide minimal visual room on loss side when STOP stock price is unavailable
+      _domainPts.push(_isCall ? _spot - 0.5 * chainAtr : _spot + 0.5 * chainAtr);
     }
-    const span    = maxP - minP;
+    if (_atr100Stk != null) _domainPts.push(_atr100Stk);
+    exitDots.filter(d => d.label !== 'TP2' || _tp2OnScale)
+      .forEach(d => { if (d.stockPrice != null) _domainPts.push(d.stockPrice); });
+    _srOnScale.forEach(d => _domainPts.push(d.lvl.price));
+    if (chainDayOpen != null) _domainPts.push(chainDayOpen);
 
-    // el is display:none on first call; measure the always-visible parent (#chainArmed)
-    // and subtract its computed horizontal padding so W ≈ the SVG's actual pixel width.
+    const _minStk  = Math.min(..._domainPts);
+    const _maxStk  = Math.max(..._domainPts);
+    const _stkPad  = (_maxStk - _minStk) * 0.12;
+    const minStkP  = Math.max(0, _minStk - _stkPad);
+    const maxStkP  = _maxStk + _stkPad;
+    const stkSpan  = maxStkP - minStkP || 1;
+
+    // SVG sizing — no ATR strip; dots below axis with 3-line label stacks.
+    // AXIS_Y=32: ~28px above for ATR zone labels + now/open tick labels.
+    // Labels bottom at AXIS_Y+37=69; stagger adds 18px → 87; margin → SVG_H=108.
     const _ps = window.getComputedStyle(el.parentElement);
     const W = Math.round(
       el.parentElement.clientWidth
       - parseFloat(_ps.paddingLeft)
       - parseFloat(_ps.paddingRight)
-    );  // #chainArmed is always visible when this runs — clientWidth is always a real value
-    // 131px: ATR strip occupies top 18px; 3-line exit dots + stagger need 49px above AXIS_Y=73;
-    // SR labels bottom at AXIS_Y+52=125<131.
-    const SVG_H = 131, AXIS_Y = 73;
-    function toX(v) { return (v - minP) / span * W; }
+    );
+    const SVG_H = 108, AXIS_Y = 32;
+    function toX(stockPrice) { return (stockPrice - minStkP) / stkSpan * W; }
 
-    // ── Below-axis S/R dots — axis bounds control visibility; ATR reach annotates ──
-    let offScale = 0;
-    let edgeBelow = null;  // nearest off-scale below minP (highest optionPrice < minP)
-    let edgeAbove = null;  // nearest off-scale above maxP (lowest optionPrice > maxP)
-    const srDots = [];
-    const atrFilteredDots = [];  // levels beyond REACH_PCT — annotates footer note; not hidden
-    _lvlValued.forEach(({ lvl, value: op, demand }) => {
-      if (demand !== null && isFinite(demand) && demand > REACH_PCT) {
-        atrFilteredDots.push({ stockPrice: lvl.price, optionPrice: op, demand, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
-        // no return — axis bounds decide visibility
-      }
-      if (op < minP) {
-        offScale++;
-        if (!edgeBelow || op > edgeBelow.optionPrice ||
-            (op === edgeBelow.optionPrice && Math.abs(lvl.price - chainCurrentPrice) < Math.abs(edgeBelow.stockPrice - chainCurrentPrice)))
-          edgeBelow = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel };
-        return;
-      }
-      if (op > maxP) {
-        offScale++;
-        if (!edgeAbove || op < edgeAbove.optionPrice ||
-            (op === edgeAbove.optionPrice && Math.abs(lvl.price - chainCurrentPrice) < Math.abs(edgeAbove.stockPrice - chainCurrentPrice)))
-          edgeAbove = { stockPrice: lvl.price, optionPrice: op, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel };
-        return;
-      }
-      srDots.push({ stockPrice: lvl.price, optionPrice: op, demand, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
-    });
-
-    // ── Merge near-equal ticks, then stagger close-but-distinct pairs ───────────
-    // Sort ascending so adjacent entries in the loop are closest in option price.
-    srDots.sort((a, b) => a.optionPrice - b.optionPrice);
-
-    // Levels within $0.05 are indistinguishable on screen (<=4 px at any realistic W/span).
-    // Merge into one tick; combine abbreviations with '/'.
-    const MERGE_TOL = 0.05;
-    // Role priority for color when merging: lower index wins.
-    const MERGE_PRIORITY = ['breakeven','current','strike','support','resistance','round','call_wall','magnet','put_wall','target'];
-    const mergedSrDots = [];
-    for (const dot of srDots) {
-      dot.abbr = srAbbrev(dot);
-      const prev = mergedSrDots[mergedSrDots.length - 1];
-      if (prev && Math.abs(dot.optionPrice - prev.optionPrice) <= MERGE_TOL) {
-        if (dot.abbr) prev.abbr = prev.abbr ? prev.abbr + '/' + dot.abbr : dot.abbr;
-        const stkStr = '$' + dot.stockPrice.toFixed(0);
-        if (!prev.stkParts.includes(stkStr)) prev.stkParts.push(stkStr);
-        prev.optionPrice = (prev.optionPrice + dot.optionPrice) / 2;
-        const pi = MERGE_PRIORITY.indexOf(dot.role);
-        const pp = MERGE_PRIORITY.indexOf(prev.role);
-        if (pi !== -1 && (pp === -1 || pi < pp)) { prev.role = dot.role; prev.stockPrice = dot.stockPrice; }
-      } else {
-        mergedSrDots.push({ ...dot, stkParts: ['$' + dot.stockPrice.toFixed(0)] });
-      }
-    }
-
-    _assignStagger(mergedSrDots, d => toX(d.optionPrice));
-
-    // Stagger exit dots independently — same function, applied before the render loop.
-    // minGapPx=40: exit dot label columns are narrower than SR labels.
-    const exitDotsOnScale = exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale));
-    _assignStagger(exitDotsOnScale, d => toX(d.price), 40);
-
-    const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
-
-    const svgParts = [];
-
-    // ── §1 ATR strip — own axis: x = (pct/150)×W, 0→150% ATR consumed ──────
-    // _gaugeAtrRatio: same formula as cockpitAtrBanner.
-    // null pre-market (chainDayRange==null): ticks/track render, fill/now/connector omitted.
+    // ATR gauge (unchanged — used by now-marker label and footer)
     const _gaugeAtrRatio  = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
     const _gaugeExhausted = _gaugeAtrRatio !== null && _gaugeAtrRatio >= 1;
     const _atrConsumedPct = _gaugeAtrRatio !== null ? _gaugeAtrRatio * 100 : null;
 
-    const STRIP_MID_Y = 11;  // center of 14px strip (y 4..18)
+    const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
+    const svgParts  = [];
 
-    // Own axis: pure ATR-fraction, independent of the premium axis below.
-    function stripX(pct) { return Math.min(W, (pct / 150) * W); }
-    const _stripOneAtrX = stripX(100);  // fixed at W×0.6667
+    // ── §1 Background ATR zones (rects behind everything) ─────────────────────
+    if (_spot > 0) {
+      const _spotX     = toX(_spot);
+      const _profEdgeX = toX(_isCall ? maxStkP : minStkP);
+      const _x075      = _atr075Stk != null ? toX(_atr075Stk) : null;
+      const _x100      = _atr100Stk != null ? toX(_atr100Stk) : null;
 
-    // Stock price at strip major-tick.
-    // In-session: anchored to chainCurrentPrice at the live consumed-% position.
-    // Pre-session (chainDayRange null → _atrConsumedPct null): anchored to chainArmStock
-    // with consumed treated as 0, showing the static ATR ladder from close.
-    // Ticks before `now` are approximate (assumes monotonic move from open); labeled with ~.
-    function _stripStkAtPct(pct) {
-      if (!chainAtr) return null;
-      const anchor   = _atrConsumedPct != null ? chainCurrentPrice : chainArmStock;
-      const consumed = _atrConsumedPct ?? 0;
-      if (!anchor) return null;
-      return anchor + ((pct - consumed) / 100) * chainAtr * (_isCall ? 1 : -1);
-    }
+      // Neutral (spot → 0.75 ATR, profit direction)
+      const _nEnd = _x075 ?? _profEdgeX;
+      const [_nL, _nR] = _isCall ? [_spotX, _nEnd] : [_nEnd, _spotX];
+      if (_nR > _nL) svgParts.push(`<rect x="${_nL.toFixed(1)}" y="0" width="${(_nR - _nL).toFixed(1)}" height="${SVG_H}" fill="#1e293b" opacity="0.20"/>`);
 
-    // 1. Gray track
-    svgParts.push(`<line x1="0" y1="${STRIP_MID_Y}" x2="${W}" y2="${STRIP_MID_Y}" stroke="#334155" stroke-width="11" stroke-linecap="butt"/>`);
-
-    // 2. Fill: green 0→min(now,1ATR); amber 1ATR→now when consumed>100%
-    if (_atrConsumedPct != null) {
-      const _nowXStrip0 = stripX(_atrConsumedPct);
-      const _greenEnd   = Math.min(_nowXStrip0, _stripOneAtrX);
-      if (_greenEnd > 0) {
-        svgParts.push(`<line x1="0" y1="${STRIP_MID_Y}" x2="${_greenEnd.toFixed(1)}" y2="${STRIP_MID_Y}" stroke="#22c55e" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
+      // Amber (0.75 → 1.0 ATR)
+      if (_x075 != null && _x100 != null) {
+        const [_aL, _aR] = _isCall ? [_x075, _x100] : [_x100, _x075];
+        if (_aR > _aL) svgParts.push(`<rect x="${_aL.toFixed(1)}" y="0" width="${(_aR - _aL).toFixed(1)}" height="${SVG_H}" fill="#eda100" opacity="0.11"/>`);
       }
-      if (_nowXStrip0 > _stripOneAtrX) {
-        svgParts.push(`<line x1="${_stripOneAtrX.toFixed(1)}" y1="${STRIP_MID_Y}" x2="${_nowXStrip0.toFixed(1)}" y2="${STRIP_MID_Y}" stroke="#eda100" stroke-width="11" stroke-linecap="butt" opacity="0.38"/>`);
+
+      // Red (> 1.0 ATR)
+      if (_x100 != null) {
+        const [_rL, _rR] = _isCall ? [_x100, _profEdgeX] : [_profEdgeX, _x100];
+        if (_rR > _rL) svgParts.push(`<rect x="${_rL.toFixed(1)}" y="0" width="${(_rR - _rL).toFixed(1)}" height="${SVG_H}" fill="#ef4444" opacity="0.10"/>`);
       }
     }
 
-    // 3. Tick marks at 0,25,50,75,100,125,150%
-    [0, 25, 50, 75, 100, 125, 150].forEach(pct => {
-      const tx    = stripX(pct);
-      const major = (pct % 50 === 0);
-      const tickH = major ? 5 : 3;
-      svgParts.push(`<line x1="${tx.toFixed(1)}" y1="${STRIP_MID_Y - tickH}" x2="${tx.toFixed(1)}" y2="${STRIP_MID_Y + tickH}" stroke="#64748b" stroke-width="1" stroke-linecap="round"/>`);
-      if (major) {
-        const stkPx   = _stripStkAtPct(pct);
-        const approx  = _atrConsumedPct != null && pct < _atrConsumedPct;
-        if (stkPx != null) {
-          const anchor = pct === 0 ? 'start' : pct === 150 ? 'end' : 'middle';
-          svgParts.push(`<text x="${tx.toFixed(1)}" y="${STRIP_MID_Y + 14}" text-anchor="${anchor}" fill="#94a3b8" font-size="6" font-family="monospace">${approx ? '~' : ''}$${stkPx.toFixed(0)}</text>`);
-        }
+    // ATR zone boundary dashed ticks + labels at top
+    if (_atr075Stk != null) {
+      const _x75 = toX(_atr075Stk);
+      svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
+      svgParts.push(`<text x="${_x75.toFixed(1)}" y="8" text-anchor="middle" fill="#eda100" font-size="6" font-family="monospace" opacity="0.7">0.75 ATR</text>`);
+    }
+    if (_atr100Stk != null) {
+      const _x100 = toX(_atr100Stk);
+      svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
+      svgParts.push(`<text x="${_x100.toFixed(1)}" y="8" text-anchor="middle" fill="#ef4444" font-size="6" font-family="monospace" opacity="0.7">1 ATR $${_atr100Stk.toFixed(0)}</text>`);
+    }
+
+    // ── §2 Role line (base track) ──────────────────────────────────────────────
+    svgParts.push(`<line x1="0" y1="${AXIS_Y}" x2="${W}" y2="${AXIS_Y}" stroke="var(--border-bright)" stroke-width="1" opacity="0.4"/>`);
+
+    // Risk segment (red): STOP → ENTRY; omit when STOP stock price unknown
+    if (_stopStk != null) {
+      const _sx = toX(_stopStk), _ex = toX(_spot);
+      svgParts.push(`<line x1="${Math.min(_sx, _ex).toFixed(1)}" y1="${AXIS_Y}" x2="${Math.max(_sx, _ex).toFixed(1)}" y2="${AXIS_Y}" stroke="#ef4444" stroke-width="3" stroke-linecap="round" opacity="0.5"/>`);
+    }
+    // Reward segment (green): ENTRY → furthest on-scale target
+    const _furthestTgtStk = (() => {
+      const stks = exitDots
+        .filter(d => (d.role === 'tp' || d.role === 'exit') && (d.label !== 'TP2' || _tp2OnScale))
+        .map(d => d.stockPrice).filter(v => v != null);
+      if (!stks.length) return null;
+      return _isCall ? Math.max(...stks) : Math.min(...stks);
+    })();
+    if (_furthestTgtStk != null) {
+      const _ex = toX(_spot), _tx = toX(_furthestTgtStk);
+      svgParts.push(`<line x1="${Math.min(_ex, _tx).toFixed(1)}" y1="${AXIS_Y}" x2="${Math.max(_ex, _tx).toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round" opacity="0.5"/>`);
+    }
+
+    // ── §4 Glow — ATR consumed, anchored at today's OPEN (independent of entry) ──
+    // Absent until backend supplies day_open → chainDayOpen; all other elements render without it.
+    if (chainDayOpen != null && _spot > 0) {
+      const _gx0 = toX(chainDayOpen), _gx1 = toX(_spot);
+      if (Math.abs(_gx1 - _gx0) > 1) {
+        svgParts.push(`<defs><filter id="rrlGlow"><feGaussianBlur stdDeviation="3.5" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter></defs>`);
+        svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="6" stroke-linecap="round" filter="url(#rrlGlow)" opacity="0.7"/>`);
+        svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="2" stroke-linecap="round" opacity="0.95"/>`);
       }
-    });
+    }
 
-    // 4. 1-ATR dashed amber vertical + label above strip
-    svgParts.push(`<line x1="${_stripOneAtrX.toFixed(1)}" y1="${STRIP_MID_Y - 8}" x2="${_stripOneAtrX.toFixed(1)}" y2="${STRIP_MID_Y + 8}" stroke="#eda100" stroke-width="1.5" stroke-dasharray="3 2" stroke-linecap="round"/>`);
-    svgParts.push(`<text x="${_stripOneAtrX.toFixed(1)}" y="${STRIP_MID_Y - 10}" text-anchor="middle" fill="#eda100" font-size="6" font-family="monospace">1 ATR</text>`);
-
-    // 5. `now` marker (intraday only)
-    let _nowXStrip = null;
-    if (_atrConsumedPct != null) {
-      _nowXStrip = stripX(_atrConsumedPct);
+    // ── §5 now / open markers ──────────────────────────────────────────────────
+    if (chainDayOpen != null) {
+      const _ox = toX(chainDayOpen);
+      svgParts.push(`<line x1="${_ox.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_ox.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="#475569" stroke-width="1.5" stroke-linecap="round"/>`);
+      svgParts.push(`<text x="${_ox.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#475569" font-size="5.5" font-family="monospace">open</text>`);
+    }
+    {
+      const _nx     = toX(_spot);
+      const _nowLbl = _atrConsumedPct != null ? `now ${Math.round(_atrConsumedPct)}% ATR` : 'now';
       const _nowCol = _gaugeExhausted ? '#eda100' : '#e2e8f0';
-      svgParts.push(`<line x1="${_nowXStrip.toFixed(1)}" y1="${STRIP_MID_Y - 9}" x2="${_nowXStrip.toFixed(1)}" y2="${STRIP_MID_Y + 9}" stroke="${_nowCol}" stroke-width="2" stroke-linecap="round"/>`);
+      svgParts.push(`<line x1="${_nx.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_nx.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="${_nowCol}" stroke-width="1.5" stroke-linecap="round"/>`);
+      svgParts.push(`<text x="${_nx.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#94a3b8" font-size="5.5" font-family="monospace">${_nowLbl}</text>`);
     }
 
-    // ── §3 Connector — dashed tie-line bridging strip `now` to R:R current price ──
-    // Top end: strip now-marker. Bottom end: current stock price mapped to premium axis.
-    // Angle is informative — reveals stock↔premium nonlinearity.
-    if (_nowXStrip != null && chainCurrentPrice > 0) {
-      const _connBotPrem = _interpOptVal(chainCurrentPrice);
-      if (_connBotPrem != null) {
-        const _connBotX  = toX(_connBotPrem);
-        const _connTopY  = STRIP_MID_Y + 7;
-        const _connBotY  = AXIS_Y - 4;
-        svgParts.push(`<line x1="${_nowXStrip.toFixed(1)}" y1="${_connTopY}" x2="${_connBotX.toFixed(1)}" y2="${_connBotY}" stroke="#94a3b8" stroke-width="1" stroke-dasharray="3 3" opacity="0.5"/>`);
-        svgParts.push(`<circle cx="${_nowXStrip.toFixed(1)}" cy="${_connTopY}" r="2" fill="#94a3b8" opacity="0.5"/>`);
-        svgParts.push(`<circle cx="${_connBotX.toFixed(1)}" cy="${_connBotY}" r="2" fill="#94a3b8" opacity="0.5"/>`);
-        // Label at geometric midpoint of connector gap (below strip stock-price labels, above exit labels)
-        const _connLblX = ((_nowXStrip + _connBotX) / 2).toFixed(1);
-        const _connLblY = STRIP_MID_Y + 28;  // y=39: below tick labels (25), above exit labels (42)
-        const _atrPctLbl = Math.round(_gaugeAtrRatio * 100);
-        svgParts.push(`<text x="${_connLblX}" y="${_connLblY}" text-anchor="middle" fill="#94a3b8" font-size="6" font-family="monospace" opacity="0.65">now · ${_atrPctLbl}% ATR · $${chainCurrentPrice.toFixed(0)} · $${_connBotPrem.toFixed(2)} opt</text>`);
-      }
-    }
+    // ── §3 Unified dots: exit + on-scale SR/cloud ─────────────────────────────
+    // Skip SR dots whose stock price duplicates an exit dot position.
+    const _exitStkKeys = new Set(
+      exitDots.map(d => d.stockPrice != null ? (+d.stockPrice).toFixed(1) : null).filter(Boolean)
+    );
+    const _srAxisDots = _srOnScale.filter(d => !_exitStkKeys.has((+d.lvl.price).toFixed(1)));
 
-    // Base axis
-    svgParts.push(`<line x1="0" y1="${AXIS_Y}" x2="${W}" y2="${AXIS_Y}" stroke="var(--border-bright)" stroke-width="1.2"/>`);
-
-    // Coloured segments
-    const slX     = toX(sl);
-    const entryX  = toX(entry);
-    const lastTpX = (_tp2IsRunner && !_tp2OnScale) ? W : toX(lastExit.price);
-    svgParts.push(`<line x1="${slX.toFixed(1)}" y1="${AXIS_Y}" x2="${entryX.toFixed(1)}" y2="${AXIS_Y}" stroke="#ef4444" stroke-width="3" stroke-linecap="round"/>`);
-    svgParts.push(`<line x1="${entryX.toFixed(1)}" y1="${AXIS_Y}" x2="${lastTpX.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round"/>`);
-
-    // S/R ticks and labels below axis — merged and stagger-aware
-    mergedSrDots.forEach(dot => {
-      const x    = toX(dot.optionPrice);
-      const col  = srColor(dot.role, dot.stockPrice);
-      const yLbl = dot.stagger ? AXIS_Y + 36 : AXIS_Y + 22;
-      const yPrc = dot.stagger ? AXIS_Y + 44 : AXIS_Y + 33;
-      const yExt = dot.stagger ? AXIS_Y + 52 : AXIS_Y + 44;
-      svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y + 3}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yLbl}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.abbr ? dot.abbr + ' ' : ''}${dot.stkParts.join('/')}</text>`);
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yPrc}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">$${dot.optionPrice.toFixed(2)}</text>`);
-      // R multiple + ATR demand — null when ATR absent, Infinity when exhausted: both omit %.
-      // Beyond-REACH_PCT levels that landed in range: demand is finite and >REACH_PCT, show amber %.
-      const beyondReach = dot.demand != null && isFinite(dot.demand) && dot.demand > REACH_PCT;
-      const rStr        = fmtR(dot.optionPrice);
-      const demandVal   = (dot.demand != null && isFinite(dot.demand)) ? Math.round(dot.demand) : null;
-      if (rStr || demandVal != null) {
-        let extContent;
-        if (rStr && demandVal != null) {
-          const dCol = beyondReach ? '#eda100' : col;
-          extContent = `<tspan>${rStr} \xb7 </tspan><tspan fill="${dCol}">${demandVal}%</tspan>`;
-        } else if (rStr) {
-          extContent = rStr;
-        } else {
-          const dCol = beyondReach ? '#eda100' : col;
-          extContent = `<tspan fill="${dCol}">${demandVal}%</tspan>`;
-        }
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yExt}" text-anchor="middle" fill="${col}" font-size="7" font-family="monospace"${beyondReach ? ' opacity="0.75"' : ''}>${extContent}</text>`);
-      }
+    const exitDotsOnScale = exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale));
+    const _allDots = [];
+    exitDotsOnScale.forEach(d => {
+      _allDots.push({
+        stockPrice: d.stockPrice,
+        label:      d.displayLabel,
+        optVal:     d.price,
+        pctGain:    d.role !== 'entry' ? (d.price - entry) / entry * 100 : null,
+        showPct:    d.role !== 'entry',
+        approxStk:  d.role === 'stop',
+        ringColor:  DOT_COLOR[d.role] || '#22c55e',
+        nameColor:  null,
+        isEntry:    d.role === 'entry',
+      });
+    });
+    _srAxisDots.forEach(d => {
+      const _cloud = d.lvl.type === 'cloud';
+      const _col   = _cloud ? '#8b5cf6' : srColor(d.lvl.role, d.lvl.price);
+      _allDots.push({
+        stockPrice: d.lvl.price,
+        label:      srAbbrev(d.lvl) || d.lvl.label,
+        optVal:     d.value,
+        pctGain:    d.value != null ? (d.value - entry) / entry * 100 : null,
+        showPct:    true,
+        approxStk:  false,
+        ringColor:  _col,
+        nameColor:  _cloud ? '#a78bfa' : _col,
+        isEntry:    false,
+      });
     });
 
-    // Edge markers — nearest off-scale level on each side, pinned to boundary, dimmed
-    if (edgeBelow) {
-      const col   = srColor(edgeBelow.role, edgeBelow.stockPrice);
-      const abbrB = srAbbrev(edgeBelow);
-      svgParts.push(`<line x1="0" y1="${AXIS_Y + 3}" x2="0" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>`);
-      svgParts.push(`<text x="2" y="${AXIS_Y + 22}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">◂ ${abbrB ? abbrB + ' ' : ''}$${edgeBelow.stockPrice.toFixed(0)}</text>`);
-      svgParts.push(`<text x="2" y="${AXIS_Y + 33}" text-anchor="start" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeBelow.optionPrice.toFixed(2)}</text>`);
-    }
-    if (edgeAbove) {
-      const col   = srColor(edgeAbove.role, edgeAbove.stockPrice);
-      const abbrA = srAbbrev(edgeAbove);
-      svgParts.push(`<line x1="${W}" y1="${AXIS_Y + 3}" x2="${W}" y2="${AXIS_Y + 10}" stroke="${col}" stroke-width="1.5" stroke-linecap="round" opacity="0.5"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 22}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">${abbrA ? abbrA + ' ' : ''}$${edgeAbove.stockPrice.toFixed(0)} ▸</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 33}" text-anchor="end" fill="${col}" font-size="7.5" font-family="monospace" opacity="0.5">$${edgeAbove.optionPrice.toFixed(2)}</text>`);
-    }
+    // Stagger all positioned dots together by stock position
+    _assignStagger(_allDots.filter(d => d.stockPrice != null), d => toX(d.stockPrice), 40);
 
-    // Far TP2 runner edge marker — pinned to right edge, mirrors on-scale dot layout
-    if (_tp2IsRunner && !_tp2OnScale) {
-      const _tp2Col = DOT_COLOR['tp'];
-      const _tp2Lbl = _tp2.abbr ? `▸ TP2 · ${_tp2.abbr}` : '▸ TP2';
-      svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_tp2Col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 30}" text-anchor="end" fill="${_tp2Col}" font-size="7.5" font-family="monospace">${_tp2Lbl}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 19}" text-anchor="end" fill="${_tp2Col}" font-size="8.5" font-family="monospace">$${_tp2.price.toFixed(2)}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 9}" text-anchor="end" fill="${_tp2Col}" font-size="7" font-family="monospace">${fmtR(_tp2.price)}</text>`);
-    }
+    // Render dots
+    _allDots.forEach(dot => {
+      if (dot.stockPrice == null) {
+        // STOP with no stock position (pre-session/sparse projection) -> left edge stub
+        const _col = DOT_COLOR['stop'];
+        svgParts.push(`<text x="2" y="${AXIS_Y + 14}" text-anchor="start" fill="${_col}" font-size="7" font-family="monospace" opacity="0.7">&#x25C2; STOP</text>`);
+        svgParts.push(`<text x="2" y="${AXIS_Y + 26}" text-anchor="start" fill="${_col}" font-size="7" font-family="monospace" opacity="0.7">&#x2014; · −30%</text>`);
+        return;
+      }
+      const x   = toX(dot.stockPrice);
+      const col = dot.ringColor;
+      const yS  = dot.stagger ? 18 : 0;
+      const yL1 = AXIS_Y + yS + 13;
+      const yL2 = AXIS_Y + yS + 25;
+      const yL3 = AXIS_Y + yS + 37;
 
-    // Unpriced SR exit — SR level known by stock position, option value not yet available.
-    // Same right-edge pin as far-TP2; stock price replaces option price; "prices at open" replaces R-mult.
-    if (_unpricedTpEdge) {
-      const _uCol = DOT_COLOR['exit'];
-      const _uLbl = `▸ EXIT \xb7 ${_unpricedTpEdge.abbr}`;
-      svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_uCol}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 30}" text-anchor="end" fill="${_uCol}" font-size="7.5" font-family="monospace">${_uLbl}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 19}" text-anchor="end" fill="${_uCol}" font-size="7" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 9}" text-anchor="end" fill="#64748b" font-size="7" font-family="monospace">prices at open</text>`);
-    }
-
-    // ── §2 Exit dots — 3-line labels, stagger-aware ──────────────────────────
-    // line 1: level name  line 2: $stk · $opt  line 3: %gain (omitted for ENTRY)
-    // stagger: push label stack 16px higher when adjacent dots are within 40px
-    exitDotsOnScale.forEach(dot => {
-      const x      = toX(dot.price);
-      const col    = DOT_COLOR[dot.role] || '#22c55e';
-      const yShift = dot.stagger ? -16 : 0;
-      const yLbl   = AXIS_Y + yShift - 31;   // level name (topmost)
-      const yDtl   = AXIS_Y + yShift - 20;   // $stk · $opt
-      const yPct   = AXIS_Y + yShift - 9;    // % gain
-      svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y - 6}" x2="${x.toFixed(1)}" y2="${AXIS_Y}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
       svgParts.push(`<circle cx="${x.toFixed(1)}" cy="${AXIS_Y}" r="3.5" fill="${col}"/>`);
-      // Line 1: level name
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yLbl}" text-anchor="middle" fill="${col}" font-size="7.5" font-family="monospace">${dot.displayLabel}</text>`);
-      // Line 2: $stk · $opt (stock muted, combined on one line)
-      const stkPfx = dot.stockPrice != null ? `$${(+dot.stockPrice).toFixed(0)} \xb7 ` : '';
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yDtl}" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="monospace">${stkPfx}$${dot.price.toFixed(2)}</text>`);
-      // Line 3: % gain from entry (basis=ARMED/from-entry; holding-mode wires in with live-pos work)
-      if (dot.role !== 'entry' && entry > 0) {
-        const pctGain = (dot.price - entry) / entry * 100;
-        const pctCol  = pctGain >= 0 ? '#22c55e' : '#ef4444';
-        const pctStr  = (pctGain >= 0 ? '+' : '') + pctGain.toFixed(0) + '%';
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yPct}" text-anchor="middle" fill="${pctCol}" font-size="7" font-family="monospace">${pctStr}</text>`);
+      svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 8}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
+
+      const nCol = dot.nameColor ?? col;
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL1}" text-anchor="middle" fill="${nCol}" font-size="7.5" font-family="monospace">${dot.label}</text>`);
+
+      const stkTxt = dot.approxStk ? `~$${(+dot.stockPrice).toFixed(0)}` : `$${(+dot.stockPrice).toFixed(0)}`;
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL2}" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="monospace">${stkTxt}</text>`);
+
+      if (dot.isEntry) {
+        if (dot.optVal != null) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
+      } else if (dot.showPct && entry > 0) {
+        const optTxt = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
+        const pct    = dot.pctGain;
+        const pctTxt = pct != null ? ` · ${pct >= 0 ? '+' : ''}${Math.round(pct)}%` : '';
+        const pctCol = pct == null ? '#64748b' : (pct >= 0 ? '#22c55e' : '#ef4444');
+        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" font-size="7" font-family="monospace"><tspan fill="#94a3b8">${optTxt}</tspan><tspan fill="${pctCol}">${pctTxt}</tspan></text>`);
       }
     });
+
+    // ── Edge markers — off-scale TP2, unpriced SR exit, far profit-side SR ────
+    if (_tp2IsRunner && !_tp2OnScale && _tp2) {
+      const _col = DOT_COLOR['tp'];
+      const _lbl = _tp2.abbr ? `▸ TP2 · ${_tp2.abbr}` : '▸ TP2';
+      svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">${_lbl}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="7" font-family="monospace">$${_tp2.price.toFixed(2)} · ${fmtR(_tp2.price)}</text>`);
+    }
+    if (_unpricedTpEdge) {
+      const _col = DOT_COLOR['exit'];
+      svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="#64748b" font-size="7" font-family="monospace">prices at open</text>`);
+    }
+    // Nearest off-domain profit-side SR/cloud level (suppressed when edge already taken by TP2 or unpriced)
+    const _profEdgeDot = _srOffScale.sort((a, b) =>
+      _isCall ? a.lvl.price - b.lvl.price : b.lvl.price - a.lvl.price)[0] ?? null;
+    if (_profEdgeDot && !(_tp2IsRunner && !_tp2OnScale) && !_unpricedTpEdge) {
+      const _cloud = _profEdgeDot.lvl.type === 'cloud';
+      const _col   = _cloud ? '#8b5cf6' : srColor(_profEdgeDot.lvl.role, _profEdgeDot.lvl.price);
+      const _abbr  = srAbbrev(_profEdgeDot.lvl) || _profEdgeDot.lvl.label;
+      const _ex    = _isCall ? W - 2 : 2;
+      const _anch  = _isCall ? 'end' : 'start';
+      const _arrow = _isCall ? '▸' : '◂';
+      svgParts.push(`<text x="${_ex}" y="${AXIS_Y + 13}" text-anchor="${_anch}" fill="${_col}" font-size="7.5" font-family="monospace" opacity="0.6">${_arrow} ${_abbr} $${_profEdgeDot.lvl.price.toFixed(0)}</text>`);
+    }
 
     const svg = `<svg viewBox="0 0 ${W} ${SVG_H}" preserveAspectRatio="xMidYMid meet" width="100%" style="overflow:visible;display:block">${svgParts.join('')}</svg>`;
 
@@ -3790,61 +3744,30 @@
     const rrRatio = rDenom > 0 ? ((lastExit.price - entry) / rDenom).toFixed(1) : '—';
     const riskDol = rDenom > 0 ? Math.round(rDenom * qty * 100) : 0;
     const rwdDol  = rDenom > 0 ? Math.round((lastExit.price - entry) * qty * 100) : 0;
-    // STOP keeps its ×mult label; SR-based TP/EXIT dots show their level abbreviation.
-    // When _unpricedTpEdge: replace exit derivation with SR label + "prices at open".
     const derivStr = _unpricedTpEdge
-      ? `\xd7${_slMult().toFixed(2)} STOP \xb7 ${_unpricedTpEdge.abbr} $${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk (prices at open) off $${entry.toFixed(2)}`
-      : exitDots.filter(d => d.role !== 'entry').map(d => d.mult != null ? `\xd7${d.mult.toFixed(2)}` : (d.srLabel || d.label)).join(' \xb7 ') + ` off $${entry.toFixed(2)}`;
-    // When the exit is unpriced, R:R and reward are meaningless — show only risk.
+      ? `×${_slMult().toFixed(2)} STOP · ${_unpricedTpEdge.abbr} $${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk (prices at open) off $${entry.toFixed(2)}`
+      : exitDots.filter(d => d.role !== 'entry').map(d => d.mult != null ? `×${d.mult.toFixed(2)}` : (d.srLabel || d.label)).join(' · ') + ` off $${entry.toFixed(2)}`;
     const _rrPfx = _unpricedTpEdge
       ? `risk $${riskDol}`
-      : `R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol}`;
+      : `R:R 1:${rrRatio} · risk $${riskDol} · reward $${rwdDol}`;
 
     let tierDesc;
     if (_tp1N > 0 && _tp1) {
-      tierDesc = `${qty}ct \xb7 ${_tp1N}ct @ $${_tp1.price.toFixed(2)} \xb7 ${_runner} rides`;
+      tierDesc = `${qty}ct · ${_tp1N}ct @ $${_tp1.price.toFixed(2)} · ${_runner} rides`;
     } else {
-      tierDesc = `${qty}ct \xb7 all at once`;
+      tierDesc = `${qty}ct · all at once`;
     }
 
-    const edgesShown  = (edgeBelow ? 1 : 0) + (edgeAbove ? 1 : 0);
-    const moreOffScale = offScale - edgesShown;
-    const offScaleStr = moreOffScale > 0 ? ` \xb7 ${moreOffScale} more off-scale` : '';
+    const _offDomainStr = _srOffScale.length > 0 ? ` · ${_srOffScale.length} SR off-scale` : '';
 
-    // ── Derived footer note — emitted only when there is something to say ──────
-    const _footerParts = [];
-    // Coincidence: TP/exit dot within ~5% of an on-scale S/R level's option price
-    exitDots.filter(d => d.role === 'tp' || d.role === 'exit').forEach(dot => {
-      for (const sr of mergedSrDots) {
-        if (Math.abs(dot.price - sr.optionPrice) / sr.optionPrice < 0.05) {
-          const srName = sr.abbr || (sr.stkParts && sr.stkParts[0]) || ('$' + sr.stockPrice.toFixed(0));
-          _footerParts.push(`${dot.label} ≈ ${srName}`);
-          break;
-        }
-      }
-    });
-    // First beyond-reach: lowest optionPrice > entry among levels that exceeded REACH_PCT.
-    // With the reach-annotates design these levels may be visible on the panel (amber %).
-    const _firstUnreach = atrFilteredDots
-      .filter(d => d.optionPrice > entry)
-      .sort((a, b) => a.optionPrice - b.optionPrice)[0];
-    if (_firstUnreach) {
-      const _ua = srAbbrev(_firstUnreach) || _firstUnreach.label;
-      _footerParts.push(`${_ua} needs ${Math.round(_firstUnreach.demand)}% ATR`);
-    }
-    const _noteHtml = _footerParts.length > 0
-      ? `<div class="rrl-footer rrl-footer-note">${_footerParts.join(' \xb7 ')}</div>`
-      : '';
-
-    // ATR footer prefix — same ratio source as cockpitAtrBanner; amber whole line when exhausted.
     let _atrFooterPfx = '';
     if (_gaugeAtrRatio !== null) {
       const _atrPct  = Math.round(_gaugeAtrRatio * 100);
       const _atrLeft = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
-      _atrFooterPfx  = `day range ${_atrPct}% used \xb7 ${_atrLeft} left \xb7 `;
+      _atrFooterPfx  = `day range ${_atrPct}% used · ${_atrLeft} left · `;
     }
     const _footerAmberStyle = _gaugeExhausted ? ' style="color:#eda100"' : '';
-    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}${_rrPfx} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
+    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}${_rrPfx} · ${derivStr} · ${tierDesc}${_offDomainStr}</div>`;
     el.style.display = '';
   }
 
