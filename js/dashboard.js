@@ -89,6 +89,7 @@
   let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
   let cockpitExitLayer     = 'default'; // exit layer: 'default' | 'tight_trail' | 'cloud_break' | 'oco_bracket'
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
+  let chainArmedCloudLevels = null; // five cloud SR edges frozen at arm (direction-appropriate)
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
   let matrixProjCache      = null;  // {levels, projResults} — for qty-only rerenders
   let payoutCurveCache     = null;  // range-mode response — for qty/as-of rerenders
@@ -1072,9 +1073,10 @@
     const t = ticker.toUpperCase();
     focusedTicker = t;
 
-    srLevelsCache   = null;
-    focusGexCache   = null;
-    matrixProjCache  = null;
+    srLevelsCache         = null;
+    chainArmedCloudLevels = null;
+    focusGexCache         = null;
+    matrixProjCache       = null;
     payoutCurveCache = null;
     chainAtr         = null;
     chainDayRange   = null;
@@ -2124,9 +2126,10 @@
     chainBody.innerHTML = '<div class="dash-placeholder">Loading expirations…</div>';
     expiryEl.innerHTML  = '<option value="">— loading —</option>';
     if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
-    armedContract       = null;
-    matrixProjCache     = null;
-    payoutCurveCache    = null;
+    armedContract         = null;
+    chainArmedCloudLevels = null;
+    matrixProjCache       = null;
+    payoutCurveCache      = null;
     const cockpit0 = document.getElementById('chainCockpit');
     if (cockpit0) cockpit0.innerHTML = '';
 
@@ -2172,9 +2175,10 @@
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
     if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
-    armedContract    = null;
-    matrixProjCache  = null;
-    payoutCurveCache = null;
+    armedContract         = null;
+    chainArmedCloudLevels = null;
+    matrixProjCache       = null;
+    payoutCurveCache      = null;
     const cockpit1 = document.getElementById('chainCockpit');
     if (cockpit1) cockpit1.innerHTML = '';
 
@@ -2411,6 +2415,13 @@
     if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
     _ocoButtonRefreshFn = null;
     armedContract = { ...strike, bias };
+    const _isCall = bias === 'bullish';
+    chainArmedCloudLevels = (srLevelsCache?.cloud_levels || []).map(c => ({
+      label: c.label,
+      price: _isCall ? Math.min(c.ema_short, c.ema_long) : Math.max(c.ema_short, c.ema_long),
+      type:  'sr',
+      role:  _isCall ? 'support' : 'resistance',
+    })).filter(c => c.price > 0);
     _armedRefreshTimer = setInterval(() => { if (armedContract) refreshArmedQuote(); }, 30000);
 
     const chainBody    = document.getElementById('chainBody');
@@ -4076,6 +4087,10 @@
       if (d.pdl2 != null)          srLevels.push({ label: 'Prior-day low', price: d.pdl2,        type: 'sr', role: 'support' });
       if (d.atl != null)           srLevels.push({ label: 'All-time low',  price: d.atl,         type: 'sr', role: 'support' });
       else if (d.low_52w != null)  srLevels.push({ label: '52-week low',   price: d.low_52w,     type: 'sr', role: 'support' });
+    }
+
+    if (chainArmedCloudLevels) {
+      chainArmedCloudLevels.forEach(c => srLevels.push(c));
     }
 
     const gexLevels = [];
