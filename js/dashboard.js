@@ -3235,12 +3235,17 @@
     // ── Pre-compute projection values — needed for SR-based TP selection ─────
     // Single pass: demand computed once per level.  Both axis extension and dot
     // partitioning key off this array — one gate predicate, one _remAtrDemand call.
-    const _lvlData = levels.map((lvl, i) => {
+    // Tier 1: all levels with a valid stock price — always full pre-session.
+    // value is nullable; null means no projection yet (bid unavailable / market closed).
+    const _lvlStock = levels.map((lvl, i) => {
+      if (!lvl.price) return null;
       const _pr = projResults[i];
       const _nr = _pr && _pr.rows && _pr.rows[0];
-      if (!_nr || _nr.value == null) return null;
-      return { lvl, value: _nr.value, demand: _remAtrDemand(lvl.price) };
+      const value = (_nr && _nr.value != null) ? _nr.value : null;
+      return { lvl, value, demand: _remAtrDemand(lvl.price) };
     }).filter(Boolean);
+    // Tier 2: subset with a projection value — session-gated.
+    const _lvlValued = _lvlStock.filter(d => d.value != null);
 
     // ── SR-based TP selection ─────────────────────────────────────────────────
     const _optType = armedContract
@@ -3248,27 +3253,29 @@
       : 'call';
     const _isCall = _optType === 'call';
 
-    // Profit-side structural levels, nearest first; exclude marker roles (Current, Strike, etc.)
-    const _profitSide = _lvlData
+    // Profit-side structural levels, nearest first; exclude marker roles (Current, Strike, etc.).
+    // Uses _lvlStock so SR levels resolve even pre-session when projection values are null.
+    const _profitSide = _lvlStock
       .filter(d => d.lvl.type !== 'marker'
-        && (_isCall ? d.lvl.price > chainCurrentPrice : d.lvl.price < chainCurrentPrice)
-        && d.value > 0)
+        && (_isCall ? d.lvl.price > chainCurrentPrice : d.lvl.price < chainCurrentPrice))
       .sort((a, b) => _isCall
         ? a.lvl.price - b.lvl.price    // ascending for calls — nearest overhead first
         : b.lvl.price - a.lvl.price);  // descending for puts — nearest underfoot first
 
     const _tp1Cand = _profitSide[0] || null;
     const _tp1Val  = _tp1Cand ? _tp1Cand.value : null;
-    // TP2 must be ≥1.20× TP1 option value — same-shelf levels (e.g. Week-high and Day-high
-    // 65¢ apart on stock, ~10% apart on premium) are skipped until the premium gap is real.
+    // TP2: when values exist, require ≥1.20× TP1 option value to skip same-shelf levels.
+    // When values are null (pre-session), fall back to second-nearest by stock proximity.
     const _tp2Cand = _tp1Cand
-      ? (_profitSide.slice(1).find(d => d.value >= _tp1Val * 1.20) || null)
+      ? (_tp1Val != null
+          ? (_profitSide.slice(1).find(d => d.value != null && d.value >= _tp1Val * 1.20) || null)
+          : (_profitSide[1] || null))
       : null;
 
     // Linear interpolation of option value at an arbitrary stock price from existing projections.
     // Used only for ATR-reach fallback — no new fetches required.
     function _interpOptVal(stockTarget) {
-      const pts = [..._lvlData].sort((a, b) => a.lvl.price - b.lvl.price);
+      const pts = [..._lvlValued].sort((a, b) => a.lvl.price - b.lvl.price);
       if (!pts.length) return null;
       if (stockTarget <= pts[0].lvl.price) return pts[0].value;
       if (stockTarget >= pts[pts.length - 1].lvl.price) return pts[pts.length - 1].value;
@@ -3284,7 +3291,7 @@
     // Inverse: option value → approximate stock price. Sorts by value ascending (call: price
     // asc gives value asc; put: price asc gives value desc so sort by value directly).
     function _invInterpStk(optTarget) {
-      const pts = [..._lvlData].sort((a, b) => a.value - b.value);
+      const pts = [..._lvlValued].sort((a, b) => a.value - b.value);
       if (!pts.length) return null;
       if (optTarget <= pts[0].value) return pts[0].lvl.price;
       if (optTarget >= pts[pts.length - 1].value) return pts[pts.length - 1].lvl.price;
@@ -3307,17 +3314,20 @@
       : null;
 
     // Resolve TP1 / TP2 with fallback ladder:
-    //   2 SR levels ≥1.20× apart  → both SR
-    //   1 SR level                 → TP1 SR, TP2 +1 ATR labeled ATR
+    //   2 SR levels ≥1.20× apart  → both SR (price may be null pre-session)
+    //   1 SR level                 → TP1 SR; TP2 +1 ATR only when TP1 is priced
     //   0 SR levels                → TP1 +1 ATR, TP2 +2 ATR, both labeled ATR
+    // price=null means SR is identified by stock position but option value unavailable.
     let _tp1 = null, _tp2 = null;
     if (_tp1Cand && _tp2Cand) {
-      _tp1 = { price: +_tp1Cand.value.toFixed(2), abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label, stockPrice: _tp1Cand.lvl.price };
-      _tp2 = { price: +_tp2Cand.value.toFixed(2), abbr: srAbbrev(_tp2Cand.lvl) || _tp2Cand.lvl.label, stockPrice: _tp2Cand.lvl.price };
+      _tp1 = { price: _tp1Cand.value != null ? +_tp1Cand.value.toFixed(2) : null, abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label, stockPrice: _tp1Cand.lvl.price };
+      _tp2 = { price: _tp2Cand.value != null ? +_tp2Cand.value.toFixed(2) : null, abbr: srAbbrev(_tp2Cand.lvl) || _tp2Cand.lvl.label, stockPrice: _tp2Cand.lvl.price };
     } else if (_tp1Cand) {
-      _tp1 = { price: +_tp1Cand.value.toFixed(2), abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label, stockPrice: _tp1Cand.lvl.price };
-      const _v = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
-      if (_v) _tp2 = { price: +_v.toFixed(2), abbr: '+1 ATR', stockPrice: _atrReach1Stk };
+      _tp1 = { price: _tp1Cand.value != null ? +_tp1Cand.value.toFixed(2) : null, abbr: srAbbrev(_tp1Cand.lvl) || _tp1Cand.lvl.label, stockPrice: _tp1Cand.lvl.price };
+      if (_tp1.price != null) {
+        const _v = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
+        if (_v) _tp2 = { price: +_v.toFixed(2), abbr: '+1 ATR', stockPrice: _atrReach1Stk };
+      }
     } else {
       const _v1 = _atrReach1Stk ? _interpOptVal(_atrReach1Stk) : null;
       const _v2 = _atrReach2Stk ? _interpOptVal(_atrReach2Stk) : null;
@@ -3327,24 +3337,31 @@
 
     // Scale-out: mirror build_tiers' first-tier count (exit_strategy.py:61-75).
     // qty 2-5 → 1; qty 6 → 2; qty ≥ 7 → qty // 3. Runner rides to TP2.
-    const _tp1N = (_tp1 && _tp2 && qty > 1)
+    // Both prices must be non-null — can't scale out if either exit can't be positioned.
+    const _tp1N = (_tp1 && _tp1.price != null && _tp2 && _tp2.price != null && qty > 1)
       ? (qty <= 5 ? 1 : qty === 6 ? 2 : Math.floor(qty / 3))
       : 0;
     const _runner = qty - _tp1N;
 
     // ── Above-axis exit dots — displayLabel is the SR level name (no TP1·prefix) ──
+    // _unpricedTpEdge: SR target identified by stock level but no option value yet.
+    // Rendered as right-edge marker ("prices at open"), NOT placed on the premium axis.
+    let _unpricedTpEdge = null;
     const exitDots = [];
     exitDots.push({ price: sl,    label: 'STOP',  role: 'stop',  mult: _slMult(),         stockPrice: _invInterpStk(sl),  displayLabel: 'STOP'  });
     exitDots.push({ price: entry, label: 'ENTRY', role: 'entry',                           stockPrice: chainCurrentPrice,  displayLabel: 'ENTRY' });
     if (_tp1N > 0 && _tp1) {
       exitDots.push({ price: _tp1.price, label: 'TP1', role: 'tp',   n: _tp1N,   srLabel: _tp1.abbr, stockPrice: _tp1.stockPrice, displayLabel: _tp1.abbr });
     }
-    if (_tp2) {
+    if (_tp2 && _tp2.price != null) {
       exitDots.push({ price: _tp2.price, label: _tp1N > 0 ? 'TP2' : 'EXIT', role: _tp1N > 0 ? 'tp' : 'exit', n: _runner, srLabel: _tp2.abbr, stockPrice: _tp2.stockPrice, displayLabel: _tp2.abbr });
-    } else if (_tp1) {
+    } else if (_tp1 && _tp1.price != null) {
       exitDots.push({ price: _tp1.price, label: 'EXIT', role: 'exit', n: _runner, srLabel: _tp1.abbr, stockPrice: _tp1.stockPrice, displayLabel: _tp1.abbr });
+    } else if (_tp1 && _tp1.price == null) {
+      // SR level known by stock position, option value pending — edge marker, not axis dot.
+      _unpricedTpEdge = { abbr: _tp1.abbr, stockPrice: _tp1.stockPrice };
     } else {
-      // Ultimate fallback when both SR and ATR resolution failed (no ATR data, no SR levels).
+      // Ultimate fallback: genuinely no SR levels on trade direction (no srLevelsCache, brand-new ticker).
       exitDots.push({ price: +(entry * _tpMult(EXIT_TP_PCT)).toFixed(2), label: 'EXIT', role: 'exit', n: qty, mult: _tpMult(EXIT_TP_PCT), srLabel: '\xd71.50', stockPrice: null, displayLabel: 'EXIT' });
     }
 
@@ -3355,8 +3372,8 @@
     // SR level is far from current price. Gate: on-scale only if within 1 actionable
     // span beyond TP1. _actSpan = stop..tp1, the zone you actively manage.
     // qty=1: _tp1N=0, TP2 dot is labeled 'EXIT' not 'TP2', _tp2IsRunner=false → always on-scale.
-    const _actMin      = Math.min(sl, entry, _tp1 ? _tp1.price : entry);
-    const _actMax      = Math.max(sl, entry, _tp1 ? _tp1.price : entry);
+    const _actMin      = Math.min(sl, entry, (_tp1 && _tp1.price != null) ? _tp1.price : entry);
+    const _actMax      = Math.max(sl, entry, (_tp1 && _tp1.price != null) ? _tp1.price : entry);
     const _actSpan     = _actMax - _actMin;
     const _tp2IsRunner = _tp2 != null && _tp1N > 0;
     const _tp2OnScale  = _tp2IsRunner ? (_tp2.price <= _actMax + _actSpan) : true;
@@ -3368,7 +3385,7 @@
     // case. Skip extension; exits-anchored axis + edge markers are the correct state.
     const _atrAxisHasData = chainDayRange != null;
     const _srAxisPrices = _atrAxisHasData
-      ? _lvlData.filter(d => d.demand !== null && isFinite(d.demand) && d.demand <= REACH_PCT
+      ? _lvlValued.filter(d => d.demand !== null && isFinite(d.demand) && d.demand <= REACH_PCT
           && (_actSpan <= 0 || d.value <= _actMax + _actSpan))
         .map(d => d.value)
       : [];
@@ -3408,7 +3425,7 @@
     let edgeAbove = null;  // nearest off-scale above maxP (lowest optionPrice > maxP)
     const srDots = [];
     const atrFilteredDots = [];  // levels beyond REACH_PCT — annotates footer note; not hidden
-    _lvlData.forEach(({ lvl, value: op, demand }) => {
+    _lvlValued.forEach(({ lvl, value: op, demand }) => {
       if (demand !== null && isFinite(demand) && demand > REACH_PCT) {
         atrFilteredDots.push({ stockPrice: lvl.price, optionPrice: op, demand, label: lvl.label, role: lvl.role, srLabel: lvl.srLabel, gexLabel: lvl.gexLabel });
         // no return — axis bounds decide visibility
@@ -3622,6 +3639,17 @@
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 9}" text-anchor="end" fill="${_tp2Col}" font-size="7" font-family="monospace">${fmtR(_tp2.price)}</text>`);
     }
 
+    // Unpriced SR exit — SR level known by stock position, option value not yet available.
+    // Same right-edge pin as far-TP2; stock price replaces option price; "prices at open" replaces R-mult.
+    if (_unpricedTpEdge) {
+      const _uCol = DOT_COLOR['exit'];
+      const _uLbl = `▸ EXIT \xb7 ${_unpricedTpEdge.abbr}`;
+      svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_uCol}" stroke-width="1" opacity="0.4"/>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 30}" text-anchor="end" fill="${_uCol}" font-size="7.5" font-family="monospace">${_uLbl}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 19}" text-anchor="end" fill="${_uCol}" font-size="7" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y - 9}" text-anchor="end" fill="#64748b" font-size="7" font-family="monospace">prices at open</text>`);
+    }
+
     // ── §2 Exit dots — 3-line labels, stagger-aware ──────────────────────────
     // line 1: level name  line 2: $stk · $opt  line 3: %gain (omitted for ENTRY)
     // stagger: push label stack 16px higher when adjacent dots are within 40px
@@ -3655,10 +3683,14 @@
     const riskDol = rDenom > 0 ? Math.round(rDenom * qty * 100) : 0;
     const rwdDol  = rDenom > 0 ? Math.round((lastExit.price - entry) * qty * 100) : 0;
     // STOP keeps its ×mult label; SR-based TP/EXIT dots show their level abbreviation.
-    const derivStr = exitDots
-      .filter(d => d.role !== 'entry')
-      .map(d => d.mult != null ? `\xd7${d.mult.toFixed(2)}` : (d.srLabel || d.label))
-      .join(' \xb7 ') + ` off $${entry.toFixed(2)}`;
+    // When _unpricedTpEdge: replace exit derivation with SR label + "prices at open".
+    const derivStr = _unpricedTpEdge
+      ? `\xd7${_slMult().toFixed(2)} STOP \xb7 ${_unpricedTpEdge.abbr} $${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk (prices at open) off $${entry.toFixed(2)}`
+      : exitDots.filter(d => d.role !== 'entry').map(d => d.mult != null ? `\xd7${d.mult.toFixed(2)}` : (d.srLabel || d.label)).join(' \xb7 ') + ` off $${entry.toFixed(2)}`;
+    // When the exit is unpriced, R:R and reward are meaningless — show only risk.
+    const _rrPfx = _unpricedTpEdge
+      ? `risk $${riskDol}`
+      : `R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol}`;
 
     let tierDesc;
     if (_tp1N > 0 && _tp1) {
@@ -3704,7 +3736,7 @@
       _atrFooterPfx  = `day range ${_atrPct}% used \xb7 ${_atrLeft} left \xb7 `;
     }
     const _footerAmberStyle = _gaugeExhausted ? ' style="color:#eda100"' : '';
-    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}R:R 1:${rrRatio} \xb7 risk $${riskDol} \xb7 reward $${rwdDol} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
+    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}${_rrPfx} \xb7 ${derivStr} \xb7 ${tierDesc}${offScaleStr}</div>${_noteHtml}`;
     el.style.display = '';
   }
 
