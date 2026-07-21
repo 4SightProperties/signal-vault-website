@@ -4549,25 +4549,39 @@
         const untracked = !o.tracked
           ? ' <span class="pnl-badge stale" title="Broker has this order but system does not track it">untracked</span>'
           : '';
+        const isBracketLeg = !!o.bracket_position_id;
+        const bracketBadge = isBracketLeg
+          ? ' <span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem" title="Part of an OCO bracket — Cancel removes both legs">OCO</span>'
+          : '';
         const safeSym = (sym + '').replace(/"/g, '&quot;');
+        const cancelBtn = isBracketLeg
+          ? '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+              ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+              ' data-bracket-pid="' + o.bracket_position_id + '"' +
+              ' data-ticker="' + (o.ticker || '') + '"' +
+              ' data-sym="' + safeSym + '">Cancel bracket</button>'
+          : '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+              ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+              ' data-cancel-id="' + o.order_id + '"' +
+              ' data-classification="' + o.classification + '"' +
+              ' data-ticker="' + (o.ticker || '') + '"' +
+              ' data-sym="' + safeSym + '">Cancel</button>';
         return '<div class="pos-target-row" style="flex-wrap:wrap;gap:0.2rem 0.4rem;align-items:center">' +
           '<span class="pos-direction ' + dirCls + '" style="font-size:0.68rem;padding:0.1rem 0.3rem">' + clsLabel + '</span>' +
           '<span class="pos-target-type">' + (o.ticker || '?') + '</span>' +
           '<span class="pos-target-price" style="font-size:0.72rem;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeSym + '">' + sym + '</span>' +
           '<span class="pos-target-badge">' + priceStr + ' · ' + (o.quantity || '?') + '× · ' + (o.status || '') + (dur ? ' · ' + dur : '') + '</span>' +
-          untracked +
-          '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
-            ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-            ' data-cancel-id="' + o.order_id + '"' +
-            ' data-classification="' + o.classification + '"' +
-            ' data-ticker="' + (o.ticker || '') + '"' +
-            ' data-sym="' + safeSym + '">Cancel</button>' +
+          untracked + bracketBadge +
+          cancelBtn +
           '</div>';
       }).join('');
 
       // Bind cancel handlers — buttons are rebuilt each render, so listeners are always fresh.
       el.querySelectorAll('[data-cancel-id]').forEach(btn => {
         btn.addEventListener('click', () => _onCancelWorkingOrder(btn));
+      });
+      el.querySelectorAll('[data-bracket-pid]').forEach(btn => {
+        btn.addEventListener('click', () => _onCancelBracket(btn));
       });
     } catch (err) {
       if (err.status === 403) {
@@ -4612,6 +4626,40 @@
             fetchWorkingOrders();
           } else if (result.reason === 'already_filled') {
             setStatus('Already filled — position may now exist. Refreshing…', 'error');
+            fetchWorkingOrders();
+          } else {
+            setStatus('Error: ' + (result.error || 'cancel failed'), 'error');
+          }
+        } catch (err) {
+          const detail = err.data && err.data.detail ? err.data.detail : err.message;
+          setStatus('Error: ' + detail, 'error');
+        }
+      },
+    });
+  }
+
+  function _onCancelBracket(btn) {
+    const positionId = btn.dataset.bracketPid;
+    const ticker     = btn.dataset.ticker;
+    const sym        = btn.dataset.sym;
+
+    showConfirmModal({
+      title:   'Cancel OCO Bracket — ' + ticker,
+      body:    '<strong style="color:var(--danger)">Both legs of the OCO bracket will be cancelled.</strong><br><br>' +
+               'The TP limit <em>and</em> the protective stop for <strong>' + ticker + '</strong> will be removed. ' +
+               'Bot price-driven exits (trail stop, hard stop, ATR stop) will resume within ~30 seconds.<br><br>' +
+               'Option: <code style="font-size:0.8rem">' + sym + '</code>',
+      okLabel: 'Cancel bracket — both legs',
+      okClass: 'danger',
+      onOk: async (setStatus) => {
+        setStatus('Canceling bracket…');
+        try {
+          const result = await apiPost('/api/orders/cancel-bracket', { position_id: positionId });
+          if (result.ok) {
+            setStatus('Bracket canceled — bot exits resumed', 'ok');
+            fetchWorkingOrders();
+          } else if (result.reason === 'already_filled') {
+            setStatus('A leg already filled — position is closing. Refreshing…', 'error');
             fetchWorkingOrders();
           } else {
             setStatus('Error: ' + (result.error || 'cancel failed'), 'error');
