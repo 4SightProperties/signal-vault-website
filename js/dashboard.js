@@ -3545,7 +3545,7 @@
     const stkSpan  = maxStkP - minStkP || 1;
 
     // SVG sizing — no ATR strip; dots below axis with 4-line label stacks.
-    // AXIS_Y=32: ~30px above for ATR zone labels (3-line stack) + now/open tick labels.
+    // AXIS_Y=32: ~30px above for ATR zone labels (3-line stack, R+% merged) + now/open tick labels.
     // Labels bottom at AXIS_Y+47=79; stagger adds 18px → 97; margin → SVG_H=108.
     const _ps = window.getComputedStyle(el.parentElement);
     const W = Math.round(
@@ -3594,22 +3594,28 @@
       const _x75  = toX(_atr075Stk);
       const _v75  = _interpOptVal(_atr075Stk);
       const _r75  = _v75 != null ? fmtR(_v75) : '';
+      const _pct75str = (_v75 != null && entry > 0)
+        ? ((_v75 >= entry ? '+' : '') + Math.round((_v75 - entry) / entry * 100) + '%') : '';
+      const _outcome75 = [_r75, _pct75str].filter(Boolean).join(' · ');
       svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
       svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
       if (_v75 != null) {
         svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}</text>`);
-        if (_r75) svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">${_r75}</text>`);
+        if (_outcome75) svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">${_outcome75}</text>`);
       }
     }
     if (_atr100Stk != null) {
       const _x100 = toX(_atr100Stk);
       const _v100 = _interpOptVal(_atr100Stk);
       const _r100 = _v100 != null ? fmtR(_v100) : '';
+      const _pct100str = (_v100 != null && entry > 0)
+        ? ((_v100 >= entry ? '+' : '') + Math.round((_v100 - entry) / entry * 100) + '%') : '';
+      const _outcome100 = [_r100, _pct100str].filter(Boolean).join(' · ');
       svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
       svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}1 ATR $${_atr100Stk.toFixed(0)}</text>`);
       if (_v100 != null) {
         svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}</text>`);
-        if (_r100) svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">${_r100}</text>`);
+        if (_outcome100) svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">${_outcome100}</text>`);
       }
     }
 
@@ -3677,10 +3683,11 @@
     }
 
     // ── §3 Unified dots: exit + on-scale SR/cloud ─────────────────────────────
-    // PROX_PX = full width of the widest typical label (font-10 monospace, 8 chars × 6.01px ≈ 48px).
-    // Two centered labels don't overlap when dot centers are separated by at least one full label width.
+    // PROX_PX = full width of the widest label line (yL4: "+6.1R · +192%" ≈ 13 chars × 6px
+    // at font-9 monospace = 78px). Two centered labels don't overlap when dot centers are
+    // separated by at least one full label width.
     // Used for: SR-vs-exit drop, SR-vs-SR drop (nearest-to-spot wins), exit-vs-exit label suppression.
-    const PROX_PX = 48;
+    const PROX_PX = 78;
 
     // Exact-match set (backstop for very wide domains where 25px might not fire on 10¢ gaps)
     const _exitStkKeys = new Set(
@@ -3803,11 +3810,15 @@
         if (dot.isEntry) {
           if (dot.optVal != null) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
         } else if (dot.showPct && entry > 0) {
-          const optTxt = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
-          const rStr   = dot.optVal != null ? fmtR(dot.optVal) : '';
-          const rCol   = !rStr ? '#64748b' : (dot.optVal >= entry ? '#22c55e' : '#ef4444');
+          const optTxt    = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
+          const rStr      = dot.optVal != null ? fmtR(dot.optVal) : '';
+          const pctStr    = dot.pctGain != null ? (dot.pctGain >= 0 ? '+' : '') + Math.round(dot.pctGain) + '%' : '';
+          const outcomeStr = [rStr, pctStr].filter(Boolean).join(' · ');
+          const outcomeCol = !outcomeStr ? '#64748b'
+            : dot.pctGain != null ? (dot.pctGain < 0 ? '#ef4444' : '#22c55e')
+            : (dot.optVal >= entry ? '#22c55e' : '#ef4444');
           svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">${optTxt}</text>`);
-          if (rStr) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL4}" text-anchor="middle" fill="${rCol}" font-size="9" font-family="monospace">${rStr}</text>`);
+          if (outcomeStr) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL4}" text-anchor="middle" fill="${outcomeCol}" font-size="9" font-family="monospace">${outcomeStr}</text>`);
         }
       }
     });
@@ -3820,8 +3831,10 @@
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="10" font-family="monospace">${_lbl}</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${_tp2.price.toFixed(2)}</text>`);
-      const _fmtRTp2 = fmtR(_tp2.price);
-      if (_fmtRTp2) svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 47}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${_fmtRTp2}</text>`);
+      const _fmtRTp2   = fmtR(_tp2.price);
+      const _pctTp2str = entry > 0 ? ((_tp2.price >= entry ? '+' : '') + Math.round((_tp2.price - entry) / entry * 100) + '%') : '';
+      const _outcomeTp2 = [_fmtRTp2, _pctTp2str].filter(Boolean).join(' · ');
+      if (_outcomeTp2) svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 47}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${_outcomeTp2}</text>`);
     }
     if (_unpricedTpEdge) {
       const _col = DOT_COLOR['exit'];
