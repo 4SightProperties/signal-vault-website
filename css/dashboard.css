@@ -2082,6 +2082,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   gap: 0.36rem;
   margin-top: 0.28rem;
 }
+.cockpit-broker-bot-cols--oco {
+  grid-template-columns: 3fr 1fr;
+}
 .cockpit-broker-col,
 .cockpit-bot-col {
   border: 1px solid var(--border);

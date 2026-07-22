@@ -2708,9 +2708,10 @@
     let _ocoTpStash  = null;
     let _ocoLvlStash = null;
     function _updateBrokerBotCols(layer) {
-      const brokerEl  = document.getElementById('cockpitBrokerContent');
-      const botEl     = document.getElementById('cockpitBotContent');
-      const brokerCol = document.getElementById('cockpitBrokerCol');
+      const brokerEl     = document.getElementById('cockpitBrokerContent');
+      const botEl        = document.getElementById('cockpitBotContent');
+      const brokerCol    = document.getElementById('cockpitBrokerCol');
+      const brokerBotCols = brokerCol ? brokerCol.parentElement : null;
       if (!brokerEl || !botEl) return;
 
       // Stash typed TP before innerHTML replacement destroys cockpitOcoTpInput
@@ -2724,7 +2725,8 @@
         <div class="cockpit-col-item">hard stop · stall exit</div>
         <div class="cockpit-col-item">opt floor · dollar cap · time exits</div>`;
 
-      if (brokerCol) brokerCol.classList.remove('cockpit-broker-accent');
+      if (brokerCol)    brokerCol.classList.remove('cockpit-broker-accent');
+      if (brokerBotCols) brokerBotCols.classList.remove('cockpit-broker-bot-cols--oco');
 
       if (layer === 'default') {
         brokerEl.innerHTML = nothing;
@@ -2743,7 +2745,8 @@
           <div class="cockpit-col-item">0.08 trail backstop · <s>stall exit</s></div>
           <div class="cockpit-col-item">opt floor · dollar cap · time exits</div>`;
       } else if (layer === 'oco_bracket') {
-        if (brokerCol) brokerCol.classList.add('cockpit-broker-accent');
+        if (brokerCol)    brokerCol.classList.add('cockpit-broker-accent');
+        if (brokerBotCols) brokerBotCols.classList.add('cockpit-broker-bot-cols--oco');
         const curAsk = armedContract ? armedContract.ask : 0;
         const sl     = curAsk > 0 ? +(curAsk * _slMult()).toFixed(2) : '';
 
@@ -2799,8 +2802,7 @@
           </div>`;
         botEl.innerHTML = `
           <div class="cockpit-col-item">dollar cap · opt floor · time exits</div>
-          <div class="cockpit-col-item cockpit-col-suppressed">trail stop · hard stop · ATR stop</div>
-          <div class="cockpit-col-item cockpit-col-suppressed">stall exit · tp1 · tp2 · cloud break</div>`;
+          <div class="cockpit-col-item cockpit-col-suppressed" style="margin-top:0.1rem">other bot exits suppressed while bracket rests</div>`;
 
         // Wire click handlers — bind-time gate: return before addEventListener on disabled buttons.
         // A null-value (unpriced) level has disabled=true in HTML; no handler is ever attached.
