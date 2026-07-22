@@ -3521,6 +3521,12 @@
       .forEach(d => { if (d.stockPrice != null) _domainPts.push(d.stockPrice); });
     _srOnScale.forEach(d => _domainPts.push(d.lvl.price));
     if (chainDayOpen != null) _domainPts.push(chainDayOpen);
+    // Proxy terminus: spot − dayRange ≈ session low on a trending day. Push so the glow
+    // anchor is always on-canvas rather than bleeding off the left edge via blur.
+    // Skip when chainDayOpen is present — the real open already anchors the domain.
+    if (chainDayRange > 0 && chainDayOpen == null) {
+      _domainPts.push(_isCall ? _spot - chainDayRange : _spot + chainDayRange);
+    }
 
     const _minStk  = Math.min(..._domainPts);
     const _maxStk  = Math.max(..._domainPts);
@@ -3607,9 +3613,11 @@
       svgParts.push(`<line x1="${Math.min(_ex, _tx).toFixed(1)}" y1="${AXIS_Y}" x2="${Math.max(_ex, _tx).toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round" opacity="0.5"/>`);
     }
 
-    // ── §4 Glow — ATR consumed, extending from spot back toward session open ──
-    // Gated on _atrConsumedPct (available now). Direction: _isCall derives a proxy open until
-    // chainDayOpen lands (day_open field), at which point the real anchor takes over via ??.
+    // ── §4 Glow — ATR consumed, from day-range terminus back to spot ──
+    // Anchor: real day_open when backend supplies it; proxy (spot − dayRange = session
+    // low on a trending day) otherwise. Proxy is pre-pushed into _domainPts so the anchor
+    // is always on-canvas. Slate (#94a3b8) keeps the consumed-distance channel visually
+    // separate from the green reward segment in §3 — these represent different things.
     if (_atrConsumedPct != null && chainAtr > 0 && _spot > 0) {
       const _glowAnchor = chainDayOpen != null
         ? chainDayOpen
@@ -3617,16 +3625,22 @@
       const _gx0 = toX(_glowAnchor), _gx1 = toX(_spot);
       if (Math.abs(_gx1 - _gx0) > 1) {
         svgParts.push(`<defs><filter id="rrlGlow"><feGaussianBlur stdDeviation="3.5" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter></defs>`);
-        svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="6" stroke-linecap="round" filter="url(#rrlGlow)" opacity="0.7"/>`);
-        svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="2" stroke-linecap="round" opacity="0.95"/>`);
+        svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#94a3b8" stroke-width="6" stroke-linecap="round" filter="url(#rrlGlow)" opacity="0.7"/>`);
+        svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" opacity="0.95"/>`);
       }
     }
 
     // ── §5 now / open markers ──────────────────────────────────────────────────
     if (chainDayOpen != null) {
+      // Real session open — labeled "open" because the source is authoritative.
       const _ox = toX(chainDayOpen);
       svgParts.push(`<line x1="${_ox.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_ox.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="#475569" stroke-width="1.5" stroke-linecap="round"/>`);
       svgParts.push(`<text x="${_ox.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#475569" font-size="5.5" font-family="monospace">open</text>`);
+    } else if (_atrConsumedPct != null && chainDayRange > 0) {
+      // Proxy terminus (spot − dayRange): unlabeled tick. Calling it "open" would be wrong
+      // on choppy days where dayRange > spot − open; the glow length speaks for itself.
+      const _px = toX(_isCall ? _spot - chainDayRange : _spot + chainDayRange);
+      svgParts.push(`<line x1="${_px.toFixed(1)}" y1="${AXIS_Y - 5}" x2="${_px.toFixed(1)}" y2="${AXIS_Y + 5}" stroke="#94a3b8" stroke-width="1" stroke-linecap="round" opacity="0.5"/>`);
     }
     {
       const _nx     = toX(_spot);

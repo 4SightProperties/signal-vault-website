@@ -2662,7 +2662,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .basket-row {
   display: grid;
-  grid-template-columns: 64px 34px 42px 40px 52px;
+  grid-template-columns: 80px 34px 42px 40px 40px;
   align-items: center;
   font-size: 0.61rem;
   white-space: nowrap;
