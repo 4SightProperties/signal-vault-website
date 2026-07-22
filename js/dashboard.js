@@ -3607,10 +3607,14 @@
       svgParts.push(`<line x1="${Math.min(_ex, _tx).toFixed(1)}" y1="${AXIS_Y}" x2="${Math.max(_ex, _tx).toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="3" stroke-linecap="round" opacity="0.5"/>`);
     }
 
-    // ── §4 Glow — ATR consumed, anchored at today's OPEN (independent of entry) ──
-    // Absent until backend supplies day_open → chainDayOpen; all other elements render without it.
-    if (chainDayOpen != null && _spot > 0) {
-      const _gx0 = toX(chainDayOpen), _gx1 = toX(_spot);
+    // ── §4 Glow — ATR consumed, extending from spot back toward session open ──
+    // Gated on _atrConsumedPct (available now). Direction: _isCall derives a proxy open until
+    // chainDayOpen lands (day_open field), at which point the real anchor takes over via ??.
+    if (_atrConsumedPct != null && chainAtr > 0 && _spot > 0) {
+      const _glowAnchor = chainDayOpen != null
+        ? chainDayOpen
+        : (_isCall ? _spot - chainDayRange : _spot + chainDayRange);
+      const _gx0 = toX(_glowAnchor), _gx1 = toX(_spot);
       if (Math.abs(_gx1 - _gx0) > 1) {
         svgParts.push(`<defs><filter id="rrlGlow"><feGaussianBlur stdDeviation="3.5" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter></defs>`);
         svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#22c55e" stroke-width="6" stroke-linecap="round" filter="url(#rrlGlow)" opacity="0.7"/>`);
@@ -3693,7 +3697,7 @@
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 8}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
 
       const nCol = dot.nameColor ?? col;
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL1}" text-anchor="middle" fill="${nCol}" font-size="7.5" font-family="monospace">${dot.label}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL1}" text-anchor="middle" fill="${nCol}" font-size="8" font-family="monospace">${dot.label}</text>`);
 
       const stkTxt = dot.approxStk ? `~$${(+dot.stockPrice).toFixed(0)}` : `$${(+dot.stockPrice).toFixed(0)}`;
       svgParts.push(`<text x="${x.toFixed(1)}" y="${yL2}" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="monospace">${stkTxt}</text>`);
@@ -3714,16 +3718,16 @@
       const _col = DOT_COLOR['tp'];
       const _lbl = _tp2.abbr ? `▸ TP2 · ${_tp2.abbr}` : '▸ TP2';
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">${_lbl}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="7" font-family="monospace">$${_tp2.price.toFixed(2)} · ${fmtR(_tp2.price)}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="8" font-family="monospace">${_lbl}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">$${_tp2.price.toFixed(2)} · ${fmtR(_tp2.price)}</text>`);
     }
     if (_unpricedTpEdge) {
       const _col = DOT_COLOR['exit'];
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="#64748b" font-size="7" font-family="monospace">prices at open</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="8" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="#64748b" font-size="7.5" font-family="monospace">prices at open</text>`);
     }
     // Nearest off-domain profit-side SR/cloud level (suppressed when edge already taken by TP2 or unpriced)
     const _profEdgeDot = _srOffScale.sort((a, b) =>
