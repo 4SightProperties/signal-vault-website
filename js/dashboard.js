@@ -3503,11 +3503,16 @@
          ? (_isCall ? _spot - chainDayRange : _spot + chainDayRange)
          : null);
 
-    // ATR zone bounds anchored to the day's origin (same reference as chainDayRange/chainAtr consumed %).
-    const _atr075Stk = chainAtr && _dayOrigin != null
-      ? (_isCall ? _dayOrigin + 0.75 * chainAtr : _dayOrigin - 0.75 * chainAtr) : null;
-    const _atr100Stk = chainAtr && _dayOrigin != null
-      ? (_isCall ? _dayOrigin + 1.0  * chainAtr : _dayOrigin - 1.0  * chainAtr) : null;
+    // Zone anchor: day origin when session data exists (zones agree with consumed % + glow);
+    // falls back to spot post/pre-session (static "N ATR from here" ladder — no consumed
+    // reading exists, so no glow either, but the marks still render).
+    const _zoneAnchor   = _dayOrigin ?? _spot;
+    const _spotAnchored = _dayOrigin == null;   // true → labels get + prefix
+
+    const _atr075Stk = chainAtr && _zoneAnchor
+      ? (_isCall ? _zoneAnchor + 0.75 * chainAtr : _zoneAnchor - 0.75 * chainAtr) : null;
+    const _atr100Stk = chainAtr && _zoneAnchor
+      ? (_isCall ? _zoneAnchor + 1.0  * chainAtr : _zoneAnchor - 1.0  * chainAtr) : null;
     // _atr150Stk remains spot-relative — used only as an SR-level viewport clip, not a zone mark.
     const _atr150Stk = chainAtr && _spot
       ? (_isCall ? _spot + 1.5  * chainAtr : _spot - 1.5  * chainAtr) : null;
@@ -3590,7 +3595,7 @@
       const _v75  = _interpOptVal(_atr075Stk);
       const _r75  = _v75 != null ? fmtR(_v75) : '';
       svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
       if (_v75 != null) {
         svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}</text>`);
         if (_r75) svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">${_r75}</text>`);
@@ -3601,7 +3606,7 @@
       const _v100 = _interpOptVal(_atr100Stk);
       const _r100 = _v100 != null ? fmtR(_v100) : '';
       svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">1 ATR $${_atr100Stk.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}1 ATR $${_atr100Stk.toFixed(0)}</text>`);
       if (_v100 != null) {
         svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}</text>`);
         if (_r100) svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">${_r100}</text>`);
