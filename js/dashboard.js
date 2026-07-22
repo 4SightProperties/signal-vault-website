@@ -3494,11 +3494,21 @@
     // x-axis is always low→high left→right; direction emerges from stock positions.
     const _spot = chainCurrentPrice;
 
-    // ATR zone bounds in the profit direction from spot
-    const _atr075Stk = chainAtr && _spot
-      ? (_isCall ? _spot + 0.75 * chainAtr : _spot - 0.75 * chainAtr) : null;
-    const _atr100Stk = chainAtr && _spot
-      ? (_isCall ? _spot + 1.0  * chainAtr : _spot - 1.0  * chainAtr) : null;
+    // Day origin: real session open when available; proxy (spot − dayRange) otherwise.
+    // Used as the anchor for ATR zone marks and the ATR-consumed glow — keeps both
+    // on the same reference point so "now 77%" falls between the 0.75 and 1.0 marks.
+    const _dayOrigin = chainDayOpen != null
+      ? chainDayOpen
+      : (chainDayRange != null && chainDayRange >= 0
+         ? (_isCall ? _spot - chainDayRange : _spot + chainDayRange)
+         : null);
+
+    // ATR zone bounds anchored to the day's origin (same reference as chainDayRange/chainAtr consumed %).
+    const _atr075Stk = chainAtr && _dayOrigin != null
+      ? (_isCall ? _dayOrigin + 0.75 * chainAtr : _dayOrigin - 0.75 * chainAtr) : null;
+    const _atr100Stk = chainAtr && _dayOrigin != null
+      ? (_isCall ? _dayOrigin + 1.0  * chainAtr : _dayOrigin - 1.0  * chainAtr) : null;
+    // _atr150Stk remains spot-relative — used only as an SR-level viewport clip, not a zone mark.
     const _atr150Stk = chainAtr && _spot
       ? (_isCall ? _spot + 1.5  * chainAtr : _spot - 1.5  * chainAtr) : null;
 
@@ -3529,9 +3539,9 @@
     const maxStkP  = _maxStk + _stkPad;
     const stkSpan  = maxStkP - minStkP || 1;
 
-    // SVG sizing — no ATR strip; dots below axis with 3-line label stacks.
-    // AXIS_Y=32: ~28px above for ATR zone labels + now/open tick labels.
-    // Labels bottom at AXIS_Y+37=69; stagger adds 18px → 87; margin → SVG_H=108.
+    // SVG sizing — no ATR strip; dots below axis with 4-line label stacks.
+    // AXIS_Y=32: ~30px above for ATR zone labels (3-line stack) + now/open tick labels.
+    // Labels bottom at AXIS_Y+47=79; stagger adds 18px → 97; margin → SVG_H=108.
     const _ps = window.getComputedStyle(el.parentElement);
     const W = Math.round(
       el.parentElement.clientWidth
@@ -3574,25 +3584,27 @@
       }
     }
 
-    // ATR zone boundary dashed ticks + labels at top
+    // ATR zone boundary dashed ticks + labels (stacked, adjacent to axis)
     if (_atr075Stk != null) {
       const _x75  = toX(_atr075Stk);
       const _v75  = _interpOptVal(_atr075Stk);
+      const _r75  = _v75 != null ? fmtR(_v75) : '';
       svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x75.toFixed(1)}" y="8" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
       if (_v75 != null) {
-        const _r75 = fmtR(_v75);
-        svgParts.push(`<text x="${_x75.toFixed(1)}" y="18" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}${_r75 ? ' · ' + _r75 : ''}</text>`);
+        svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}</text>`);
+        if (_r75) svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">${_r75}</text>`);
       }
     }
     if (_atr100Stk != null) {
       const _x100 = toX(_atr100Stk);
       const _v100 = _interpOptVal(_atr100Stk);
+      const _r100 = _v100 != null ? fmtR(_v100) : '';
       svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x100.toFixed(1)}" y="8" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">1 ATR $${_atr100Stk.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">1 ATR $${_atr100Stk.toFixed(0)}</text>`);
       if (_v100 != null) {
-        const _r100 = fmtR(_v100);
-        svgParts.push(`<text x="${_x100.toFixed(1)}" y="18" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}${_r100 ? ' · ' + _r100 : ''}</text>`);
+        svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}</text>`);
+        if (_r100) svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">${_r100}</text>`);
       }
     }
 
@@ -3623,11 +3635,8 @@
     // when the anchor is off-domain the glow is clamped at x=0 and a ◂ marker signals that
     // the day's range extends beyond the left edge of the view. Slate (#94a3b8) keeps the
     // consumed-distance channel visually separate from the green reward segment in §3.
-    if (_atrConsumedPct != null && chainAtr > 0 && _spot > 0) {
-      const _glowAnchor = chainDayOpen != null
-        ? chainDayOpen
-        : (_isCall ? _spot - chainDayRange : _spot + chainDayRange);
-      const _gx0Raw = toX(_glowAnchor);
+    if (_atrConsumedPct != null && chainAtr > 0 && _spot > 0 && _dayOrigin != null) {
+      const _gx0Raw = toX(_dayOrigin);
       const _gx0    = Math.max(0, _gx0Raw);
       const _gx1    = toX(_spot);
       if (Math.abs(_gx1 - _gx0) > 1) {
@@ -3646,10 +3655,10 @@
       const _ox = toX(chainDayOpen);
       svgParts.push(`<line x1="${_ox.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_ox.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="#475569" stroke-width="1.5" stroke-linecap="round"/>`);
       svgParts.push(`<text x="${_ox.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#475569" font-size="7.5" font-family="monospace">open</text>`);
-    } else if (_atrConsumedPct != null && chainDayRange > 0) {
+    } else if (_dayOrigin != null && _atrConsumedPct != null && chainDayRange > 0) {
       // Proxy terminus (spot − dayRange): unlabeled tick only when on-canvas.
       // When off-domain the ◂ marker in §4 already signals the overflow; skip the tick.
-      const _px = toX(_isCall ? _spot - chainDayRange : _spot + chainDayRange);
+      const _px = toX(_dayOrigin);
       if (_px >= 0) {
         svgParts.push(`<line x1="${_px.toFixed(1)}" y1="${AXIS_Y - 5}" x2="${_px.toFixed(1)}" y2="${AXIS_Y + 5}" stroke="#94a3b8" stroke-width="1" stroke-linecap="round" opacity="0.5"/>`);
       }
@@ -3700,8 +3709,9 @@
       });
     });
 
-    // Stagger all positioned dots together by stock position
-    _assignStagger(_allDots.filter(d => d.stockPrice != null), d => toX(d.stockPrice), 40);
+    // Stagger all positioned dots together by stock position.
+    // Radius reduced to 30 (was 40): stacked val/R labels are narrower than the old inline form.
+    _assignStagger(_allDots.filter(d => d.stockPrice != null), d => toX(d.stockPrice), 30);
 
     // Render dots
     _allDots.forEach(dot => {
@@ -3718,6 +3728,7 @@
       const yL1 = AXIS_Y + yS + 13;
       const yL2 = AXIS_Y + yS + 25;
       const yL3 = AXIS_Y + yS + 37;
+      const yL4 = AXIS_Y + yS + 47;
 
       svgParts.push(`<circle cx="${x.toFixed(1)}" cy="${AXIS_Y}" r="3.5" fill="${col}"/>`);
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 8}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
@@ -3734,7 +3745,8 @@
         const optTxt = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
         const rStr   = dot.optVal != null ? fmtR(dot.optVal) : '';
         const rCol   = !rStr ? '#64748b' : (dot.optVal >= entry ? '#22c55e' : '#ef4444');
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" font-size="9" font-family="monospace"><tspan fill="#94a3b8">${optTxt}</tspan><tspan fill="${rCol}">${rStr ? ' · ' + rStr : ''}</tspan></text>`);
+        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">${optTxt}</text>`);
+        if (rStr) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL4}" text-anchor="middle" fill="${rCol}" font-size="9" font-family="monospace">${rStr}</text>`);
       }
     });
 
@@ -3745,7 +3757,9 @@
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="10" font-family="monospace">${_lbl}</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${_tp2.price.toFixed(2)} · ${fmtR(_tp2.price)}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${_tp2.price.toFixed(2)}</text>`);
+      const _fmtRTp2 = fmtR(_tp2.price);
+      if (_fmtRTp2) svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 47}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${_fmtRTp2}</text>`);
     }
     if (_unpricedTpEdge) {
       const _col = DOT_COLOR['exit'];
