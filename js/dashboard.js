@@ -3697,11 +3697,15 @@
     // dropped and counted. Replaces old two-stage SR filter + separate _assignStagger call.
     const _exitPri = { entry: 0, stop: 1, tp: 2, exit: 2 };
     const _candidates = [];
+    const _exitStkSet = new Set(
+      exitDotsOnScale.filter(d => d.stockPrice != null).map(d => (+d.stockPrice).toFixed(2))
+    );
     exitDotsOnScale
       .filter(d => d.stockPrice != null)
       .sort((a, b) => (_exitPri[a.role] ?? 3) - (_exitPri[b.role] ?? 3))
       .forEach(d => _candidates.push({ kind: 'exit', data: d }));
     [..._srOnScale]
+      .filter(d => !_exitStkSet.has((+d.lvl.price).toFixed(2)))
       .sort((a, b) => Math.abs(a.lvl.price - _spot) - Math.abs(b.lvl.price - _spot))
       .forEach(d => _candidates.push({ kind: 'sr', data: d }));
 
