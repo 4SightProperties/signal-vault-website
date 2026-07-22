@@ -3709,11 +3709,23 @@
       .sort((a, b) => Math.abs(a.lvl.price - _spot) - Math.abs(b.lvl.price - _spot))
       .forEach(d => _candidates.push({ kind: 'sr', data: d }));
 
+    // DROP_PX: minimum x-gap at which stagger (18px y-offset) produces a readable result.
+    // Below this threshold, SR candidates are dropped instead of staggered — at < 30px
+    // x-separation the T1/T2 label rows interleave over a 16px shared y-band at nearly
+    // the same x, making the stacked text unreadable. Exits ignore this limit and always
+    // compete for a slot (circle-only fallback if all slots are within PROX_PX).
+    const DROP_PX = 30;
+
     const _slots = [[], []]; // [T1-x-positions, T2-x-positions]
     const _candidateSlot = new Map();
     let _srProxDropped = 0;
     _candidates.forEach(cand => {
       const x = toX(cand.kind === 'exit' ? cand.data.stockPrice : cand.data.lvl.price);
+      // SR: drop immediately if any already-assigned dot is within DROP_PX (stagger won't help)
+      if (cand.kind === 'sr' && _slots.some(slot => slot.some(kx => Math.abs(x - kx) < DROP_PX))) {
+        _srProxDropped++;
+        return;
+      }
       let slotIdx = null;
       for (let si = 0; si < _slots.length; si++) {
         if (!_slots[si].some(kx => Math.abs(x - kx) < PROX_PX)) { slotIdx = si; break; }
@@ -3846,22 +3858,9 @@
     const rrRatio = rDenom > 0 ? ((lastExit.price - entry) / rDenom).toFixed(1) : '—';
     const riskDol = rDenom > 0 ? Math.round(rDenom * qty * 100) : 0;
     const rwdDol  = rDenom > 0 ? Math.round((lastExit.price - entry) * qty * 100) : 0;
-    const derivStr = _unpricedTpEdge
-      ? `×${_slMult().toFixed(2)} STOP · ${_unpricedTpEdge.abbr} $${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk (prices at open) off $${entry.toFixed(2)}`
-      : exitDots.filter(d => d.role !== 'entry').map(d => d.mult != null ? `×${d.mult.toFixed(2)}` : (d.srLabel || d.label)).join(' · ') + ` off $${entry.toFixed(2)}`;
     const _rrPfx = _unpricedTpEdge
       ? `risk $${riskDol}`
       : `R:R 1:${rrRatio} · risk $${riskDol} · reward $${rwdDol}`;
-
-    let tierDesc;
-    if (_tp1N > 0 && _tp1) {
-      tierDesc = `${qty}ct · ${_tp1N}ct @ $${_tp1.price.toFixed(2)} · ${_runner} rides`;
-    } else {
-      tierDesc = `${qty}ct · all at once`;
-    }
-
-    let _offDomainStr = _srOffScale.length > 0 ? ` · ${_srOffScale.length} SR off-scale` : '';
-    if (_srProxDropped > 0) _offDomainStr += ` · ${_srProxDropped} SR hidden`;
 
     let _atrFooterPfx = '';
     if (_gaugeAtrRatio !== null) {
@@ -3870,7 +3869,7 @@
       _atrFooterPfx  = `day range ${_atrPct}% used · ${_atrLeft} left · `;
     }
     const _footerAmberStyle = _gaugeExhausted ? ' style="color:#eda100"' : '';
-    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}${_rrPfx} · ${derivStr} · ${tierDesc}${_offDomainStr}</div>`;
+    el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}${_rrPfx}</div>`;
     el.style.display = '';
   }
 
