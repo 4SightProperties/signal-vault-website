@@ -3686,99 +3686,79 @@
     // PROX_PX = full width of the widest label line (yL4: "+6.1R · +192%" ≈ 13 chars × 6px
     // at font-9 monospace = 78px). Two centered labels don't overlap when dot centers are
     // separated by at least one full label width.
-    // Used for: SR-vs-exit drop, SR-vs-SR drop (nearest-to-spot wins), exit-vs-exit label suppression.
+    // Used for: slot-assignment collision check (T1=below, T2=below-staggered).
     const PROX_PX = 78;
-
-    // Exact-match set (backstop for very wide domains where 25px might not fire on 10¢ gaps)
-    const _exitStkKeys = new Set(
-      exitDots.map(d => d.stockPrice != null ? (+d.stockPrice).toFixed(1) : null).filter(Boolean)
-    );
-    // x-positions of all exit dots, for pixel-space proximity check
-    const _exitXsForDedup = exitDots
-      .map(d => d.stockPrice != null ? toX(d.stockPrice) : null)
-      .filter(v => v != null);
-
-    // Step 1: drop SR dots too close to any exit dot (exit wins)
-    let _srProxDropped = 0;
-    const _srVsExitFiltered = _srOnScale.filter(d => {
-      if (_exitStkKeys.has((+d.lvl.price).toFixed(1))) return false;
-      if (_exitXsForDedup.some(ex => Math.abs(toX(d.lvl.price) - ex) < PROX_PX)) {
-        _srProxDropped++;
-        return false;
-      }
-      return true;
-    });
-
-    // Step 2: proximity-merge among SR dots themselves — nearest to spot wins
-    const _srSortedByProx = [..._srVsExitFiltered].sort((a, b) =>
-      Math.abs(a.lvl.price - _spot) - Math.abs(b.lvl.price - _spot)
-    );
-    const _srKeptXs = [];
-    const _srAxisDots = _srSortedByProx.filter(d => {
-      const srX = toX(d.lvl.price);
-      if (_srKeptXs.some(kx => Math.abs(srX - kx) < PROX_PX)) {
-        _srProxDropped++;
-        return false;
-      }
-      _srKeptXs.push(srX);
-      return true;
-    });
 
     const exitDotsOnScale = exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale));
 
-    // Exit-vs-exit label collision: the higher-priority dot keeps its full label stack;
-    // the suppressed dot keeps its circle (trade position is real) but renders no text.
-    // Priority: ENTRY (0) > STOP (1) > TP/EXIT (2). Footer still shows the full derivation.
+    // Unified slot assignment: exits (entry→stop→tp) then SR (nearest-to-spot) compete for
+    // two label slots — T1 (stagger=false) and T2 (stagger=true). First slot with no existing
+    // occupant within PROX_PX wins. Exits with no slot render circle-only; SR with no slot is
+    // dropped and counted. Replaces old two-stage SR filter + separate _assignStagger call.
     const _exitPri = { entry: 0, stop: 1, tp: 2, exit: 2 };
-    const _exitsByPri = exitDotsOnScale
+    const _candidates = [];
+    exitDotsOnScale
       .filter(d => d.stockPrice != null)
-      .sort((a, b) => (_exitPri[a.role] ?? 3) - (_exitPri[b.role] ?? 3));
-    const _exitLabelXs = [];
-    const _exitSuppressed = new Set();
-    _exitsByPri.forEach(d => {
-      const x = toX(d.stockPrice);
-      if (_exitLabelXs.some(kx => Math.abs(x - kx) < PROX_PX)) {
-        _exitSuppressed.add((+d.stockPrice).toFixed(2));
-      } else {
-        _exitLabelXs.push(x);
+      .sort((a, b) => (_exitPri[a.role] ?? 3) - (_exitPri[b.role] ?? 3))
+      .forEach(d => _candidates.push({ kind: 'exit', data: d }));
+    [..._srOnScale]
+      .sort((a, b) => Math.abs(a.lvl.price - _spot) - Math.abs(b.lvl.price - _spot))
+      .forEach(d => _candidates.push({ kind: 'sr', data: d }));
+
+    const _slots = [[], []]; // [T1-x-positions, T2-x-positions]
+    const _candidateSlot = new Map();
+    let _srProxDropped = 0;
+    _candidates.forEach(cand => {
+      const x = toX(cand.kind === 'exit' ? cand.data.stockPrice : cand.data.lvl.price);
+      let slotIdx = null;
+      for (let si = 0; si < _slots.length; si++) {
+        if (!_slots[si].some(kx => Math.abs(x - kx) < PROX_PX)) { slotIdx = si; break; }
       }
+      if (slotIdx === null) {
+        if (cand.kind === 'sr') _srProxDropped++;
+        else _candidateSlot.set(cand, null); // exit — circle only
+        return;
+      }
+      _slots[slotIdx].push(x);
+      _candidateSlot.set(cand, slotIdx);
     });
 
     const _allDots = [];
-    exitDotsOnScale.forEach(d => {
+    exitDotsOnScale.filter(d => d.stockPrice == null).forEach(d => {
       _allDots.push({
-        stockPrice:    d.stockPrice,
-        label:         d.displayLabel,
-        optVal:        d.price,
-        pctGain:       d.role !== 'entry' ? (d.price - entry) / entry * 100 : null,
-        showPct:       d.role !== 'entry',
-        approxStk:     d.role === 'stop',
-        ringColor:     DOT_COLOR[d.role] || '#22c55e',
-        nameColor:     null,
-        isEntry:       d.role === 'entry',
-        suppressLabel: d.stockPrice != null && _exitSuppressed.has((+d.stockPrice).toFixed(2)),
+        stockPrice: null, label: d.displayLabel, optVal: d.price,
+        pctGain: null, showPct: false, approxStk: true,
+        ringColor: DOT_COLOR[d.role] || '#94a3b8', nameColor: null,
+        isEntry: false, stagger: false, suppressLabel: false,
       });
     });
-    _srAxisDots.forEach(d => {
-      const _cloud = d.lvl.type === 'cloud';
-      const _col   = _cloud ? '#8b5cf6' : srColor(d.lvl.role, d.lvl.price);
-      _allDots.push({
-        stockPrice:    d.lvl.price,
-        label:         srAbbrev(d.lvl) || d.lvl.label,
-        optVal:        d.value,
-        pctGain:       d.value != null ? (d.value - entry) / entry * 100 : null,
-        showPct:       true,
-        approxStk:     false,
-        ringColor:     _col,
-        nameColor:     _cloud ? '#a78bfa' : _col,
-        isEntry:       false,
-        suppressLabel: false,
-      });
+    _candidates.forEach(cand => {
+      if (!_candidateSlot.has(cand)) return; // SR with no slot — dropped
+      const slotIdx = _candidateSlot.get(cand);
+      if (cand.kind === 'exit') {
+        const d = cand.data;
+        _allDots.push({
+          stockPrice: d.stockPrice, label: d.displayLabel, optVal: d.price,
+          pctGain:    d.role !== 'entry' ? (d.price - entry) / entry * 100 : null,
+          showPct:    d.role !== 'entry', approxStk: d.role === 'stop',
+          ringColor:  DOT_COLOR[d.role] || '#22c55e', nameColor: null,
+          isEntry:    d.role === 'entry', stagger: slotIdx === 1,
+          suppressLabel: slotIdx === null,
+        });
+      } else {
+        const d = cand.data;
+        const _cloud = d.lvl.type === 'cloud';
+        const _col   = _cloud ? '#8b5cf6' : srColor(d.lvl.role, d.lvl.price);
+        _allDots.push({
+          stockPrice: d.lvl.price, label: srAbbrev(d.lvl) || d.lvl.label,
+          optVal: d.value,
+          pctGain: d.value != null ? (d.value - entry) / entry * 100 : null,
+          showPct: true, approxStk: false, ringColor: _col,
+          nameColor: _cloud ? '#a78bfa' : _col,
+          isEntry: false, stagger: slotIdx === 1, suppressLabel: false,
+        });
+      }
     });
-
-    // Stagger all positioned dots together by stock position.
-    // Radius reduced to 30 (was 40): stacked val/R labels are narrower than the old inline form.
-    _assignStagger(_allDots.filter(d => d.stockPrice != null), d => toX(d.stockPrice), 30);
 
     // Render dots
     _allDots.forEach(dot => {
