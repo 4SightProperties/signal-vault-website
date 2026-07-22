@@ -3521,12 +3521,6 @@
       .forEach(d => { if (d.stockPrice != null) _domainPts.push(d.stockPrice); });
     _srOnScale.forEach(d => _domainPts.push(d.lvl.price));
     if (chainDayOpen != null) _domainPts.push(chainDayOpen);
-    // Proxy terminus: spot − dayRange ≈ session low on a trending day. Push so the glow
-    // anchor is always on-canvas rather than bleeding off the left edge via blur.
-    // Skip when chainDayOpen is present — the real open already anchors the domain.
-    if (chainDayRange > 0 && chainDayOpen == null) {
-      _domainPts.push(_isCall ? _spot - chainDayRange : _spot + chainDayRange);
-    }
 
     const _minStk  = Math.min(..._domainPts);
     const _maxStk  = Math.max(..._domainPts);
@@ -3582,14 +3576,24 @@
 
     // ATR zone boundary dashed ticks + labels at top
     if (_atr075Stk != null) {
-      const _x75 = toX(_atr075Stk);
+      const _x75  = toX(_atr075Stk);
+      const _v75  = _interpOptVal(_atr075Stk);
       svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x75.toFixed(1)}" y="8" text-anchor="middle" fill="#eda100" font-size="6" font-family="monospace" opacity="0.7">0.75 ATR</text>`);
+      svgParts.push(`<text x="${_x75.toFixed(1)}" y="8" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
+      if (_v75 != null) {
+        const _r75 = fmtR(_v75);
+        svgParts.push(`<text x="${_x75.toFixed(1)}" y="18" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}${_r75 ? ' · ' + _r75 : ''}</text>`);
+      }
     }
     if (_atr100Stk != null) {
       const _x100 = toX(_atr100Stk);
+      const _v100 = _interpOptVal(_atr100Stk);
       svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x100.toFixed(1)}" y="8" text-anchor="middle" fill="#ef4444" font-size="6" font-family="monospace" opacity="0.7">1 ATR $${_atr100Stk.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${_x100.toFixed(1)}" y="8" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">1 ATR $${_atr100Stk.toFixed(0)}</text>`);
+      if (_v100 != null) {
+        const _r100 = fmtR(_v100);
+        svgParts.push(`<text x="${_x100.toFixed(1)}" y="18" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}${_r100 ? ' · ' + _r100 : ''}</text>`);
+      }
     }
 
     // ── §2 Role line (base track) ──────────────────────────────────────────────
@@ -3615,18 +3619,24 @@
 
     // ── §4 Glow — ATR consumed, from day-range terminus back to spot ──
     // Anchor: real day_open when backend supplies it; proxy (spot − dayRange = session
-    // low on a trending day) otherwise. Proxy is pre-pushed into _domainPts so the anchor
-    // is always on-canvas. Slate (#94a3b8) keeps the consumed-distance channel visually
-    // separate from the green reward segment in §3 — these represent different things.
+    // low on a trending day) otherwise. Domain stays anchored to the trade (stop → targets);
+    // when the anchor is off-domain the glow is clamped at x=0 and a ◂ marker signals that
+    // the day's range extends beyond the left edge of the view. Slate (#94a3b8) keeps the
+    // consumed-distance channel visually separate from the green reward segment in §3.
     if (_atrConsumedPct != null && chainAtr > 0 && _spot > 0) {
       const _glowAnchor = chainDayOpen != null
         ? chainDayOpen
         : (_isCall ? _spot - chainDayRange : _spot + chainDayRange);
-      const _gx0 = toX(_glowAnchor), _gx1 = toX(_spot);
+      const _gx0Raw = toX(_glowAnchor);
+      const _gx0    = Math.max(0, _gx0Raw);
+      const _gx1    = toX(_spot);
       if (Math.abs(_gx1 - _gx0) > 1) {
         svgParts.push(`<defs><filter id="rrlGlow"><feGaussianBlur stdDeviation="3.5" result="b"/><feComposite in="SourceGraphic" in2="b" operator="over"/></filter></defs>`);
         svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#94a3b8" stroke-width="6" stroke-linecap="round" filter="url(#rrlGlow)" opacity="0.7"/>`);
         svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" opacity="0.95"/>`);
+        if (_gx0Raw < 0) {
+          svgParts.push(`<text x="2" y="${AXIS_Y + 4}" fill="#94a3b8" font-size="8" font-family="monospace" opacity="0.7">&#x25C2;</text>`);
+        }
       }
     }
 
@@ -3635,19 +3645,21 @@
       // Real session open — labeled "open" because the source is authoritative.
       const _ox = toX(chainDayOpen);
       svgParts.push(`<line x1="${_ox.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_ox.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="#475569" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${_ox.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#475569" font-size="5.5" font-family="monospace">open</text>`);
+      svgParts.push(`<text x="${_ox.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#475569" font-size="7.5" font-family="monospace">open</text>`);
     } else if (_atrConsumedPct != null && chainDayRange > 0) {
-      // Proxy terminus (spot − dayRange): unlabeled tick. Calling it "open" would be wrong
-      // on choppy days where dayRange > spot − open; the glow length speaks for itself.
+      // Proxy terminus (spot − dayRange): unlabeled tick only when on-canvas.
+      // When off-domain the ◂ marker in §4 already signals the overflow; skip the tick.
       const _px = toX(_isCall ? _spot - chainDayRange : _spot + chainDayRange);
-      svgParts.push(`<line x1="${_px.toFixed(1)}" y1="${AXIS_Y - 5}" x2="${_px.toFixed(1)}" y2="${AXIS_Y + 5}" stroke="#94a3b8" stroke-width="1" stroke-linecap="round" opacity="0.5"/>`);
+      if (_px >= 0) {
+        svgParts.push(`<line x1="${_px.toFixed(1)}" y1="${AXIS_Y - 5}" x2="${_px.toFixed(1)}" y2="${AXIS_Y + 5}" stroke="#94a3b8" stroke-width="1" stroke-linecap="round" opacity="0.5"/>`);
+      }
     }
     {
       const _nx     = toX(_spot);
       const _nowLbl = _atrConsumedPct != null ? `now ${Math.round(_atrConsumedPct)}% ATR` : 'now';
       const _nowCol = _gaugeExhausted ? '#eda100' : '#e2e8f0';
       svgParts.push(`<line x1="${_nx.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_nx.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="${_nowCol}" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${_nx.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#94a3b8" font-size="5.5" font-family="monospace">${_nowLbl}</text>`);
+      svgParts.push(`<text x="${_nx.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#94a3b8" font-size="7.5" font-family="monospace">${_nowLbl}</text>`);
     }
 
     // ── §3 Unified dots: exit + on-scale SR/cloud ─────────────────────────────
@@ -3696,8 +3708,8 @@
       if (dot.stockPrice == null) {
         // STOP with no stock position (pre-session/sparse projection) -> left edge stub
         const _col = DOT_COLOR['stop'];
-        svgParts.push(`<text x="2" y="${AXIS_Y + 14}" text-anchor="start" fill="${_col}" font-size="7" font-family="monospace" opacity="0.7">&#x25C2; STOP</text>`);
-        svgParts.push(`<text x="2" y="${AXIS_Y + 26}" text-anchor="start" fill="${_col}" font-size="7" font-family="monospace" opacity="0.7">&#x2014; · −30%</text>`);
+        svgParts.push(`<text x="2" y="${AXIS_Y + 14}" text-anchor="start" fill="${_col}" font-size="9" font-family="monospace" opacity="0.7">&#x25C2; STOP</text>`);
+        svgParts.push(`<text x="2" y="${AXIS_Y + 26}" text-anchor="start" fill="${_col}" font-size="9" font-family="monospace" opacity="0.7">&#x2014; · −30%</text>`);
         return;
       }
       const x   = toX(dot.stockPrice);
@@ -3711,19 +3723,18 @@
       svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 8}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
 
       const nCol = dot.nameColor ?? col;
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL1}" text-anchor="middle" fill="${nCol}" font-size="8" font-family="monospace">${dot.label}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL1}" text-anchor="middle" fill="${nCol}" font-size="10" font-family="monospace">${dot.label}</text>`);
 
       const stkTxt = dot.approxStk ? `~$${(+dot.stockPrice).toFixed(0)}` : `$${(+dot.stockPrice).toFixed(0)}`;
-      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL2}" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="monospace">${stkTxt}</text>`);
+      svgParts.push(`<text x="${x.toFixed(1)}" y="${yL2}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">${stkTxt}</text>`);
 
       if (dot.isEntry) {
-        if (dot.optVal != null) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="7" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
+        if (dot.optVal != null) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
       } else if (dot.showPct && entry > 0) {
         const optTxt = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
-        const pct    = dot.pctGain;
-        const pctTxt = pct != null ? ` · ${pct >= 0 ? '+' : ''}${Math.round(pct)}%` : '';
-        const pctCol = pct == null ? '#64748b' : (pct >= 0 ? '#22c55e' : '#ef4444');
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" font-size="7" font-family="monospace"><tspan fill="#94a3b8">${optTxt}</tspan><tspan fill="${pctCol}">${pctTxt}</tspan></text>`);
+        const rStr   = dot.optVal != null ? fmtR(dot.optVal) : '';
+        const rCol   = !rStr ? '#64748b' : (dot.optVal >= entry ? '#22c55e' : '#ef4444');
+        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" font-size="9" font-family="monospace"><tspan fill="#94a3b8">${optTxt}</tspan><tspan fill="${rCol}">${rStr ? ' · ' + rStr : ''}</tspan></text>`);
       }
     });
 
@@ -3732,16 +3743,16 @@
       const _col = DOT_COLOR['tp'];
       const _lbl = _tp2.abbr ? `▸ TP2 · ${_tp2.abbr}` : '▸ TP2';
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="8" font-family="monospace">${_lbl}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">$${_tp2.price.toFixed(2)} · ${fmtR(_tp2.price)}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="10" font-family="monospace">${_lbl}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${_tp2.price.toFixed(2)} · ${fmtR(_tp2.price)}</text>`);
     }
     if (_unpricedTpEdge) {
       const _col = DOT_COLOR['exit'];
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="8" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="7.5" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="#64748b" font-size="7.5" font-family="monospace">prices at open</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="10" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="#64748b" font-size="9" font-family="monospace">prices at open</text>`);
     }
     // Nearest off-domain profit-side SR/cloud level (suppressed when edge already taken by TP2 or unpriced)
     const _profEdgeDot = _srOffScale.sort((a, b) =>
@@ -3753,7 +3764,7 @@
       const _ex    = _isCall ? W - 2 : 2;
       const _anch  = _isCall ? 'end' : 'start';
       const _arrow = _isCall ? '▸' : '◂';
-      svgParts.push(`<text x="${_ex}" y="${AXIS_Y + 13}" text-anchor="${_anch}" fill="${_col}" font-size="7.5" font-family="monospace" opacity="0.6">${_arrow} ${_abbr} $${_profEdgeDot.lvl.price.toFixed(0)}</text>`);
+      svgParts.push(`<text x="${_ex}" y="${AXIS_Y + 13}" text-anchor="${_anch}" fill="${_col}" font-size="9" font-family="monospace" opacity="0.6">${_arrow} ${_abbr} $${_profEdgeDot.lvl.price.toFixed(0)}</text>`);
     }
 
     const svg = `<svg viewBox="0 0 ${W} ${SVG_H}" preserveAspectRatio="xMidYMid meet" width="100%" style="overflow:visible;display:block">${svgParts.join('')}</svg>`;

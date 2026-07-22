@@ -2571,7 +2571,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   grid-template-columns: 320px 1fr 360px;
   flex-shrink: 0;
   border-top: 1px solid var(--border);
-  height: 94px;
+  height: 120px;
   overflow: hidden;
 }
 
@@ -2664,7 +2664,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   display: grid;
   grid-template-columns: 80px 34px 42px 40px 40px;
   align-items: center;
-  font-size: 0.61rem;
+  font-size: 0.68rem;
   white-space: nowrap;
   overflow: hidden;
   min-height: 0;
