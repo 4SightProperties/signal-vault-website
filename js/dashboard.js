@@ -3672,11 +3672,45 @@
     }
 
     // ── §3 Unified dots: exit + on-scale SR/cloud ─────────────────────────────
-    // Skip SR dots whose stock price duplicates an exit dot position.
+    // PROX_PX: pixel distance below which a 4-line label stack (widest label ~38px centered,
+    // ±19px from dot center) would collide even with the 18px vertical stagger. Exit dots
+    // always win; SR/cloud dots within this distance are dropped and counted in the footer.
+    const PROX_PX = 25;
+
+    // Exact-match set (backstop for very wide domains where 25px might not fire on 10¢ gaps)
     const _exitStkKeys = new Set(
       exitDots.map(d => d.stockPrice != null ? (+d.stockPrice).toFixed(1) : null).filter(Boolean)
     );
-    const _srAxisDots = _srOnScale.filter(d => !_exitStkKeys.has((+d.lvl.price).toFixed(1)));
+    // x-positions of all exit dots, for pixel-space proximity check
+    const _exitXsForDedup = exitDots
+      .map(d => d.stockPrice != null ? toX(d.stockPrice) : null)
+      .filter(v => v != null);
+
+    // Step 1: drop SR dots too close to any exit dot (exit wins)
+    let _srProxDropped = 0;
+    const _srVsExitFiltered = _srOnScale.filter(d => {
+      if (_exitStkKeys.has((+d.lvl.price).toFixed(1))) return false;
+      if (_exitXsForDedup.some(ex => Math.abs(toX(d.lvl.price) - ex) < PROX_PX)) {
+        _srProxDropped++;
+        return false;
+      }
+      return true;
+    });
+
+    // Step 2: proximity-merge among SR dots themselves — nearest to spot wins
+    const _srSortedByProx = [..._srVsExitFiltered].sort((a, b) =>
+      Math.abs(a.lvl.price - _spot) - Math.abs(b.lvl.price - _spot)
+    );
+    const _srKeptXs = [];
+    const _srAxisDots = _srSortedByProx.filter(d => {
+      const srX = toX(d.lvl.price);
+      if (_srKeptXs.some(kx => Math.abs(srX - kx) < PROX_PX)) {
+        _srProxDropped++;
+        return false;
+      }
+      _srKeptXs.push(srX);
+      return true;
+    });
 
     const exitDotsOnScale = exitDots.filter(d => !(d.label === 'TP2' && !_tp2OnScale));
     const _allDots = [];
@@ -3801,7 +3835,8 @@
       tierDesc = `${qty}ct · all at once`;
     }
 
-    const _offDomainStr = _srOffScale.length > 0 ? ` · ${_srOffScale.length} SR off-scale` : '';
+    let _offDomainStr = _srOffScale.length > 0 ? ` · ${_srOffScale.length} SR off-scale` : '';
+    if (_srProxDropped > 0) _offDomainStr += ` · ${_srProxDropped} SR hidden`;
 
     let _atrFooterPfx = '';
     if (_gaugeAtrRatio !== null) {
