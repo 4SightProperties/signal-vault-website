@@ -2756,7 +2756,7 @@
         // Build SR-level TP buttons from hoisted _rrProfitSide.
         // entry via _resolveEntryPrice() — same call used by _updateOcoHints (line below).
         const { displayPrice: _btEntry } = _resolveEntryPrice();
-        const _lvls = _rrProfitSide || [];
+        const _lvls = (_rrProfitSide || []).slice(0, 5);
         const _srBtns = _lvls.map(d => {
           const canPrice = d.value != null;
           const lbl      = d.lvl.label || '?';
