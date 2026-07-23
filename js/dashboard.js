@@ -2794,11 +2794,15 @@
           </div>
           <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit — pick a level</div>
           <div class="cockpit-oco-tp-list">${_srBtns}${_defBtn}</div>
-          <input type="number" id="cockpitOcoTpInput" style="display:none" min="0.01" step="0.01">
+          <div style="display:flex;align-items:center;gap:0.3rem;margin-top:0.1rem">
+            <span class="cockpit-section-label">TP price</span>
+            <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
+                   min="0.01" step="0.01" style="width:68px">
+          </div>
           <div class="cockpit-tif-row" style="margin-top:0.22rem">
             <span class="cockpit-section-label">tif (legs)</span>
             <span class="cockpit-field-chip">gtc</span>
-            <span class="cockpit-tif-sub">level price = resting limit; ×1.50 = fill × 1.50</span>
+            <span class="cockpit-tif-sub">SR autopopulates · edit to adjust</span>
           </div>`;
         botEl.innerHTML = `
           <div class="cockpit-col-item">dollar cap · opt floor · time exits</div>
@@ -2821,22 +2825,48 @@
           });
         });
 
+        // Direct TP field edit — clears button selection; ≤0 or blank reverts to ×1.50.
+        if (tpInpEl) {
+          tpInpEl.addEventListener('input', () => {
+            const val = parseFloat(tpInpEl.value);
+            if (val > 0) {
+              _ocoLvlStash = 'custom';
+              _ocoTpStash  = String(val);
+              brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(b => b.classList.remove('active'));
+            } else {
+              _ocoLvlStash = null;
+              _ocoTpStash  = null;
+              const _db = brokerEl.querySelector('.cockpit-oco-tp-btn[data-lvl-label="×1.50"]');
+              if (_db) {
+                brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(b => b.classList.remove('active'));
+                _db.classList.add('active');
+              }
+            }
+            _updateOcoPnl();
+          });
+        }
+
         // Restore last selection; fall back to ×1.50 if previous level is now unpriced or gone.
         const _allBtns = Array.from(brokerEl.querySelectorAll('.cockpit-oco-tp-btn'));
-        const _matchBtn = _ocoLvlStash
-          ? _allBtns.find(b => b.dataset.lvlLabel === _ocoLvlStash && !b.disabled)
-          : null;
-        if (_matchBtn) {
-          _matchBtn.classList.add('active');
-          const _rp = _matchBtn.dataset.lvlPrice;
-          if (_rp && tpInpEl) tpInpEl.value = _rp;
-          _ocoTpStash = _rp || null;
+        if (_ocoLvlStash === 'custom' && _ocoTpStash) {
+          // Restore custom-typed value — no button gets active class
+          if (tpInpEl) tpInpEl.value = _ocoTpStash;
         } else {
-          // No stash or previously selected level is now unpriced — default to ×1.50
-          _ocoLvlStash = null;
-          _ocoTpStash  = null;
-          const _defBtnEl = _allBtns.find(b => b.dataset.lvlLabel === '×1.50');
-          if (_defBtnEl) _defBtnEl.classList.add('active');
+          const _matchBtn = _ocoLvlStash
+            ? _allBtns.find(b => b.dataset.lvlLabel === _ocoLvlStash && !b.disabled)
+            : null;
+          if (_matchBtn) {
+            _matchBtn.classList.add('active');
+            const _rp = _matchBtn.dataset.lvlPrice;
+            if (_rp && tpInpEl) tpInpEl.value = _rp;
+            _ocoTpStash = _rp || null;
+          } else {
+            // No stash or previously selected level is now unpriced — default to ×1.50
+            _ocoLvlStash = null;
+            _ocoTpStash  = null;
+            const _defBtnEl = _allBtns.find(b => b.dataset.lvlLabel === '×1.50');
+            if (_defBtnEl) _defBtnEl.classList.add('active');
+          }
         }
 
         _updateOcoPnl();
