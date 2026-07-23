@@ -2817,8 +2817,8 @@
             const lbl   = btn.dataset.lvlLabel;
             const price = lbl === '×1.50' ? null : parseFloat(btn.dataset.lvlPrice);
             _ocoLvlStash = lbl;
-            _ocoTpStash  = price != null ? String(price) : null;
-            if (tpInpEl) tpInpEl.value = price != null ? price : '';
+            _ocoTpStash  = price != null ? price.toFixed(2) : null;
+            if (tpInpEl) tpInpEl.value = price != null ? price.toFixed(2) : '';
             brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
             _updateOcoPnl();
@@ -2858,8 +2858,8 @@
           if (_matchBtn) {
             _matchBtn.classList.add('active');
             const _rp = _matchBtn.dataset.lvlPrice;
-            if (_rp && tpInpEl) tpInpEl.value = _rp;
-            _ocoTpStash = _rp || null;
+            if (_rp && tpInpEl) tpInpEl.value = parseFloat(_rp).toFixed(2);
+            _ocoTpStash = _rp ? parseFloat(_rp).toFixed(2) : null;
           } else {
             // No stash or previously selected level is now unpriced — default to ×1.50
             _ocoLvlStash = null;
