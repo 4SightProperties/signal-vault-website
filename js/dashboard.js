@@ -4808,16 +4808,28 @@
           ? ' <span class="pnl-badge stale" title="Broker has this order but system does not track it">untracked</span>'
           : '';
         const isBracketLeg = !!o.bracket_position_id;
-        const bracketBadge = isBracketLeg
-          ? ' <span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem" title="Part of an OCO bracket — Cancel removes both legs">OCO</span>'
-          : '';
-        const safeSym = (sym + '').replace(/"/g, '&quot;');
-        const cancelBtn = isBracketLeg
-          ? '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
-              ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-              ' data-bracket-pid="' + o.bracket_position_id + '"' +
-              ' data-ticker="' + (o.ticker || '') + '"' +
-              ' data-sym="' + safeSym + '">Cancel bracket</button>'
+        const safeSym      = (sym + '').replace(/"/g, '&quot;');
+        const safePid      = (o.bracket_position_id + '').replace(/"/g, '&quot;');
+        const currentPrice = isStop
+          ? (o.stop_price ? Number(o.stop_price).toFixed(2) : '')
+          : (o.price      ? Number(o.price).toFixed(2)      : '');
+        const rightGroup = isBracketLeg
+          ? '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:0.2rem">' +
+              '<span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem"' +
+                ' title="Part of an OCO bracket — Cancel removes both legs">OCO</span>' +
+              '<input type="number" class="pos-modify-input" step="0.01" min="0.01"' +
+                ' value="' + currentPrice + '">' +
+              '<button class="pos-console-btn" style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+                ' data-modify-pid="' + safePid + '"' +
+                ' data-classification="' + o.classification + '"' +
+                ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
+                ' data-current-price="' + currentPrice + '">Update</button>' +
+              '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+                ' style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+                ' data-bracket-pid="' + safePid + '"' +
+                ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
+                ' data-sym="' + safeSym + '">Cancel bracket</button>' +
+            '</span>'
           : '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
               ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
               ' data-cancel-id="' + o.order_id + '"' +
@@ -4829,8 +4841,8 @@
           '<span class="pos-target-type">' + (o.ticker || '?') + '</span>' +
           '<span class="pos-target-price" style="font-size:0.72rem;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeSym + '">' + sym + '</span>' +
           '<span class="pos-target-badge">' + priceStr + ' · ' + (o.quantity || '?') + '× · ' + (o.status || '') + (dur ? ' · ' + dur : '') + '</span>' +
-          untracked + bracketBadge +
-          cancelBtn +
+          untracked +
+          rightGroup +
           '</div>';
       }).join('');
 
@@ -4840,6 +4852,9 @@
       });
       el.querySelectorAll('[data-bracket-pid]').forEach(btn => {
         btn.addEventListener('click', () => _onCancelBracket(btn));
+      });
+      el.querySelectorAll('[data-modify-pid]').forEach(btn => {
+        btn.addEventListener('click', () => _onModifyBracketLeg(btn));
       });
     } catch (err) {
       if (err.status === 403) {
@@ -4921,6 +4936,60 @@
             fetchWorkingOrders();
           } else {
             setStatus('Error: ' + (result.error || 'cancel failed'), 'error');
+          }
+        } catch (err) {
+          const detail = err.data && err.data.detail ? err.data.detail : err.message;
+          setStatus('Error: ' + detail, 'error');
+        }
+      },
+    });
+  }
+
+  function _onModifyBracketLeg(btn) {
+    const positionId     = btn.dataset.modifyPid;
+    const classification = btn.dataset.classification;
+    const ticker         = btn.dataset.ticker;
+    const currentPrice   = btn.dataset.currentPrice;
+    const isStop         = classification === 'protective_stop';
+    const input          = btn.parentElement.querySelector('input.pos-modify-input');
+    if (!input) return;
+
+    const rawVal = parseFloat(input.value);
+    if (!rawVal || rawVal <= 0 || isNaN(rawVal)) {
+      input.style.outline = '1.5px solid var(--danger)';
+      input.focus();
+      return;
+    }
+    input.style.outline = '';
+    const newPrice   = rawVal.toFixed(2);
+    const legLabel   = isStop ? 'stop-loss'   : 'take-profit';
+    const otherLabel = isStop ? 'take-profit' : 'stop-loss';
+    const fieldLabel = isStop ? 'stop trigger' : 'limit price';
+
+    showConfirmModal({
+      title:   'Modify ' + (isStop ? 'Stop' : 'Take-Profit') + ' — ' + ticker,
+      body:    '<strong style="color:var(--danger)">⚠ This modifies a LIVE resting order.</strong><br><br>' +
+               'Change the <strong>' + legLabel + '</strong> leg for <strong>' + ticker + '</strong>:<br>' +
+               '<code style="font-size:0.82rem">' + fieldLabel + ': $' + currentPrice + ' → $' + newPrice + '</code><br><br>' +
+               'The <strong>' + otherLabel + '</strong> leg is unchanged.<br>' +
+               '<span style="color:var(--text-muted);font-size:0.76rem">Sent as a PUT to the broker — no cancel occurs. Both legs remain live during the update.</span>',
+      okLabel: 'Update at broker',
+      okClass: '',
+      onOk: async (setStatus) => {
+        setStatus('Sending to broker…');
+        try {
+          const payload = isStop
+            ? { position_id: positionId, stop_price: rawVal }
+            : { position_id: positionId, tp_price:   rawVal };
+          const result = await apiPost('/api/orders/modify-bracket', payload);
+          if (result.ok) {
+            setStatus(result.message || 'Bracket updated', 'ok');
+            fetchWorkingOrders();
+          } else if (result.reason === 'partial') {
+            setStatus(result.error || 'Partial update — check working orders', 'error');
+            fetchWorkingOrders();
+          } else {
+            setStatus('Error: ' + (result.error || 'update failed'), 'error');
           }
         } catch (err) {
           const detail = err.data && err.data.detail ? err.data.detail : err.message;

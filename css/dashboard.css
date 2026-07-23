@@ -1193,6 +1193,20 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .pos-console-btn.danger       { border-color: rgba(239,68,68,0.3); color: var(--danger); }
 .pos-console-btn.danger:hover { border-color: var(--danger); }
 
+.pos-modify-input {
+  width: 60px;
+  font-size: 0.65rem;
+  padding: 0.1rem 0.25rem;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-secondary);
+  -moz-appearance: textfield;
+}
+.pos-modify-input::-webkit-outer-spin-button,
+.pos-modify-input::-webkit-inner-spin-button { -webkit-appearance: none; margin: 0; }
+.pos-modify-input:focus { outline: none; border-color: var(--accent); }
+
 .pos-preview-tag {
   display: block;
   font-size: 0.54rem;
