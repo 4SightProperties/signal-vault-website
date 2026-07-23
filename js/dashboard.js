@@ -2585,6 +2585,7 @@
         <div class="cockpit-col-items" id="cockpitBotContent"></div>
       </div>
     </div>
+    <div id="cockpitOcoBotCaption" class="cockpit-oco-caption" style="display:none">bot exits suppressed while bracket rests</div>
     <!-- Hidden spans kept for _updateOcoHints compatibility -->
     <span id="cockpitOcoTpHint" style="display:none"></span>
     <span id="cockpitOcoStopHint" style="display:none"></span>
@@ -2712,6 +2713,7 @@
       const botEl        = document.getElementById('cockpitBotContent');
       const brokerCol    = document.getElementById('cockpitBrokerCol');
       const brokerBotCols = brokerCol ? brokerCol.parentElement : null;
+      const captionEl    = document.getElementById('cockpitOcoBotCaption');
       if (!brokerEl || !botEl) return;
 
       // Stash typed TP before innerHTML replacement destroys cockpitOcoTpInput
@@ -2727,6 +2729,7 @@
 
       if (brokerCol)    brokerCol.classList.remove('cockpit-broker-accent');
       if (brokerBotCols) brokerBotCols.classList.remove('cockpit-broker-bot-cols--oco');
+      if (captionEl)    captionEl.style.display = 'none';
 
       if (layer === 'default') {
         brokerEl.innerHTML = nothing;
@@ -2757,7 +2760,6 @@
         const _srBtns = _lvls.map(d => {
           const canPrice = d.value != null;
           const lbl      = d.lvl.label || '?';
-          const stkStr   = `$${(+d.lvl.price).toFixed(0)}`;
           if (canPrice) {
             const pct    = _btEntry > 0
               ? `${d.value >= _btEntry ? '+' : ''}${((d.value / _btEntry - 1) * 100).toFixed(0)}%`
@@ -2765,25 +2767,22 @@
             return `<button class="cockpit-level-btn cockpit-oco-tp-btn" type="button"
                       data-lvl-label="${lbl}" data-lvl-price="${d.value}"
                     ><span class="oco-btn-lbl">${lbl}</span
-                    ><span class="oco-btn-stk">${stkStr}</span
                     ><span class="oco-btn-val">$${d.value.toFixed(2)}</span
                     ><span class="oco-btn-pct">${pct}</span></button>`;
           } else {
             return `<button class="cockpit-level-btn cockpit-oco-tp-btn" type="button"
                       data-lvl-label="${lbl}" disabled
                     ><span class="oco-btn-lbl">${lbl}</span
-                    ><span class="oco-btn-stk">${stkStr}</span
                     ><span class="oco-btn-val oco-btn-val--unpriced">prices at open</span></button>`;
           }
         }).join('');
         // ×1.50 fallback — always present; blank tp_price → server computes from actual fill
         const _defTp  = _btEntry > 0 ? `$${(_btEntry * _tpMult(EXIT_TP_PCT)).toFixed(2)}` : '—';
-        const _defBtn = `<button class="cockpit-level-btn cockpit-oco-tp-btn" type="button"
+        const _defBtn = `<button class="cockpit-level-btn cockpit-oco-tp-btn cockpit-oco-tp-btn--default" type="button"
                            data-lvl-label="×1.50"
-                         ><span class="oco-btn-lbl">×1.50</span
-                         ><span class="oco-btn-stk">default</span
+                         ><span class="oco-btn-lbl">×1.50 default</span
                          ><span class="oco-btn-val">${_defTp}</span
-                         ><span class="oco-btn-pct">+${EXIT_TP_PCT}% est</span></button>`;
+                         ><span class="oco-btn-pct oco-btn-pct--est">+${EXIT_TP_PCT}% est</span></button>`;
 
         brokerEl.innerHTML = `
           <div class="cockpit-oco-check">☑ stop-loss</div>
@@ -2798,15 +2797,16 @@
             <span class="cockpit-section-label">TP price</span>
             <input type="number" id="cockpitOcoTpInput" class="cockpit-target-input"
                    min="0.01" step="0.01" style="width:68px">
+            <span id="cockpitOcoTpPct" class="cockpit-oco-tp-pct"></span>
+            <span class="cockpit-tif-sub" style="flex:1">SR fills · edit to adjust</span>
           </div>
           <div class="cockpit-tif-row" style="margin-top:0.22rem">
             <span class="cockpit-section-label">tif (legs)</span>
             <span class="cockpit-field-chip">gtc</span>
-            <span class="cockpit-tif-sub">SR autopopulates · edit to adjust</span>
+            <span class="cockpit-tif-sub">level price = resting limit · ×1.50 = fill × 1.50</span>
           </div>`;
-        botEl.innerHTML = `
-          <div class="cockpit-col-item">dollar cap · opt floor · time exits</div>
-          <div class="cockpit-col-item cockpit-col-suppressed" style="margin-top:0.1rem">other bot exits suppressed while bracket rests</div>`;
+        botEl.innerHTML = '';
+        if (captionEl) captionEl.style.display = '';
 
         // Wire click handlers — bind-time gate: return before addEventListener on disabled buttons.
         // A null-value (unpriced) level has disabled=true in HTML; no handler is ever attached.
@@ -3246,6 +3246,17 @@
       const dolStr = tpPnl >= 0 ? `+$${tpPnl}` : `−$${Math.abs(tpPnl)}`;
       tpSubEl.textContent = `${pctStr} · est ${dolStr}`;
       tpSubEl.style.color = tpPnl < 0 ? 'var(--danger, #ef4444)' : '';
+    }
+    const tpPctEl = document.getElementById('cockpitOcoTpPct');
+    if (tpPctEl) {
+      const rawVal = tpInp ? tpInp.value : '';
+      if (rawVal && parseFloat(rawVal) > 0 && curBase > 0) {
+        const pct = Math.round((parseFloat(rawVal) / curBase - 1) * 100);
+        tpPctEl.textContent = pct >= 0 ? `+${pct}%` : `${pct}%`;
+        tpPctEl.style.color = pct >= 0 ? '#22c55e' : 'var(--danger, #ef4444)';
+      } else {
+        tpPctEl.textContent = '';
+      }
     }
   }
 

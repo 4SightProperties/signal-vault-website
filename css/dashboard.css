@@ -1918,11 +1918,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin: 0.14rem 0 0;
 }
 .cockpit-oco-tp-btn {
-  display: grid;
-  grid-template-columns: 2rem 2.6rem 1fr 2.4rem;
+  display: flex;
+  justify-content: space-between;
   align-items: center;
-  gap: 0.28rem;
-  text-align: left;
+  gap: 0.5rem;
   width: 100%;
   padding: 0.14rem 0.28rem;
   white-space: nowrap;
@@ -1936,13 +1935,28 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   background: rgba(59,130,246,0.10);
   color: var(--blue);
 }
-.oco-btn-lbl { font-weight: 700; color: inherit; }
-.oco-btn-stk { color: var(--text-muted); font-size: 0.55rem; }
-.oco-btn-val { font-variant-numeric: tabular-nums; }
+.oco-btn-lbl { font-weight: 700; color: #94a3b8; flex: 1; }
+.oco-btn-val { font-variant-numeric: tabular-nums; color: var(--text-primary, #e2e8f0); }
 .oco-btn-val--unpriced { color: var(--text-muted); font-style: italic; }
-.oco-btn-pct { text-align: right; color: var(--text-muted); font-size: 0.55rem; }
-.cockpit-oco-tp-btn.active .oco-btn-pct,
-.cockpit-oco-tp-btn.active .oco-btn-stk { color: var(--blue); opacity: 0.75; }
+.oco-btn-pct { color: #22c55e; font-size: 0.55rem; min-width: 2.8rem; text-align: right; }
+.oco-btn-pct--est { color: var(--text-muted); }
+.cockpit-oco-tp-btn.active .oco-btn-pct { color: var(--blue); opacity: 0.75; }
+.cockpit-oco-tp-btn.active .oco-btn-lbl { color: var(--blue); }
+/* Caption below OCO panel */
+.cockpit-oco-caption {
+  text-align: center;
+  font-size: 0.55rem;
+  color: var(--text-muted);
+  margin-top: 0.18rem;
+  letter-spacing: 0.01em;
+}
+/* Inline % next to TP field */
+.cockpit-oco-tp-pct {
+  font-size: 0.58rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+  min-width: 2.6rem;
+}
 
 /* Cockpit action buttons row */
 .cockpit-actions {
@@ -2097,7 +2111,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin-top: 0.28rem;
 }
 .cockpit-broker-bot-cols--oco {
-  grid-template-columns: 3fr 1fr;
+  grid-template-columns: 1fr;
+}
+.cockpit-broker-bot-cols--oco .cockpit-bot-col {
+  display: none;
 }
 .cockpit-broker-col,
 .cockpit-bot-col {
