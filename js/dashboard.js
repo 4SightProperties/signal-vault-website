@@ -2706,8 +2706,9 @@
     // _ocoLvlStash: last-selected level label (e.g. 'UF1', '×1.50') — primary restore key for
     //   SR button active state across layer-switches and 30s button re-renders.
     // Both reset on next armContract call (declared in armContract's scope).
-    let _ocoTpStash  = null;
-    let _ocoLvlStash = null;
+    let _ocoTpStash   = null;
+    let _ocoLvlStash  = null;
+    let _ocoStopStash = null;  // custom stop price string; null → server uses sl_pct=30
     function _updateBrokerBotCols(layer) {
       const brokerEl     = document.getElementById('cockpitBrokerContent');
       const botEl        = document.getElementById('cockpitBotContent');
@@ -2716,9 +2717,11 @@
       const captionEl    = document.getElementById('cockpitOcoBotCaption');
       if (!brokerEl || !botEl) return;
 
-      // Stash typed TP before innerHTML replacement destroys cockpitOcoTpInput
-      const prevTpEl = document.getElementById('cockpitOcoTpInput');
+      // Stash typed TP/stop before innerHTML replacement destroys the inputs
+      const prevTpEl   = document.getElementById('cockpitOcoTpInput');
       if (prevTpEl && prevTpEl.value) _ocoTpStash = prevTpEl.value;
+      const prevStopEl = document.getElementById('cockpitOcoStopVal');
+      if (prevStopEl && !prevStopEl.disabled && prevStopEl.value) _ocoStopStash = prevStopEl.value;
 
       const nothing = `<div class="cockpit-col-nothing">nothing — bot-held only</div>`;
       const botDefault = `
@@ -2788,8 +2791,11 @@
           <div class="cockpit-oco-check">☑ stop-loss</div>
           <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
             <input type="number" class="cockpit-target-input" id="cockpitOcoStopVal"
-                   disabled value="${sl}" style="width:68px">
-            <span class="cockpit-oco-sub" id="cockpitOcoStopSub">−30% est</span>
+                   min="0.01" step="0.01" style="width:68px">
+            <input type="number" class="cockpit-target-input" id="cockpitOcoStopPct"
+                   min="1" max="99" step="1" style="width:40px" title="stop loss %">
+            <span style="font-size:0.66rem;color:var(--text-muted)">%</span>
+            <span class="cockpit-oco-sub" id="cockpitOcoStopSub"></span>
           </div>
           <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit — pick a level</div>
           <div class="cockpit-oco-tp-list">${_srBtns}${_defBtn}</div>
@@ -2841,6 +2847,40 @@
                 brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(b => b.classList.remove('active'));
                 _db.classList.add('active');
               }
+            }
+            _updateOcoPnl();
+          });
+        }
+
+        // Stop price ↔ pct bidirectional listeners
+        const stopValInpEl = document.getElementById('cockpitOcoStopVal');
+        const stopPctInpEl = document.getElementById('cockpitOcoStopPct');
+        if (stopValInpEl) {
+          stopValInpEl.addEventListener('input', () => {
+            const price = parseFloat(stopValInpEl.value);
+            const { displayPrice } = _resolveEntryPrice();
+            const base = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
+            if (price > 0 && base > 0) {
+              const pct = Math.max(1, Math.round((1 - price / base) * 100));
+              if (stopPctInpEl) stopPctInpEl.value = pct;
+              _ocoStopStash = price.toFixed(2);
+            } else {
+              _ocoStopStash = null;
+            }
+            _updateOcoPnl();
+          });
+        }
+        if (stopPctInpEl) {
+          stopPctInpEl.addEventListener('input', () => {
+            const pct = parseFloat(stopPctInpEl.value);
+            const { displayPrice } = _resolveEntryPrice();
+            const base = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
+            if (pct > 0 && pct < 100 && base > 0) {
+              const price = +(base * (1 - pct / 100)).toFixed(2);
+              if (stopValInpEl && price > 0) stopValInpEl.value = price.toFixed(2);
+              _ocoStopStash = price > 0 ? price.toFixed(2) : null;
+            } else {
+              _ocoStopStash = null;
             }
             _updateOcoPnl();
           });
@@ -2960,12 +3000,15 @@
         const derivedTp = +(ask * _tpMult(EXIT_TP_PCT)).toFixed(2);
         const derivedSl = +(ask * _slMult()).toFixed(2);
         if (typed > 0) ocoTpPayload = typed;
-        const tpDisplay = ocoTpPayload !== undefined
+        const tpDisplay   = ocoTpPayload !== undefined
           ? `$${ocoTpPayload.toFixed(2)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
           : `≈$${derivedTp.toFixed(2)} (est. from ask; server uses actual fill)`;
+        const stopDisplay = _ocoStopStash
+          ? `$${parseFloat(_ocoStopStash).toFixed(2)} (manual)`
+          : `≈$${derivedSl.toFixed(2)} (est. from ask; server uses actual fill)`;
         ocoBracketHtml =
           `OCO bracket: TP <strong>${tpDisplay}</strong>, ` +
-          `Stop <strong>≈$${derivedSl.toFixed(2)}</strong> (est. from ask; server uses actual fill)<br>`;
+          `Stop <strong>${stopDisplay}</strong><br>`;
       }
 
       showConfirmModal({
@@ -3020,6 +3063,9 @@
             }
             if (ocoTpPayload !== undefined) {
               body.tp_price = ocoTpPayload;
+            }
+            if (cockpitExitLayer === 'oco_bracket' && _ocoStopStash) {
+              body.stop_price = parseFloat(_ocoStopStash);
             }
             const result = await apiPost('/api/v1/orders/open', body);
 
@@ -3229,7 +3275,7 @@
     const curBase = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
     if (curBase <= 0) return;
     const qty       = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
-    const sl        = +(curBase * _slMult()).toFixed(2);
+    const sl        = _ocoStopStash ? parseFloat(_ocoStopStash) : +(curBase * _slMult()).toFixed(2);
     const tpInp     = document.getElementById('cockpitOcoTpInput');
     const tpVal     = tpInp ? parseFloat(tpInp.value) : 0;
     const tp        = tpVal > 0 ? tpVal : +(curBase * _tpMult(EXIT_TP_PCT)).toFixed(2);
@@ -3239,8 +3285,13 @@
     const stopSubEl = document.getElementById('cockpitOcoStopSub');
     const tpSubEl   = document.getElementById('cockpitOcoTpSub');
     const stopValEl = document.getElementById('cockpitOcoStopVal');
-    if (stopValEl) stopValEl.value = sl.toFixed(2);
-    if (stopSubEl) stopSubEl.textContent = `−30% · est −$${Math.abs(slPnl)}`;
+    const stopPctEl = document.getElementById('cockpitOcoStopPct');
+    if (stopValEl && !_ocoStopStash) stopValEl.value = sl.toFixed(2);
+    if (stopPctEl) {
+      const slPct = curBase > 0 ? Math.max(1, Math.round((1 - sl / curBase) * 100)) : EXIT_SL_PCT;
+      stopPctEl.value = slPct;
+    }
+    if (stopSubEl) stopSubEl.textContent = `est −$${Math.abs(slPnl)}`;
     if (tpSubEl) {
       const pctStr = tpPct >= 0 ? `+${tpPct}%` : `−${Math.abs(tpPct)}%`;
       const dolStr = tpPnl >= 0 ? `+$${tpPnl}` : `−$${Math.abs(tpPnl)}`;
