@@ -2717,11 +2717,12 @@
       const captionEl    = document.getElementById('cockpitOcoBotCaption');
       if (!brokerEl || !botEl) return;
 
-      // Stash typed TP/stop before innerHTML replacement destroys the inputs
-      const prevTpEl   = document.getElementById('cockpitOcoTpInput');
+      // Stash typed TP before innerHTML replacement destroys the input.
+      // Stop is intentionally NOT stashed here — cockpitOcoStopVal gets a seeded default on
+      // every _updateOcoPnl() call, so reading prevStopEl.value would conflate the default
+      // with a user-typed override. _ocoStopStash is set only by the user-input listeners.
+      const prevTpEl = document.getElementById('cockpitOcoTpInput');
       if (prevTpEl && prevTpEl.value) _ocoTpStash = prevTpEl.value;
-      const prevStopEl = document.getElementById('cockpitOcoStopVal');
-      if (prevStopEl && !prevStopEl.disabled && prevStopEl.value) _ocoStopStash = prevStopEl.value;
 
       const nothing = `<div class="cockpit-col-nothing">nothing — bot-held only</div>`;
       const botDefault = `
@@ -3273,9 +3274,25 @@
     // Falls back to ask only when displayPrice is null (AUTO with no bid).
     const { displayPrice } = _resolveEntryPrice();
     const curBase = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
+
+    // Seed stop inputs before the PnL guard. PnL labels need curBase>0 (bid required for the
+    // midpoint path), but the price/pct fields only need any non-zero ask — which is present
+    // from chain data at arm time, even if bid hasn't loaded yet. refreshArmedQuote() also
+    // calls _updateOcoPnl() after the fresh ask arrives, so a late-loading ask still re-seeds.
+    const seedBase  = curBase > 0 ? curBase : (armedContract ? armedContract.ask : 0);
+    const sl        = _ocoStopStash
+      ? parseFloat(_ocoStopStash)
+      : seedBase > 0 ? +(seedBase * _slMult()).toFixed(2) : 0;
+    const stopValEl = document.getElementById('cockpitOcoStopVal');
+    const stopPctEl = document.getElementById('cockpitOcoStopPct');
+    if (seedBase > 0) {
+      if (stopValEl && document.activeElement !== stopValEl) stopValEl.value = sl.toFixed(2);
+      if (stopPctEl && document.activeElement !== stopPctEl)
+        stopPctEl.value = Math.max(1, Math.round((1 - sl / seedBase) * 100));
+    }
+
     if (curBase <= 0) return;
     const qty       = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
-    const sl        = _ocoStopStash ? parseFloat(_ocoStopStash) : +(curBase * _slMult()).toFixed(2);
     const tpInp     = document.getElementById('cockpitOcoTpInput');
     const tpVal     = tpInp ? parseFloat(tpInp.value) : 0;
     const tp        = tpVal > 0 ? tpVal : +(curBase * _tpMult(EXIT_TP_PCT)).toFixed(2);
@@ -3284,13 +3301,6 @@
     const tpPct     = Math.round((tp / curBase - 1) * 100);
     const stopSubEl = document.getElementById('cockpitOcoStopSub');
     const tpSubEl   = document.getElementById('cockpitOcoTpSub');
-    const stopValEl = document.getElementById('cockpitOcoStopVal');
-    const stopPctEl = document.getElementById('cockpitOcoStopPct');
-    if (stopValEl && !_ocoStopStash) stopValEl.value = sl.toFixed(2);
-    if (stopPctEl) {
-      const slPct = curBase > 0 ? Math.max(1, Math.round((1 - sl / curBase) * 100)) : EXIT_SL_PCT;
-      stopPctEl.value = slPct;
-    }
     if (stopSubEl) stopSubEl.textContent = `est −$${Math.abs(slPnl)}`;
     if (tpSubEl) {
       const pctStr = tpPct >= 0 ? `+${tpPct}%` : `−${Math.abs(tpPct)}%`;
