@@ -2734,6 +2734,9 @@
       if (brokerCol)    brokerCol.classList.remove('cockpit-broker-accent');
       if (brokerBotCols) brokerBotCols.classList.remove('cockpit-broker-bot-cols--oco');
       if (captionEl)    captionEl.style.display = 'none';
+      // Re-enable on every layer switch; oco_bracket block applies checkbox gate below.
+      const _openBtn = document.getElementById('chainOpenBtn');
+      if (_openBtn) _openBtn.disabled = false;
 
       if (layer === 'default') {
         brokerEl.innerHTML = nothing;
@@ -2789,7 +2792,7 @@
                          ><span class="oco-btn-pct oco-btn-pct--est">+${EXIT_TP_PCT}% est</span></button>`;
 
         brokerEl.innerHTML = `
-          <div class="cockpit-oco-check">☑ stop-loss</div>
+          <label class="cockpit-oco-check"><input type="checkbox" id="cockpitOcoSlCheck" checked> stop-loss</label>
           <div style="display:flex;align-items:center;gap:0.28rem;margin:0.1rem 0">
             <input type="number" class="cockpit-target-input" id="cockpitOcoStopVal"
                    min="0.01" step="0.01" style="width:68px">
@@ -2798,7 +2801,7 @@
             <span style="font-size:0.66rem;color:var(--text-muted)">%</span>
             <span class="cockpit-oco-sub" id="cockpitOcoStopSub"></span>
           </div>
-          <div class="cockpit-oco-check" style="margin-top:0.16rem">☑ take-profit — pick a level</div>
+          <label class="cockpit-oco-check" style="margin-top:0.16rem"><input type="checkbox" id="cockpitOcoTpCheck" checked> take-profit — pick a level</label>
           <div class="cockpit-oco-tp-list">${_srBtns}${_defBtn}</div>
           <div style="display:flex;align-items:center;gap:0.3rem;margin-top:0.1rem">
             <span class="cockpit-section-label">TP price</span>
@@ -2911,6 +2914,16 @@
         }
 
         _updateOcoPnl();
+
+        // Tier 1 — both unchecked → disable Open Position (nothing to place).
+        const _slChk = document.getElementById('cockpitOcoSlCheck');
+        const _tpChk = document.getElementById('cockpitOcoTpCheck');
+        const _syncOpenBtn = () => {
+          if (_openBtn) _openBtn.disabled = !_slChk.checked && !_tpChk.checked;
+        };
+        if (_slChk) _slChk.addEventListener('change', _syncOpenBtn);
+        if (_tpChk) _tpChk.addEventListener('change', _syncOpenBtn);
+        _syncOpenBtn();
       }
     }
     // Let renderRrLine trigger an OCO button re-render when _rrProfitSide refreshes (30s cycle).
@@ -2992,10 +3005,23 @@
         ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong><br>`
         : `Est. cost: <strong>unknown — market order, no limit</strong><br>`;
 
-      // ── OCO bracket resolution ────────────────────────────────────────────────
+      // ── Exit-layer resolution — derive from checkbox state ───────────────────
+      let effectiveExitLayer = cockpitExitLayer;
+      if (cockpitExitLayer === 'oco_bracket') {
+        const _slChk = document.getElementById('cockpitOcoSlCheck');
+        const _tpChk = document.getElementById('cockpitOcoTpCheck');
+        const slOn = _slChk ? _slChk.checked : true;
+        const tpOn = _tpChk ? _tpChk.checked : true;
+        if      (slOn && tpOn) effectiveExitLayer = 'oco_bracket';
+        else if (tpOn)         effectiveExitLayer = 'tp_only';
+        else if (slOn)         effectiveExitLayer = 'stop_only';
+        // neither → Tier 1 disabled the button; cannot reach here
+      }
+
+      // ── OCO / tp_only confirm-modal summary ──────────────────────────────────
       let ocoTpPayload;     // undefined → omit from body; server uses tp2_price (fill × 1.50)
       let ocoBracketHtml = '';
-      if (cockpitExitLayer === 'oco_bracket') {
+      if (effectiveExitLayer === 'oco_bracket') {
         const tpInp     = document.getElementById('cockpitOcoTpInput');
         const typed     = tpInp ? parseFloat(tpInp.value) : NaN;
         const derivedTp = +(ask * _tpMult(EXIT_TP_PCT)).toFixed(2);
@@ -3010,6 +3036,15 @@
         ocoBracketHtml =
           `OCO bracket: TP <strong>${tpDisplay}</strong>, ` +
           `Stop <strong>${stopDisplay}</strong><br>`;
+      } else if (effectiveExitLayer === 'tp_only') {
+        const tpInp     = document.getElementById('cockpitOcoTpInput');
+        const typed     = tpInp ? parseFloat(tpInp.value) : NaN;
+        const derivedTp = +(ask * _tpMult(EXIT_TP_PCT)).toFixed(2);
+        if (typed > 0) ocoTpPayload = typed;
+        const tpDisplay = ocoTpPayload !== undefined
+          ? `$${ocoTpPayload.toFixed(2)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
+          : `≈$${derivedTp.toFixed(2)} (est. from ask; server uses actual fill)`;
+        ocoBracketHtml = `TP limit resting at broker: <strong>${tpDisplay}</strong> — no stop<br>`;
       }
 
       showConfirmModal({
@@ -3059,13 +3094,13 @@
             if (limitPricePayload !== undefined) {
               body.limit_price = limitPricePayload;
             }
-            if (cockpitExitLayer !== 'default') {
-              body.exit_layer = cockpitExitLayer;
+            if (effectiveExitLayer !== 'default') {
+              body.exit_layer = effectiveExitLayer;
             }
             if (ocoTpPayload !== undefined) {
               body.tp_price = ocoTpPayload;
             }
-            if (cockpitExitLayer === 'oco_bracket' && _ocoStopStash) {
+            if ((effectiveExitLayer === 'oco_bracket' || effectiveExitLayer === 'stop_only') && _ocoStopStash) {
               body.stop_price = parseFloat(_ocoStopStash);
             }
             const result = await apiPost('/api/v1/orders/open', body);
