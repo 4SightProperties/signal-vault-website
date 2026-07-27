@@ -3454,35 +3454,9 @@
     if (!el) return;
     if (!levels || !projResults) { el.style.display = 'none'; return; }
 
-    const { displayPrice } = _resolveEntryPrice();
-    if (!displayPrice || displayPrice <= 0) {
-      const reason = cockpitEntryMode === 'auto'
-        ? 'No bid — switch to Ask or Your Price to see R:R line'
-        : '';
-      if (reason) {
-        el.innerHTML = `<div class="rrl-no-price">${reason}</div>`;
-        el.style.display = '';
-      } else {
-        el.style.display = 'none';
-      }
-      return;
-    }
-
-    const entry  = displayPrice;
-    const sl     = +(entry * _slMult()).toFixed(2);
-    const rDenom = entry - sl;
-
-    function fmtR(price) {
-      if (rDenom <= 0) return '';
-      const r = (price - entry) / rDenom;
-      return (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
-    }
-
     // ── Pre-compute projection values — needed for SR-based TP selection ─────
-    // Single pass: demand computed once per level.  Both axis extension and dot
-    // partitioning key off this array — one gate predicate, one _remAtrDemand call.
-    // Tier 1: all levels with a valid stock price — always full pre-session.
-    // value is nullable; null means no projection yet (bid unavailable / market closed).
+    // Hoisted above displayPrice gate: _lvlStock needs only levels/projResults/
+    // chainCurrentPrice — no bid. OCO buttons populate pre-session (bid unavailable).
     const _lvlStock = levels.map((lvl, i) => {
       if (!lvl.price) return null;
       const _pr = projResults[i];
@@ -3510,6 +3484,30 @@
     // Expose to OCO panel; call refresh hook so buttons update on every renderRrLine (incl. 30s).
     _rrProfitSide = _profitSide;
     if (_ocoButtonRefreshFn) _ocoButtonRefreshFn();
+
+    const { displayPrice } = _resolveEntryPrice();
+    if (!displayPrice || displayPrice <= 0) {
+      const reason = cockpitEntryMode === 'auto'
+        ? 'No bid — switch to Ask or Your Price to see R:R line'
+        : '';
+      if (reason) {
+        el.innerHTML = `<div class="rrl-no-price">${reason}</div>`;
+        el.style.display = '';
+      } else {
+        el.style.display = 'none';
+      }
+      return;
+    }
+
+    const entry  = displayPrice;
+    const sl     = +(entry * _slMult()).toFixed(2);
+    const rDenom = entry - sl;
+
+    function fmtR(price) {
+      if (rDenom <= 0) return '';
+      const r = (price - entry) / rDenom;
+      return (r >= 0 ? '+' : '') + r.toFixed(1) + 'R';
+    }
 
     const _tp1Cand = _profitSide[0] || null;
     const _tp1Val  = _tp1Cand ? _tp1Cand.value : null;
