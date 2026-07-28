@@ -2185,7 +2185,7 @@
     if (cockpit1) cockpit1.innerHTML = '';
 
     try {
-      const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 13 });
+      const params = new URLSearchParams({ ticker, expiry, bias, price, n_strikes: 30 });
       const data   = await apiFetch(`/api/chain?${params}`);
       renderChain(data.strikes || [], bias, data);
       _updateDirectionWarning();
@@ -2343,7 +2343,7 @@
 
     // Scroll ATM row into view so the center strike is always visible
     const atmRow = chainBody.querySelector('tr.chain-atm');
-    if (atmRow) atmRow.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+    if (atmRow) atmRow.scrollIntoView({ block: 'center', behavior: 'smooth' });
   }
 
   // watchlist direction is the "long" | "short" enum from alerts/watchlist_board.py:38.

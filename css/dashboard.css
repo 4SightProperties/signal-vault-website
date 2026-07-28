@@ -807,6 +807,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   overflow: hidden;
   min-height: 0;
 }
+#chainBody {
+  max-height: 20rem;
+}
 
 /* Cockpit footer — pinned below the scrolling strikes, always visible */
 .chain-cockpit-footer {
