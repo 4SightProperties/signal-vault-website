@@ -38,6 +38,13 @@
   let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
   let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
 
+  // Universe screener state (admin-only)
+  let universeMode      = false;
+  let universeDataCache = null;  // last /api/scan-universe payload
+  let universeTimer     = null;
+  let univSortCol       = 'tier';
+  let univSortDir       = 1;     // 1=asc; for tier asc puts PRIME first
+
   // Right-column drawer state
   let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
   let newsInnerTab   = 'ticker'; // 'ticker' | 'market' — active tab within news drawer
@@ -278,6 +285,12 @@
     setupBasketTooltip();
     setupDrawer();
     setupWorkingOrdersPanel();
+    if (isAdmin) {
+      _injectUniverseView();
+      _injectUniverseToggle();
+      loadUniverse();
+      universeTimer = setInterval(loadUniverse, 65_000);
+    }
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -6403,6 +6416,272 @@ ${isAdmin ? `
       valueEl.textContent = '—';
       valueEl.style.color = 'var(--text-muted)';
     }
+  }
+
+  // ── Universe screener (admin-only) ───────────────────────────────────────
+
+  function _injectUniverseToggle() {
+    const headerLeft = document.querySelector('.dash-header-left');
+    if (!headerLeft) return;
+    const bar = document.createElement('div');
+    bar.className = 'univ-view-toggle';
+    bar.innerHTML =
+      '<button class="univ-view-btn active" id="cockpitViewBtn">Cockpit</button>' +
+      '<button class="univ-view-btn" id="univViewBtn">Universe</button>';
+    headerLeft.appendChild(bar);
+    document.getElementById('cockpitViewBtn').addEventListener('click', _enterCockpitMode);
+    document.getElementById('univViewBtn').addEventListener('click', _enterUniverseMode);
+  }
+
+  function _injectUniverseView() {
+    const mainEl = document.querySelector('.cmd-main');
+    if (!mainEl) return;
+    const wrap = document.createElement('div');
+    wrap.id        = 'universeWrap';
+    wrap.className = 'univ-wrap';
+    wrap.style.display = 'none';
+    wrap.innerHTML =
+      '<div class="univ-toolbar">' +
+        '<span class="univ-freshness" id="univFreshness">—</span>' +
+      '</div>' +
+      '<div class="univ-table-wrap" id="univTableWrap">' +
+        '<div class="dash-placeholder">Loading universe…</div>' +
+      '</div>';
+    // Insert between cmd-main and app-ribbon so it inherits the flex slot
+    mainEl.parentNode.insertBefore(wrap, mainEl.nextElementSibling);
+  }
+
+  function _enterUniverseMode() {
+    universeMode = true;
+    const main = document.querySelector('.cmd-main');
+    const wrap = document.getElementById('universeWrap');
+    if (main) main.style.display = 'none';
+    if (wrap) wrap.style.display = 'flex';
+    document.getElementById('univViewBtn')?.classList.add('active');
+    document.getElementById('cockpitViewBtn')?.classList.remove('active');
+    // Render immediately with cached data if available; otherwise fetch
+    if (universeDataCache) {
+      _renderUniverseFreshness(universeDataCache);
+      renderUniverseTable(universeDataCache.rows || []);
+    } else {
+      loadUniverse();
+    }
+  }
+
+  function _enterCockpitMode() {
+    universeMode = false;
+    const main = document.querySelector('.cmd-main');
+    const wrap = document.getElementById('universeWrap');
+    if (main) main.style.display = '';
+    if (wrap) wrap.style.display = 'none';
+    document.getElementById('cockpitViewBtn')?.classList.add('active');
+    document.getElementById('univViewBtn')?.classList.remove('active');
+  }
+
+  async function loadUniverse() {
+    if (!isAdmin) return;
+    try {
+      const data = await apiFetch('/api/scan-universe');
+      universeDataCache = data;
+      // Only push to DOM when the tab is visible
+      if (!universeMode) return;
+      _renderUniverseFreshness(data);
+      if (!data.available) {
+        const wrap = document.getElementById('univTableWrap');
+        if (wrap) wrap.innerHTML =
+          '<div class="dash-placeholder">No scan data yet — populates at next scan cycle</div>';
+        return;
+      }
+      renderUniverseTable(data.rows || []);
+    } catch (err) {
+      if (err.status === 403) return;
+      if (universeMode) {
+        const wrap = document.getElementById('univTableWrap');
+        if (wrap) wrap.innerHTML =
+          '<div class="dash-placeholder">Could not load scan universe</div>';
+      }
+    }
+  }
+
+  function _renderUniverseFreshness(data) {
+    const el = document.getElementById('univFreshness');
+    if (!el) return;
+    if (!data.available) { el.textContent = 'no data'; el.classList.remove('stale'); return; }
+    const age = data.age_secs;
+    const ageStr = age == null ? '?' : age < 60 ? `${Math.round(age)}s ago` : `${Math.round(age / 60)}m ago`;
+    el.textContent = `live · ${ageStr}`;
+    el.classList.toggle('stale', !!data.stale);
+  }
+
+  function renderUniverseTable(rows) {
+    const wrap = document.getElementById('univTableWrap');
+    if (!wrap) return;
+    if (!rows.length) {
+      wrap.innerHTML =
+        '<div class="dash-placeholder">No scan data yet — populates at next scan cycle</div>';
+      return;
+    }
+
+    // Watchlist index for overlay (trigger / rank_score / arm_state for locked names)
+    const wlMap = {};
+    watchlistDataCache.forEach(r => { wlMap[r.ticker] = r; });
+
+    // Enrich: live pm_break_state recompute + watchlist overlay
+    const TIER_ORD = { PRIME: 0, WATCH: 1, CAUTION: 2, SKIP: 3 };
+    const enriched = rows.map(row => {
+      const wl = wlMap[row.ticker] || null;
+      // Prefer watchlist current_price (live, enriched server-side) for locked names;
+      // fall back to prev_close from scan cache for the other ~68 tickers.
+      const livePrice = (wl && wl.current_price) ? parseFloat(wl.current_price) : (row.price || 0);
+
+      // Recompute pm_break_state from best available price vs emitted pm levels
+      let pmBreak = row.pm_break_state;
+      if (livePrice > 0 && row.pm_high != null && row.pm_low != null) {
+        if (livePrice > row.pm_high)      pmBreak = 'bull_break';
+        else if (livePrice < row.pm_low)  pmBreak = 'bear_break';
+        else                              pmBreak = 'chop';
+      }
+
+      return {
+        ...row,
+        live_price:     livePrice,
+        pm_break_state: pmBreak,
+        _tier_ord:      TIER_ORD[row.tier] ?? 9,
+        // Watchlist overlay
+        trigger:    wl && wl.trigger    != null ? parseFloat(wl.trigger)    : null,
+        rank_score: wl && wl.rank_score != null ? parseFloat(wl.rank_score) : null,
+        arm_state:  wl ? (wl.arm_state || null) : null,
+      };
+    });
+
+    // Sort — 'tier' column sorts by ordinal, not string
+    const col = univSortCol === 'tier' ? '_tier_ord' : univSortCol;
+    const dir = univSortDir;
+    enriched.sort((a, b) => {
+      let va = a[col], vb = b[col];
+      if (va == null && vb == null) return 0;
+      if (va == null) return 1;
+      if (vb == null) return -1;
+      if (typeof va === 'string') return dir * va.localeCompare(vb);
+      return dir * (va - vb);
+    });
+
+    const COLS = [
+      { key: 'ticker',         label: 'Ticker',   right: false },
+      { key: 'tier',           label: 'Tier',     right: false },
+      { key: 'bias',           label: 'Bias',     right: false },
+      { key: 'live_price',     label: 'Price',    right: true  },
+      { key: 'cloud_10m',      label: '10m',      right: false },
+      { key: 'cloud_1h',       label: '1h',       right: false },
+      { key: 'cloud_1d',       label: '1d',       right: false },
+      { key: 'pm_break_state', label: 'PM Break', right: false },
+      { key: 'daily_atr',      label: 'ATR',      right: true  },
+      { key: 'atr_consumed',   label: 'Consumed', right: true  },
+      { key: 'trigger',        label: 'Trigger',  right: true  },
+      { key: 'rank_score',     label: 'Score',    right: true  },
+      { key: 'arm_state',      label: 'State',    right: false },
+    ];
+
+    const headers = COLS.map(c => {
+      const isSorted = c.key === univSortCol;
+      const arrow    = isSorted ? (univSortDir === 1 ? ' ▲' : ' ▼') : '';
+      const cls      = 'univ-th' + (isSorted ? ' sorted' : '') + (c.right ? ' univ-r' : '');
+      return `<th class="${cls}" data-col="${c.key}">${c.label}${arrow}</th>`;
+    }).join('');
+
+    const rowsHtml = enriched.map(r => {
+      const cells = COLS.map(c => {
+        const v = r[c.key];
+        switch (c.key) {
+          case 'ticker':
+            return `<td class="univ-td univ-ticker">${r.ticker}</td>`;
+
+          case 'tier': {
+            const cls = ({ PRIME: 'prime', WATCH: 'watch', CAUTION: 'caution' })[v] || '';
+            return `<td class="univ-td"><span class="univ-tier univ-tier-${cls}">${v || '—'}</span></td>`;
+          }
+
+          case 'bias': {
+            const cls = v === 'bullish' ? 'bull' : v === 'bearish' ? 'bear' : 'neutral';
+            const sym = v === 'bullish' ? '▲' : v === 'bearish' ? '▼' : '—';
+            return `<td class="univ-td"><span class="univ-bias univ-bias-${cls}">${sym}</span></td>`;
+          }
+
+          case 'live_price':
+            return `<td class="univ-td univ-r">${v > 0 ? '$' + v.toFixed(2) : '—'}</td>`;
+
+          case 'cloud_10m':
+          case 'cloud_1h':
+          case 'cloud_1d': {
+            const cls = ({ bull: 'bull', bear: 'bear', inside: 'inside' })[v] || 'unknown';
+            const sym = v === 'bull' ? '●' : v === 'bear' ? '●' : v === 'inside' ? '◐' : '○';
+            return `<td class="univ-td univ-center"><span class="univ-cloud univ-cloud-${cls}" title="${v || '?'}">${sym}</span></td>`;
+          }
+
+          case 'pm_break_state': {
+            const lbl = ({ bull_break: '▲ break', bear_break: '▼ break', chop: 'chop', pending: '—' })[v] || (v || '—');
+            const cls = ({ bull_break: 'bull', bear_break: 'bear', chop: 'chop', pending: 'pending' })[v] || '';
+            return `<td class="univ-td"><span class="univ-pm univ-pm-${cls}">${lbl}</span></td>`;
+          }
+
+          case 'daily_atr':
+            return `<td class="univ-td univ-r">${v > 0 ? v.toFixed(2) : '—'}</td>`;
+
+          case 'atr_consumed': {
+            // consumed_pct stored as 0-1 decimal; display as integer percent
+            const pct = v != null ? Math.round(v * 100) : null;
+            const cls = pct == null ? '' : pct >= 75 ? ' univ-consumed-hi' : pct >= 40 ? ' univ-consumed-mid' : '';
+            return `<td class="univ-td univ-r${cls}">${pct != null ? pct + '%' : '—'}</td>`;
+          }
+
+          case 'trigger':
+            return `<td class="univ-td univ-r">${v != null ? '$' + v.toFixed(2) : '—'}</td>`;
+
+          case 'rank_score':
+            return `<td class="univ-td univ-r">${v != null ? v.toFixed(2) : '—'}</td>`;
+
+          case 'arm_state': {
+            if (!v) return '<td class="univ-td">—</td>';
+            const lbl = ({ armed: 'armed', at_risk: 'at risk', fired: 'fired', invalidated: 'inv.', deactivated: 'off' })[v] || v;
+            const cls = 'wl-zone wl-zone-' + v.replace(/_/g, '-');
+            return `<td class="univ-td"><span class="${cls}">${lbl}</span></td>`;
+          }
+
+          default:
+            return `<td class="univ-td">${v != null ? v : '—'}</td>`;
+        }
+      }).join('');
+      return `<tr class="univ-row" data-ticker="${r.ticker}">${cells}</tr>`;
+    }).join('');
+
+    wrap.innerHTML =
+      '<table class="univ-table">' +
+        '<thead><tr>' + headers + '</tr></thead>' +
+        '<tbody>' + rowsHtml + '</tbody>' +
+      '</table>';
+
+    // Column header click → sort
+    wrap.querySelectorAll('.univ-th').forEach(th => {
+      th.addEventListener('click', () => {
+        const key = th.dataset.col;
+        if (univSortCol === key) {
+          univSortDir *= -1;
+        } else {
+          univSortCol = key;
+          // Default direction: ascending for text columns, descending for numeric
+          univSortDir = (key === 'ticker' || key === 'bias' || key === 'tier') ? 1 : -1;
+        }
+        if (universeDataCache && universeDataCache.rows) renderUniverseTable(universeDataCache.rows);
+      });
+    });
+
+    // Row click → focus ticker in cockpit
+    wrap.querySelectorAll('.univ-row').forEach(row => {
+      row.addEventListener('click', () => {
+        const t = row.dataset.ticker;
+        if (t) { _enterCockpitMode(); focusOn(t); }
+      });
+    });
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────

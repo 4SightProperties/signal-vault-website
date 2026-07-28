@@ -3550,3 +3550,154 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   padding: 0.06rem 0.25rem;
   cursor: pointer;
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Universe screener — admin-only full-universe tab
+   ════════════════════════════════════════════════════════════════ */
+
+/* Header toggle — injected into .dash-header-left */
+.univ-view-toggle {
+  display: flex;
+  gap: 0.15rem;
+  margin-left: 1rem;
+}
+.univ-view-btn {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.68rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  padding: 0.2rem 0.65rem;
+  text-transform: uppercase;
+  transition: color 0.15s, border-color 0.15s;
+}
+.univ-view-btn:hover  { color: var(--text-secondary); }
+.univ-view-btn.active { border-color: var(--blue); color: var(--blue); }
+
+/* Universe wrapper — flex sibling of .cmd-main inside .cmd-main-wrap */
+.univ-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+
+/* Thin toolbar: freshness badge */
+.univ-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.univ-freshness {
+  font-size: 0.65rem;
+  color: var(--text-muted);
+  font-family: var(--font-display);
+}
+.univ-freshness.stale { color: var(--warning); }
+
+/* Scrollable table area */
+.univ-table-wrap {
+  flex: 1;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Table */
+.univ-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.72rem;
+}
+.univ-table thead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  background: var(--bg-surface);
+}
+.univ-th {
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+  font-size: 0.62rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+  cursor: pointer;
+  user-select: none;
+  text-transform: uppercase;
+  transition: color 0.12s;
+}
+.univ-th:hover  { color: var(--text-secondary); }
+.univ-th.sorted { color: var(--blue); }
+.univ-th.univ-r { text-align: right; }
+
+.univ-td {
+  padding: 0.28rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  vertical-align: middle;
+  white-space: nowrap;
+}
+.univ-r      { text-align: right; font-variant-numeric: tabular-nums; }
+.univ-center { text-align: center; }
+
+.univ-row { cursor: pointer; transition: background 0.1s; }
+.univ-row:hover { background: var(--bg-elevated); }
+
+/* Ticker column */
+.univ-ticker {
+  font-weight: 600;
+  font-size: 0.74rem;
+  color: var(--text-primary);
+  font-family: var(--font-display);
+  letter-spacing: 0.04em;
+}
+
+/* Tier badge */
+.univ-tier {
+  font-size: 0.6rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  padding: 0.12rem 0.4rem;
+  border-radius: 4px;
+}
+.univ-tier-prime   { background: rgba(74,222,128,0.12);  color: var(--accent); }
+.univ-tier-watch   { background: rgba(96,165,250,0.12);  color: var(--blue); }
+.univ-tier-caution { background: rgba(245,158,11,0.12);  color: var(--warning); }
+
+/* Bias indicator */
+.univ-bias { font-size: 0.8rem; }
+.univ-bias-bull    { color: var(--accent); }
+.univ-bias-bear    { color: var(--danger); }
+.univ-bias-neutral { color: var(--text-muted); }
+
+/* Cloud alignment dots */
+.univ-cloud { font-size: 0.75rem; }
+.univ-cloud-bull    { color: var(--accent); }
+.univ-cloud-bear    { color: var(--danger); }
+.univ-cloud-inside  { color: var(--warning); }
+.univ-cloud-unknown { color: var(--text-muted); }
+
+/* PM break state */
+.univ-pm {
+  font-size: 0.65rem;
+  font-weight: 600;
+}
+.univ-pm-bull    { color: var(--accent); }
+.univ-pm-bear    { color: var(--danger); }
+.univ-pm-chop    { color: var(--text-secondary); }
+.univ-pm-pending { color: var(--text-muted); }
+
+/* ATR consumed heat tinting */
+.univ-consumed-mid { color: var(--warning); }
+.univ-consumed-hi  { color: var(--danger); }
