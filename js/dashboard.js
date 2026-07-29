@@ -931,6 +931,14 @@
         const signalMarkerHtml = sigFireTs
           ? `<span class="wl-signal-marker">⚡ ${_fmtClockET(sigFireTs)}</span>` : '';
 
+        // Direction-conflict badge — distinct from terminal INVALIDATED; display-only
+        let conflictBadgeHtml = '';
+        if (r.direction_conflict_confirmed) {
+          conflictBadgeHtml = '<span class="wl-conflict wl-conflict--confirmed">⚠⚠ px break</span>';
+        } else if (r.direction_conflict) {
+          conflictBadgeHtml = '<span class="wl-conflict wl-conflict--tentative">⚠ px break</span>';
+        }
+
         // ATR reachability pill — WATCHING rows only, live-computed against current_price
         let reachPillHtml = '';
         const isWatching = (zoneKey === 'armed' || zoneKey === 'at_risk');
@@ -966,7 +974,7 @@
   <div class="wl-row-header">
     <span class="wl-ticker">${r.ticker || '?'}</span>
     <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
-    <span class="${zoneCls}">${zoneLabel}</span>${reachPillHtml}${signalMarkerHtml}
+    <span class="${zoneCls}">${zoneLabel}</span>${conflictBadgeHtml}${reachPillHtml}${signalMarkerHtml}
   </div>${gaugeHtml}
 </div>`;
       }).join('');
