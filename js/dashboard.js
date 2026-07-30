@@ -4886,6 +4886,60 @@
         btn.disabled = false;
       }
     });
+
+    // ── OCO in-place stop modify (Feature B) ─────────────────────────────────
+    // Only present in the DOM when pos.exit_layer === 'oco_bracket'.
+    const ocoStopBtn    = card.querySelector('.pos-ticket-oco-stop-btn');
+    const ocoStopStatus = card.querySelector('.pos-oco-stop-status');
+    const ocoStopInput  = card.querySelector('.pos-oco-stop-inp');
+
+    ocoStopBtn && ocoStopBtn.addEventListener('click', e => {
+      e.stopPropagation();
+      const rawVal = parseFloat(ocoStopInput ? ocoStopInput.value : '0');
+      if (!rawVal || rawVal <= 0 || isNaN(rawVal)) {
+        if (ocoStopInput) { ocoStopInput.style.outline = '1.5px solid var(--danger)'; ocoStopInput.focus(); }
+        return;
+      }
+      if (ocoStopInput) ocoStopInput.style.outline = '';
+      const newPrice = rawVal.toFixed(2);
+      const fromStr  = ocoStopInput && ocoStopInput.defaultValue
+        ? '$' + parseFloat(ocoStopInput.defaultValue).toFixed(2)
+        : '(see Resting above)';
+
+      showConfirmModal({
+        title:   'Move OCO stop — ' + pos.ticker,
+        body:    '<strong style="color:var(--danger)">⚠ This modifies a LIVE resting order.</strong><br><br>' +
+                 'Change the <strong>stop-loss</strong> leg for <strong>' + pos.ticker + '</strong>:<br>' +
+                 '<code style="font-size:0.82rem">stop trigger: ' + fromStr + ' → $' + newPrice + '</code><br><br>' +
+                 'The <strong>take-profit</strong> leg is unchanged.<br>' +
+                 '<span style="color:var(--text-muted);font-size:0.76rem">Sent as a PUT to the broker — no cancel occurs. Both legs remain live during the update.</span>',
+        okLabel: 'Update stop at broker',
+        okClass: '',
+        onOk: async (setStatus) => {
+          setStatus('Sending to broker…');
+          try {
+            const result = await apiPost('/api/orders/modify-bracket', { position_id: pid, stop_price: rawVal });
+            if (result.ok) {
+              setStatus(result.message || 'Stop updated', 'ok');
+              setTicketStatus(ocoStopStatus, result.message || 'Updated — see Resting above', 'ok');
+              const c = card.querySelector('.pos-console');
+              if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
+            } else if (result.reason === 'partial') {
+              setStatus(result.error || 'Partial update — check working orders', 'error');
+              setTicketStatus(ocoStopStatus, result.error || 'Partial update', 'error');
+              fetchWorkingOrders();
+            } else {
+              setStatus('Error: ' + (result.error || 'update failed'), 'error');
+              setTicketStatus(ocoStopStatus, 'Error: ' + (result.error || 'update failed'), 'error');
+            }
+          } catch (err) {
+            const detail = err.data && err.data.detail ? err.data.detail : err.message;
+            setStatus('Error: ' + detail, 'error');
+            setTicketStatus(ocoStopStatus, 'Error: ' + detail, 'error');
+          }
+        },
+      });
+    });
   }
 
   // Updates only the read-only data rows inside an already-open console node.
@@ -5363,6 +5417,22 @@ ${isAdmin ? `
     </div>
     <div class="pos-preview-tag">cancel existing → place new · never two stops resting</div>
   </div>
+
+${pos.exit_layer === 'oco_bracket' ? `
+  <div class="pos-console-section pos-ticket-section">
+    <div class="pos-console-label">Move OCO stop <span style="font-weight:400;color:var(--text-muted);font-size:0.7rem">in-place PUT · no cancel</span></div>
+    <div class="pos-target-row" style="margin-bottom:0.25rem">
+      <span class="pos-target-type">From (configured)</span>
+      <span class="pos-target-price">${pos.sl_price ? fmtPrice(pos.sl_price) : '—'}</span>
+      <span class="pos-target-badge system" style="font-size:0.6rem">broker truth in Resting above</span>
+    </div>
+    <div class="pos-ticket-row">
+      <span class="pos-ticket-lbl">New stop $</span>
+      <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp pos-oco-stop-inp" type="number" step="0.01" min="0.01" placeholder="${pos.sl_price ? pos.sl_price.toFixed(2) : '0.00'}" value="${pos.sl_price ? pos.sl_price.toFixed(2) : ''}">
+    </div>
+    <button class="pos-ticket-oco-stop-btn" style="margin-top:0.4rem">Move stop →</button>
+    <div class="pos-ticket-status pos-oco-stop-status"></div>
+  </div>` : ''}
 
   <div class="pos-console-actions">
     <button class="pos-console-btn" data-stub="partial_close" data-contracts="${halfCts}" data-pos-id="${pos.position_id}">
