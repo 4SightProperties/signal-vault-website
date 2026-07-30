@@ -3701,3 +3701,47 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ATR consumed heat tinting */
 .univ-consumed-mid { color: var(--warning); }
 .univ-consumed-hi  { color: var(--danger); }
+
+/* Universe screener — filter chips */
+.univ-filters {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex: 1;
+}
+.univ-fgroup {
+  display: flex;
+  align-items: center;
+  gap: 0.2rem;
+  padding-right: 0.5rem;
+  border-right: 1px solid var(--border);
+}
+.univ-fgroup:last-child { border-right: none; }
+.univ-flabel {
+  font-size: 0.58rem;
+  font-weight: 700;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  margin-right: 0.15rem;
+  user-select: none;
+}
+.univ-fchip {
+  background: transparent;
+  border: 1px solid var(--border);
+  border-radius: 3px;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  padding: 0.1rem 0.38rem;
+  transition: color 0.12s, border-color 0.12s, background 0.12s;
+  white-space: nowrap;
+}
+.univ-fchip:hover { color: var(--text-secondary); border-color: var(--text-muted); }
+.univ-fchip.active {
+  background: rgba(96,165,250,0.12);
+  border-color: var(--blue);
+  color: var(--blue);
+}

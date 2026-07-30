@@ -42,8 +42,9 @@
   let universeMode      = false;
   let universeDataCache = null;  // last /api/scan-universe payload
   let universeTimer     = null;
-  let univSortCol       = 'tier';
-  let univSortDir       = 1;     // 1=asc; for tier asc puts PRIME first
+  let univSortCol       = 'ticker';
+  let univSortDir       = 1;
+  let univFilters       = { cloud_10m: null, cloud_1h: null, cloud_1d: null, pm_break_state: null };
 
   // Right-column drawer state
   let drawerActive   = null;     // 'news' | 'ladder' | 'calendar' | 'ta' | null
@@ -6449,6 +6450,33 @@ ${isAdmin ? `
     wrap.innerHTML =
       '<div class="univ-toolbar">' +
         '<span class="univ-freshness" id="univFreshness">—</span>' +
+        '<div class="univ-filters" id="univFilters">' +
+          '<div class="univ-fgroup">' +
+            '<span class="univ-flabel">10m</span>' +
+            '<button class="univ-fchip" data-col="cloud_10m" data-val="bull">bull</button>' +
+            '<button class="univ-fchip" data-col="cloud_10m" data-val="bear">bear</button>' +
+            '<button class="univ-fchip" data-col="cloud_10m" data-val="inside">neutral</button>' +
+          '</div>' +
+          '<div class="univ-fgroup">' +
+            '<span class="univ-flabel">1h</span>' +
+            '<button class="univ-fchip" data-col="cloud_1h" data-val="bull">bull</button>' +
+            '<button class="univ-fchip" data-col="cloud_1h" data-val="bear">bear</button>' +
+            '<button class="univ-fchip" data-col="cloud_1h" data-val="inside">neutral</button>' +
+          '</div>' +
+          '<div class="univ-fgroup">' +
+            '<span class="univ-flabel">1d</span>' +
+            '<button class="univ-fchip" data-col="cloud_1d" data-val="bull">bull</button>' +
+            '<button class="univ-fchip" data-col="cloud_1d" data-val="bear">bear</button>' +
+            '<button class="univ-fchip" data-col="cloud_1d" data-val="inside">neutral</button>' +
+          '</div>' +
+          '<div class="univ-fgroup">' +
+            '<span class="univ-flabel">PM</span>' +
+            '<button class="univ-fchip" data-col="pm_break_state" data-val="bull_break">▲ break</button>' +
+            '<button class="univ-fchip" data-col="pm_break_state" data-val="bear_break">▼ break</button>' +
+            '<button class="univ-fchip" data-col="pm_break_state" data-val="chop">chop</button>' +
+            '<button class="univ-fchip" data-col="pm_break_state" data-val="pending">pending</button>' +
+          '</div>' +
+        '</div>' +
         '<span class="univ-disclaimer">Informational screen — not trade advice</span>' +
       '</div>' +
       '<div class="univ-table-wrap" id="univTableWrap">' +
@@ -6456,6 +6484,20 @@ ${isAdmin ? `
       '</div>';
     // Insert between cmd-main and app-ribbon so it inherits the flex slot
     mainEl.parentNode.insertBefore(wrap, mainEl.nextElementSibling);
+
+    // Wire filter chips once — toolbar is not re-rendered each 65s cycle
+    wrap.querySelectorAll('.univ-fchip').forEach(btn => {
+      btn.addEventListener('click', e => {
+        e.stopPropagation();
+        const col = btn.dataset.col;
+        const val = btn.dataset.val;
+        univFilters[col] = univFilters[col] === val ? null : val;
+        wrap.querySelectorAll(`.univ-fchip[data-col="${col}"]`).forEach(b =>
+          b.classList.toggle('active', b.dataset.val === univFilters[col])
+        );
+        if (universeDataCache && universeDataCache.rows) renderUniverseTable(universeDataCache.rows);
+      });
+    });
   }
 
   function _enterUniverseMode() {
@@ -6561,10 +6603,15 @@ ${isAdmin ? `
       };
     });
 
-    // Sort — 'tier' column sorts by ordinal, not string
-    const col = univSortCol === 'tier' ? '_tier_ord' : univSortCol;
+    // Filter — AND-combine all active filters (null = inactive)
+    const filtered = enriched.filter(r =>
+      Object.entries(univFilters).every(([k, v]) => v === null || r[k] === v)
+    );
+
+    // Sort — applied to the filtered subset
+    const col = univSortCol;
     const dir = univSortDir;
-    enriched.sort((a, b) => {
+    filtered.sort((a, b) => {
       let va = a[col], vb = b[col];
       if (va == null && vb == null) return 0;
       if (va == null) return 1;
@@ -6575,8 +6622,6 @@ ${isAdmin ? `
 
     const COLS = [
       { key: 'ticker',         label: 'Ticker',   right: false },
-      { key: 'tier',           label: 'Tier',     right: false },
-      { key: 'bias',           label: 'Bias',     right: false },
       { key: 'live_price',     label: 'Price',    right: true  },
       { key: 'cloud_10m',      label: '10m',      right: false },
       { key: 'cloud_1h',       label: '1h',       right: false },
@@ -6585,7 +6630,6 @@ ${isAdmin ? `
       { key: 'daily_atr',      label: 'ATR',      right: true  },
       { key: 'atr_consumed',   label: 'Consumed', right: true  },
       { key: 'trigger',        label: 'Trigger',  right: true  },
-      { key: 'rank_score',     label: 'Score',    right: true  },
       { key: 'arm_state',      label: 'State',    right: false },
     ];
 
@@ -6596,23 +6640,12 @@ ${isAdmin ? `
       return `<th class="${cls}" data-col="${c.key}">${c.label}${arrow}</th>`;
     }).join('');
 
-    const rowsHtml = enriched.map(r => {
+    const rowsHtml = filtered.map(r => {
       const cells = COLS.map(c => {
         const v = r[c.key];
         switch (c.key) {
           case 'ticker':
             return `<td class="univ-td univ-ticker">${r.ticker}</td>`;
-
-          case 'tier': {
-            const cls = ({ PRIME: 'prime', WATCH: 'watch', CAUTION: 'caution' })[v] || '';
-            return `<td class="univ-td"><span class="univ-tier univ-tier-${cls}">${v || '—'}</span></td>`;
-          }
-
-          case 'bias': {
-            const cls = v === 'bullish' ? 'bull' : v === 'bearish' ? 'bear' : 'neutral';
-            const sym = v === 'bullish' ? '▲' : v === 'bearish' ? '▼' : '—';
-            return `<td class="univ-td"><span class="univ-bias univ-bias-${cls}">${sym}</span></td>`;
-          }
 
           case 'live_price':
             return `<td class="univ-td univ-r">${v > 0 ? '$' + v.toFixed(2) : '—'}</td>`;
@@ -6644,9 +6677,6 @@ ${isAdmin ? `
           case 'trigger':
             return `<td class="univ-td univ-r">${v != null ? '$' + v.toFixed(2) : '—'}</td>`;
 
-          case 'rank_score':
-            return `<td class="univ-td univ-r">${v != null ? v.toFixed(2) : '—'}</td>`;
-
           case 'arm_state': {
             if (!v) return '<td class="univ-td">—</td>';
             const lbl = ({ armed: 'armed', at_risk: 'at risk', fired: 'fired', invalidated: 'inv.', deactivated: 'off' })[v] || v;
@@ -6676,7 +6706,7 @@ ${isAdmin ? `
         } else {
           univSortCol = key;
           // Default direction: ascending for text columns, descending for numeric
-          univSortDir = (key === 'ticker' || key === 'bias' || key === 'tier') ? 1 : -1;
+          univSortDir = key === 'ticker' ? 1 : -1;
         }
         if (universeDataCache && universeDataCache.rows) renderUniverseTable(universeDataCache.rows);
       });
