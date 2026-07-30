@@ -38,7 +38,7 @@
   let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
   let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
 
-  // Universe screener state (admin-only)
+  // Universe screener state (authenticated members)
   let universeMode      = false;
   let universeDataCache = null;  // last /api/scan-universe payload
   let universeTimer     = null;
@@ -285,12 +285,10 @@
     setupBasketTooltip();
     setupDrawer();
     setupWorkingOrdersPanel();
-    if (isAdmin) {
-      _injectUniverseView();
-      _injectUniverseToggle();
-      loadUniverse();
-      universeTimer = setInterval(loadUniverse, 65_000);
-    }
+    _injectUniverseView();
+    _injectUniverseToggle();
+    loadUniverse();
+    universeTimer = setInterval(loadUniverse, 65_000);
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -6426,7 +6424,7 @@ ${isAdmin ? `
     }
   }
 
-  // ── Universe screener (admin-only) ───────────────────────────────────────
+  // ── Universe screener (authenticated members) ────────────────────────────
 
   function _injectUniverseToggle() {
     const headerLeft = document.querySelector('.dash-header-left');
@@ -6451,6 +6449,7 @@ ${isAdmin ? `
     wrap.innerHTML =
       '<div class="univ-toolbar">' +
         '<span class="univ-freshness" id="univFreshness">—</span>' +
+        '<span class="univ-disclaimer">Informational screen — not trade advice</span>' +
       '</div>' +
       '<div class="univ-table-wrap" id="univTableWrap">' +
         '<div class="dash-placeholder">Loading universe…</div>' +
@@ -6487,7 +6486,7 @@ ${isAdmin ? `
   }
 
   async function loadUniverse() {
-    if (!isAdmin) return;
+    if (!authToken) return;
     try {
       const data = await apiFetch('/api/scan-universe');
       universeDataCache = data;
