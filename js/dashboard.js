@@ -2455,10 +2455,8 @@
     const asOfEl = document.getElementById('cockpitPayoutAsOf');
     const qty    = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
     if (tab === 'payout') {
-      if (asOfEl) asOfEl.style.display = '';
       renderPayoutCurve(payoutCurveCache, qty);
     } else {
-      if (asOfEl) asOfEl.style.display = 'none';
       if (matrixProjCache) {
         const wrapEl = document.getElementById('cockpitProjWrap');
         const verdEl = document.getElementById('cockpitVerdict');
@@ -3511,10 +3509,12 @@
     // ── Pre-compute projection values — needed for SR-based TP selection ─────
     // Hoisted above displayPrice gate: _lvlStock needs only levels/projResults/
     // chainCurrentPrice — no bid. OCO buttons populate pre-session (bid unavailable).
+    const _asOfEl = document.getElementById('cockpitPayoutAsOf');
+    const _hIdx   = _asOfEl ? (parseInt(_asOfEl.value, 10) || 0) : 0;
     const _lvlStock = levels.map((lvl, i) => {
       if (!lvl.price) return null;
       const _pr = projResults[i];
-      const _nr = _pr && _pr.rows && _pr.rows[0];
+      const _nr = _pr && _pr.rows && _pr.rows[_hIdx];
       const value = (_nr && _nr.value != null) ? _nr.value : null;
       return { lvl, value, demand: _remAtrDemand(lvl.price) };
     }).filter(Boolean);
@@ -4081,28 +4081,7 @@
       return;
     }
 
-    // ── As-of dropdown: gate index i ∈ {0,1,2} on i < dte_effective; 3 always ──
-    // If dte_effective is missing/non-finite, show only Now (i=0) and At expiry (i=3).
-    const dteEff = cache.dte_effective;
-    const dteEffFloor = Number.isFinite(dteEff) ? dteEff : 1;
-    const HLABELS = ['Now', 'Tomorrow', 'In 2 days', 'At expiry'];
-    if (asOfEl) {
-      const prev = asOfEl.value;
-      asOfEl.innerHTML = '';
-      [0, 1, 2, 3].forEach(i => {
-        if (i < 3 && i >= dteEffFloor) return;
-        const opt = document.createElement('option');
-        opt.value = String(i);
-        opt.textContent = HLABELS[i];
-        asOfEl.appendChild(opt);
-      });
-      if ([...asOfEl.options].some(o => o.value === prev)) asOfEl.value = prev;
-      asOfEl.onchange = () => {
-        const q = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
-        renderPayoutCurve(cache, q);
-      };
-    }
-    const hIdx = asOfEl ? parseInt(asOfEl.value, 10) : 0;
+    const hIdx = asOfEl ? (parseInt(asOfEl.value, 10) || 0) : 0;
 
     // ── P&L base — _resolveEntryPrice().displayPrice, not ask ─────────────────
     const { displayPrice } = _resolveEntryPrice();
@@ -4391,6 +4370,32 @@
     }
   }
 
+  // Populates the unified time-basis selector and wires its onchange to re-render
+  // both the RR ladder and payout curve. Called from loadPayoutCurve on data arrival
+  // so the selector is ready regardless of which tab is active.
+  function _populateAsOfSelector(cache) {
+    const asOfEl = document.getElementById('cockpitPayoutAsOf');
+    if (!asOfEl || !cache || cache.error) return;
+    const dteEff      = cache.dte_effective;
+    const dteEffFloor = Number.isFinite(dteEff) ? dteEff : 1;
+    const HLABELS     = ['Now', '+1D', '+2D', 'Expiry'];
+    asOfEl.innerHTML  = '';
+    [0, 1, 2, 3].forEach(i => {
+      if (i < 3 && i >= dteEffFloor) return;
+      const opt       = document.createElement('option');
+      opt.value       = String(i);
+      opt.textContent = HLABELS[i];
+      asOfEl.appendChild(opt);
+    });
+    asOfEl.value        = '0';
+    asOfEl.style.display = '';
+    asOfEl.onchange = () => {
+      const q = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+      if (payoutCurveCache) renderPayoutCurve(payoutCurveCache, q);
+      if (matrixProjCache)  renderRrLine(matrixProjCache.levels, matrixProjCache.projResults, q);
+    };
+  }
+
   // Single range-mode fetch for the payout curve. Fires alongside loadProjectionMatrix on arm.
   // premium = _resolveEntryPrice().displayPrice (not ask — the matrix bug is §3, not inherited here).
   async function loadPayoutCurve() {
@@ -4434,6 +4439,7 @@
     try {
       const data       = await apiFetch(`/api/projection?${params}`);
       payoutCurveCache = data;
+      _populateAsOfSelector(data);
       if (_onPayoutTab()) {
         const qty = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
         renderPayoutCurve(payoutCurveCache, qty);
