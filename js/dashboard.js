@@ -2064,31 +2064,30 @@
     if (!row) {
       if (sourceEl) sourceEl.textContent = 'not on today\'s watchlist';
       gridEl.innerHTML = '<div class="dash-placeholder" style="font-size:0.68rem;padding:0.5rem">—</div>';
-      return;
-    }
+    } else {
+      if (sourceEl) sourceEl.textContent = 'watchlist board';
 
-    if (sourceEl) sourceEl.textContent = 'watchlist board';
+      const dirClass = _isShortSetup(row.direction) ? 'bear' : 'bull';
 
-    const dirClass = _isShortSetup(row.direction) ? 'bear' : 'bull';
+      const fields = [
+        { label: 'Direction', value: (row.direction || '—').replace(/_/g, ' ').toUpperCase(), cls: dirClass },
+        { label: 'Vs',        value: row.vs       != null ? fmtPrice(row.vs)      : '—' },
+        { label: 'Arm',       value: row.arm_state || '—' },
+        { label: 'Rank',      value: row.rank     != null ? '#' + row.rank         : '—' },
+      ];
 
-    const fields = [
-      { label: 'Direction', value: (row.direction || '—').replace(/_/g, ' ').toUpperCase(), cls: dirClass },
-      { label: 'Vs',        value: row.vs       != null ? fmtPrice(row.vs)      : '—' },
-      { label: 'Arm',       value: row.arm_state || '—' },
-      { label: 'Rank',      value: row.rank     != null ? '#' + row.rank         : '—' },
-    ];
-
-    gridEl.innerHTML = fields.map(f => `
+      gridEl.innerHTML = fields.map(f => `
 <div class="dash-level-cell">
   <span class="dash-level-cell-label">${f.label}</span>
   <span class="dash-level-cell-value${f.cls ? ' ' + f.cls : ''}">${f.value}</span>
 </div>`).join('');
+    }
 
     // Structural levels — async fetch, graceful degradation
     const structEl = document.getElementById('levelsStructural');
     if (structEl) {
       structEl.innerHTML = '';
-      const px = row.current_price || null;
+      const px = row ? (row.current_price || null) : null;
       const url = `/api/sr_levels?ticker=${encodeURIComponent(ticker)}${px ? '&price=' + px : ''}`;
       apiFetch(url).then(d => {
         srLevelsCache = (d && d.available) ? d : null;
@@ -2112,8 +2111,9 @@
         if (d.round_below != null) roundItems.push({ label: 'R↓', val: fmtN(d.round_below), cls: 'round' });
         if (roundItems.length) rows.push({ title: 'Round', items: roundItems });
 
-        // Row 3: overhead/underfoot swings
-        const isBear = _isShortSetup(row.direction);
+        // Row 3: overhead/underfoot swings — use bias selector direction for off-watchlist tickers
+        const _dir = row ? row.direction : (document.getElementById('chainBias')?.value === 'bearish' ? 'short_setup' : 'long_setup');
+        const isBear = _isShortSetup(_dir);
         const swings = isBear
           ? (d.underfoot_swings || []).slice(0, 3)
           : (d.overhead_swings  || []).slice(0, 3);
