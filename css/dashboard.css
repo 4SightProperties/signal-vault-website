@@ -3616,6 +3616,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   width: 100%;
   border-collapse: collapse;
   font-size: 0.72rem;
+  table-layout: fixed;
 }
 .univ-table thead {
   position: sticky;

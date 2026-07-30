@@ -6655,22 +6655,29 @@ ${isAdmin ? `
     });
 
     const COLS = [
-      { key: 'ticker',         label: 'Ticker',   right: false },
-      { key: 'live_price',     label: 'Price',    right: true  },
-      { key: 'cloud_10m',      label: '10m',      right: false },
-      { key: 'cloud_1h',       label: '1h',       right: false },
-      { key: 'cloud_1d',       label: '1d',       right: false },
-      { key: 'pm_break_state', label: 'PM Break', right: false },
-      { key: 'daily_atr',      label: 'ATR',      right: true  },
-      { key: 'atr_consumed',   label: 'Consumed', right: true  },
-      { key: 'trigger',        label: 'Trigger',  right: true  },
-      { key: 'arm_state',      label: 'State',    right: false },
+      { key: 'ticker',         label: 'Ticker',   right: false,                width: '13%' },
+      { key: 'live_price',     label: 'Price',    right: true,                 width: '9%'  },
+      { key: 'cloud_10m',      label: '10m',      right: false, center: true,  width: '6%'  },
+      { key: 'cloud_1h',       label: '1h',       right: false, center: true,  width: '6%'  },
+      { key: 'cloud_1d',       label: '1d',       right: false, center: true,  width: '6%'  },
+      { key: 'pm_break_state', label: 'PM Break', right: false,                width: '13%' },
+      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '9%'  },
+      { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '9%'  },
+      { key: 'trigger',        label: 'Trigger',  right: true,                 width: '12%' },
+      { key: 'arm_state',      label: 'State',    right: false,                width: '17%' },
     ];
+
+    const colgroup = '<colgroup>' +
+      COLS.map(c => `<col style="width:${c.width}">`).join('') +
+      '</colgroup>';
 
     const headers = COLS.map(c => {
       const isSorted = c.key === univSortCol;
       const arrow    = isSorted ? (univSortDir === 1 ? ' ▲' : ' ▼') : '';
-      const cls      = 'univ-th' + (isSorted ? ' sorted' : '') + (c.right ? ' univ-r' : '');
+      const cls      = 'univ-th' +
+        (isSorted  ? ' sorted'      : '') +
+        (c.right   ? ' univ-r'      : '') +
+        (c.center  ? ' univ-center' : '');
       return `<th class="${cls}" data-col="${c.key}">${c.label}${arrow}</th>`;
     }).join('');
 
@@ -6727,6 +6734,7 @@ ${isAdmin ? `
 
     wrap.innerHTML =
       '<table class="univ-table">' +
+        colgroup +
         '<thead><tr>' + headers + '</tr></thead>' +
         '<tbody>' + rowsHtml + '</tbody>' +
       '</table>';
