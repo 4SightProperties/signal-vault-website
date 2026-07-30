@@ -2514,7 +2514,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── MTF clouds row — 4 equal cells ─────────────────────────── */
 .cmd-mtf-row {
   display: grid;
-  grid-template-columns: repeat(4, 1fr);
+  grid-template-columns: repeat(5, 1fr);
   flex-shrink: 0;
   border-bottom: 1px solid var(--border);
   height: 44px;

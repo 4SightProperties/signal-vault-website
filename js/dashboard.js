@@ -1110,6 +1110,7 @@
 
     // Derive live price, trigger, bias, and day change from watchlist cache
     const wlRow    = watchlistDataCache.find(r => r.ticker === t);
+    _setPmBadge(_computePmBreak(t));
     const trigger  = wlRow && wlRow.trigger       ? parseFloat(wlRow.trigger)       : 0;
     let livePrice  = wlRow && wlRow.current_price  ? parseFloat(wlRow.current_price) : 0;
     let changePct  = wlRow && wlRow.change_pct != null ? parseFloat(wlRow.change_pct) : null;
@@ -1217,6 +1218,38 @@
       }
     } catch (_) {
       // Leave cells as reset (···) — silent fail, not worth surfacing
+    }
+  }
+
+  function _computePmBreak(ticker) {
+    const uRows = universeDataCache && universeDataCache.rows;
+    const uRow  = uRows && uRows.find(r => r.ticker === ticker);
+    const wlRow = watchlistDataCache.find(r => r.ticker === ticker);
+    const livePrice = (wlRow && wlRow.current_price ? parseFloat(wlRow.current_price) : 0)
+                   || (uRow  && uRow.price           ? parseFloat(uRow.price)           : 0);
+    if (uRow && livePrice > 0 && uRow.pm_high != null && uRow.pm_low != null) {
+      if (livePrice > uRow.pm_high)  return 'bull_break';
+      if (livePrice < uRow.pm_low)   return 'bear_break';
+      return 'chop';
+    }
+    return (uRow && uRow.pm_break_state) || (wlRow && wlRow.pm_break_state) || null;
+  }
+
+  function _setPmBadge(pmBreakState) {
+    const badgeEl = document.getElementById('mtfBadgePm');
+    if (!badgeEl) return;
+    const MAP = {
+      bull_break: { cls: 'bull',  text: '▲ BULL' },
+      bear_break: { cls: 'bear',  text: '▼ BEAR' },
+      chop:       { cls: 'mixed', text: '— CHOP' },
+    };
+    const entry = MAP[pmBreakState];
+    if (entry) {
+      badgeEl.className   = `cmd-mtf-badge ${entry.cls}`;
+      badgeEl.textContent = entry.text;
+    } else {
+      badgeEl.className   = 'cmd-mtf-badge blocked';
+      badgeEl.textContent = '—';
     }
   }
 
@@ -2037,6 +2070,7 @@
     if (!focusedTicker) return;
     const t      = focusedTicker;
     const wlRow  = watchlistDataCache.find(r => r.ticker === t);
+    _setPmBadge(_computePmBreak(t));
     const trigger = wlRow && wlRow.trigger ? parseFloat(wlRow.trigger) : 0;
 
     if (wlRow) {
