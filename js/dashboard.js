@@ -3768,21 +3768,21 @@
 
     const _minStk  = Math.min(..._domainPts);
     const _maxStk  = Math.max(..._domainPts);
-    const _stkPad  = (_maxStk - _minStk) * 0.12;
+    const _stkPad  = (_maxStk - _minStk) * 0.18;
     const minStkP  = Math.max(0, _minStk - _stkPad);
     const maxStkP  = _maxStk + _stkPad;
     const stkSpan  = maxStkP - minStkP || 1;
 
-    // SVG sizing — no ATR strip; dots below axis with 4-line label stacks.
-    // AXIS_Y=32: ~30px above for ATR zone labels (3-line stack, R+% merged) + now/open tick labels.
-    // Labels bottom at AXIS_Y+47=79; stagger adds 18px → 97; margin → SVG_H=108.
+    // SVG sizing — dots below axis (4-line stacks), above-axis zone labels + now/open.
+    // AXIS_Y=40: now/open at AXIS_Y-30 (y=10); ATR 3-stack at AXIS_Y-20/-10/-2 (y=20/30/38).
+    // Labels bottom at AXIS_Y+47=87; stagger +18 → 105; bottom margin → SVG_H=116.
     const _ps = window.getComputedStyle(el.parentElement);
     const W = Math.round(
       el.parentElement.clientWidth
       - parseFloat(_ps.paddingLeft)
       - parseFloat(_ps.paddingRight)
     );
-    const SVG_H = 108, AXIS_Y = 32;
+    const SVG_H = 116, AXIS_Y = 40;
     function toX(stockPrice) { return (stockPrice - minStkP) / stkSpan * W; }
 
     // ATR gauge (unchanged — used by now-marker label and footer)
@@ -3791,6 +3791,16 @@
     const _atrConsumedPct = _gaugeAtrRatio !== null ? _gaugeAtrRatio * 100 : null;
 
     const DOT_COLOR = { stop: '#ef4444', entry: '#2a78d6', tp: '#22c55e', exit: '#22c55e' };
+
+    // Edge-aware label position: switches text-anchor to start/end within EDGE_PAD px of
+    // either side so centered labels don't clip. Applies to all above- and below-axis text.
+    const EDGE_PAD = 38;
+    function lblPos(x) {
+      if (x < EDGE_PAD) return { lx: Math.max(4, x), anchor: 'start' };
+      if (x > W - EDGE_PAD) return { lx: Math.min(W - 4, x), anchor: 'end' };
+      return { lx: x, anchor: 'middle' };
+    }
+
     const svgParts  = [];
 
     // ── §1 Background ATR zones (rects behind everything) ─────────────────────
@@ -3827,10 +3837,11 @@
         ? ((_v75 >= entry ? '+' : '') + Math.round((_v75 - entry) / entry * 100) + '%') : '';
       const _outcome75 = [_r75, _pct75str].filter(Boolean).join(' · ');
       svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
+      const {lx: _lx75, anchor: _a75} = lblPos(_x75);
+      svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
       if (_v75 != null) {
-        svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}</text>`);
-        if (_outcome75) svgParts.push(`<text x="${_x75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#eda100" font-size="8" font-family="monospace" opacity="0.55">${_outcome75}</text>`);
+        svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}</text>`);
+        if (_outcome75) svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.55">${_outcome75}</text>`);
       }
     }
     if (_atr100Stk != null) {
@@ -3841,10 +3852,11 @@
         ? ((_v100 >= entry ? '+' : '') + Math.round((_v100 - entry) / entry * 100) + '%') : '';
       const _outcome100 = [_r100, _pct100str].filter(Boolean).join(' · ');
       svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
-      svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}1 ATR $${_atr100Stk.toFixed(0)}</text>`);
+      const {lx: _lx100, anchor: _a100} = lblPos(_x100);
+      svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}1 ATR $${_atr100Stk.toFixed(0)}</text>`);
       if (_v100 != null) {
-        svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}</text>`);
-        if (_outcome100) svgParts.push(`<text x="${_x100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="middle" fill="#ef4444" font-size="8" font-family="monospace" opacity="0.55">${_outcome100}</text>`);
+        svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}</text>`);
+        if (_outcome100) svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.55">${_outcome100}</text>`);
       }
     }
 
@@ -3884,7 +3896,7 @@
         svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#94a3b8" stroke-width="6" stroke-linecap="round" filter="url(#rrlGlow)" opacity="0.7"/>`);
         svgParts.push(`<line x1="${_gx0.toFixed(1)}" y1="${AXIS_Y}" x2="${_gx1.toFixed(1)}" y2="${AXIS_Y}" stroke="#94a3b8" stroke-width="2" stroke-linecap="round" opacity="0.95"/>`);
         if (_gx0Raw < 0) {
-          svgParts.push(`<text x="2" y="${AXIS_Y + 4}" fill="#94a3b8" font-size="8" font-family="monospace" opacity="0.7">&#x25C2;</text>`);
+          svgParts.push(`<text x="2" y="${AXIS_Y + 4}" fill="#94a3b8" font-size="9" font-family="monospace" opacity="0.7">&#x25C2;</text>`);
         }
       }
     }
@@ -3894,7 +3906,8 @@
       // Real session open — labeled "open" because the source is authoritative.
       const _ox = toX(chainDayOpen);
       svgParts.push(`<line x1="${_ox.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_ox.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="#475569" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${_ox.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#475569" font-size="7.5" font-family="monospace">open</text>`);
+      const {lx: _oxLx, anchor: _oxA} = lblPos(_ox);
+      svgParts.push(`<text x="${_oxLx.toFixed(1)}" y="${AXIS_Y - 30}" text-anchor="${_oxA}" fill="#475569" font-size="9" font-family="monospace">open</text>`);
     } else if (_dayOrigin != null && _atrConsumedPct != null && chainDayRange > 0) {
       // Proxy terminus (spot − dayRange): unlabeled tick only when on-canvas.
       // When off-domain the ◂ marker in §4 already signals the overflow; skip the tick.
@@ -3908,7 +3921,8 @@
       const _nowLbl = _atrConsumedPct != null ? `now ${Math.round(_atrConsumedPct)}% ATR` : 'now';
       const _nowCol = _gaugeExhausted ? '#eda100' : '#e2e8f0';
       svgParts.push(`<line x1="${_nx.toFixed(1)}" y1="${AXIS_Y - 7}" x2="${_nx.toFixed(1)}" y2="${AXIS_Y + 7}" stroke="${_nowCol}" stroke-width="1.5" stroke-linecap="round"/>`);
-      svgParts.push(`<text x="${_nx.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="middle" fill="#94a3b8" font-size="7.5" font-family="monospace">${_nowLbl}</text>`);
+      const {lx: _nowLx, anchor: _nowA} = lblPos(_nx);
+      svgParts.push(`<text x="${_nowLx.toFixed(1)}" y="${AXIS_Y - 30}" text-anchor="${_nowA}" fill="#94a3b8" font-size="9" font-family="monospace">${_nowLbl}</text>`);
     }
 
     // ── §3 Unified dots: exit + on-scale SR/cloud ─────────────────────────────
@@ -4027,13 +4041,14 @@
         svgParts.push(`<line x1="${x.toFixed(1)}" y1="${AXIS_Y}" x2="${x.toFixed(1)}" y2="${AXIS_Y + 8}" stroke="${col}" stroke-width="1" opacity="0.4"/>`);
 
         const nCol = dot.nameColor ?? col;
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL1}" text-anchor="middle" fill="${nCol}" font-size="10" font-family="monospace">${dot.label}</text>`);
+        const {lx, anchor} = lblPos(x);
+        svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL1}" text-anchor="${anchor}" fill="${nCol}" font-size="9" font-family="monospace">${dot.label}</text>`);
 
         const stkTxt = dot.approxStk ? `~$${(+dot.stockPrice).toFixed(0)}` : `$${(+dot.stockPrice).toFixed(0)}`;
-        svgParts.push(`<text x="${x.toFixed(1)}" y="${yL2}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">${stkTxt}</text>`);
+        svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL2}" text-anchor="${anchor}" fill="#94a3b8" font-size="9" font-family="monospace">${stkTxt}</text>`);
 
         if (dot.isEntry) {
-          if (dot.optVal != null) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
+          if (dot.optVal != null) svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL3}" text-anchor="${anchor}" fill="#94a3b8" font-size="9" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
         } else if (dot.showPct && entry > 0) {
           const optTxt    = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
           const rStr      = dot.optVal != null ? fmtR(dot.optVal) : '';
@@ -4042,8 +4057,8 @@
           const outcomeCol = !outcomeStr ? '#64748b'
             : dot.pctGain != null ? (dot.pctGain < 0 ? '#ef4444' : '#22c55e')
             : (dot.optVal >= entry ? '#22c55e' : '#ef4444');
-          svgParts.push(`<text x="${x.toFixed(1)}" y="${yL3}" text-anchor="middle" fill="#94a3b8" font-size="9" font-family="monospace">${optTxt}</text>`);
-          if (outcomeStr) svgParts.push(`<text x="${x.toFixed(1)}" y="${yL4}" text-anchor="middle" fill="${outcomeCol}" font-size="9" font-family="monospace">${outcomeStr}</text>`);
+          svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL3}" text-anchor="${anchor}" fill="#94a3b8" font-size="9" font-family="monospace">${optTxt}</text>`);
+          if (outcomeStr) svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL4}" text-anchor="${anchor}" fill="${outcomeCol}" font-size="9" font-family="monospace">${outcomeStr}</text>`);
         }
       }
     });
@@ -4053,7 +4068,7 @@
       const _col = DOT_COLOR['tp'];
       const _lbl = _tp2.abbr ? `▸ TP2 · ${_tp2.abbr}` : '▸ TP2';
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="10" font-family="monospace">${_lbl}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${_lbl}</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${_tp2.price.toFixed(2)}</text>`);
       const _fmtRTp2   = fmtR(_tp2.price);
@@ -4064,7 +4079,7 @@
     if (_unpricedTpEdge) {
       const _col = DOT_COLOR['exit'];
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="10" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">▸ EXIT · ${_unpricedTpEdge.abbr}</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_unpricedTpEdge.stockPrice).toFixed(0)} stk</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="#64748b" font-size="9" font-family="monospace">prices at open</text>`);
     }
