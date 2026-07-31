@@ -1897,26 +1897,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   color: var(--blue);
 }
 
-/* Order type segment row (display-only; limit active, market/stop disabled) */
-.cockpit-order-type-row { display: flex; align-items: center; gap: 0.3rem; }
-.cockpit-seg-group { display: flex; gap: 0.18rem; }
-.cockpit-seg {
-  font-size: 0.58rem;
-  font-weight: 600;
-  padding: 0.08rem 0.32rem;
-  border-radius: var(--radius-sm);
-  border: 1px solid var(--border);
-  background: var(--bg-elevated);
-  user-select: none;
-}
-.cockpit-seg-active {
-  color: var(--blue);
-  border-color: rgba(59,130,246,0.4);
-  background: rgba(59,130,246,0.08);
-}
-.cockpit-seg-dim { color: var(--text-muted); opacity: 0.45; cursor: not-allowed; }
-
-/* Inline label + control row (order type, entry price, exit) */
+/* Inline label + control row (entry price, exit) */
 .cockpit-inline-row { display: flex; align-items: center; gap: 0.3rem; }
 
 /* TIF labeled field */

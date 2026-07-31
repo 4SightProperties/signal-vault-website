@@ -2592,16 +2592,6 @@
   <div class="cockpit-levels-section">
     <div class="cockpit-section-hd">1. Order Basics</div>
 
-    <!-- Order type — display-only; limit is the only supported entry type -->
-    <div class="cockpit-order-type-row" style="margin-bottom:0.2rem">
-      <span class="cockpit-section-label">order type</span>
-      <div class="cockpit-seg-group">
-        <span class="cockpit-seg cockpit-seg-active">Limit</span>
-        <span class="cockpit-seg cockpit-seg-dim" title="not supported">Market</span>
-        <span class="cockpit-seg cockpit-seg-dim" title="not supported">Stop</span>
-      </div>
-    </div>
-
     <!-- Limit price mode + resolved price + bid/ask -->
     <div class="cockpit-limit-row">
       <span class="cockpit-section-label">limit price</span>
