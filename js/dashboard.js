@@ -2581,15 +2581,28 @@
   <div class="cockpit-verdict" id="cockpitVerdict" style="display:none"></div>
 </div>`;
 
-    // ── Right column (identity + Blocks B, G, H, I) — injected into #orderFormMount
+    // ── Right column (identity + Sections 1 + 3) — injected into #orderFormMount
     const rightHtml = `
 <div class="cockpit-order-identity">
   <span class="cockpit-order-symbol">${sym}</span>
   <span class="cockpit-order-meta">${dir.toUpperCase()} · ${strike.strike} · ${dte}DTE</span>
 </div>
 
-  <!-- LIMIT PRICE: mode buttons + resolved price + bid/ask + qty on one row -->
+  <!-- ─── 1. ORDER BASICS ─────────────────────────────────────────── -->
   <div class="cockpit-levels-section">
+    <div class="cockpit-section-hd">1. Order Basics</div>
+
+    <!-- Order type — display-only; limit is the only supported entry type -->
+    <div class="cockpit-order-type-row" style="margin-bottom:0.2rem">
+      <span class="cockpit-section-label">order type</span>
+      <div class="cockpit-seg-group">
+        <span class="cockpit-seg cockpit-seg-active">Limit</span>
+        <span class="cockpit-seg cockpit-seg-dim" title="not supported">Market</span>
+        <span class="cockpit-seg cockpit-seg-dim" title="not supported">Stop</span>
+      </div>
+    </div>
+
+    <!-- Limit price mode + resolved price + bid/ask -->
     <div class="cockpit-limit-row">
       <span class="cockpit-section-label">limit price</span>
       <div class="cockpit-level-btns" id="cockpitEntryModeBtns">
@@ -2599,24 +2612,40 @@
       </div>
       <span class="cockpit-resolved-price" id="cockpitResolvedPrice">—</span>
       <span class="cockpit-bid-ask" id="cockpitBidAskDisplay">${bid > 0 ? `bid ${bid.toFixed(2)} / ask ${ask.toFixed(2)}` : `ask ${ask.toFixed(2)}`}</span>
-      <span class="cockpit-section-label" style="margin-left:auto">qty</span>
-      <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
     </div>
-    <div class="cockpit-entry-sublabels">
-      <span class="cockpit-entry-sublabel">limit order · day</span>
-      <span class="cockpit-entry-sublabel">market &amp; stop entry not supported</span>
-    </div>
+
+    <!-- Your price field (revealed only when mode=Yours) -->
     <div id="cockpitEntryPriceRow" style="display:none; align-items:center; gap:0.4rem; margin-top:0.3rem;">
       <span class="cockpit-section-label">Premium $</span>
       <input type="number" id="cockpitEntryPriceInput" class="cockpit-target-input"
              min="0.01" step="0.01" placeholder="0.00">
     </div>
+
+    <!-- Quantity + quick-set chips + TIF chip -->
+    <div class="cockpit-qty-row">
+      <span class="cockpit-section-label">quantity</span>
+      <div class="cockpit-qty-chips" id="cockpitQtyChips">
+        <button class="cockpit-qty-chip" type="button" data-qty="1">1</button>
+        <button class="cockpit-qty-chip" type="button" data-qty="2">2</button>
+        <button class="cockpit-qty-chip" type="button" data-qty="5">5</button>
+        <button class="cockpit-qty-chip" type="button" data-qty="10">10</button>
+      </div>
+      <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
+      <span class="cockpit-section-label" style="margin-left:0.4rem">tif</span>
+      <span class="cockpit-field-chip">day</span>
+    </div>
+
+    <div class="cockpit-entry-sublabels">
+      <span class="cockpit-entry-sublabel">limit order · day</span>
+      <span class="cockpit-entry-sublabel">market &amp; stop entry not supported</span>
+    </div>
   </div>
 
-  <!-- EXIT STRATEGY: segmented buttons + two-column broker/bot readout -->
+  <!-- ─── 3. EXIT STRATEGY ────────────────────────────────────────── -->
   <div class="cockpit-levels-section">
-    <div class="cockpit-inline-row">
-      <span class="cockpit-section-label">exit strategy</span>
+    <div class="cockpit-section-hd">3. Exit Strategy</div>
+    <div class="cockpit-inline-row" style="margin-bottom:0.14rem">
+      <span class="cockpit-section-label">strategy</span>
       <select id="cockpitExitLayerSelect" class="chain-select" style="flex:1">
         <option value="default">Default</option>
         <option value="tight_trail">Tight trail</option>
@@ -2710,6 +2739,25 @@
       }
       if (_onPayoutTab() && payoutCurveCache) renderPayoutCurve(payoutCurveCache, qty);
     });
+
+    // Qty chips — cosmetic shortcuts; write to #chainQty and fire its existing input handler.
+    // Active chip class tracks whichever chip matches the current value.
+    const _qtyChipsEl = document.getElementById('cockpitQtyChips');
+    const _qtyInpEl   = document.getElementById('chainQty');
+    function _syncQtyChips() {
+      const v = _qtyInpEl.value;
+      _qtyChipsEl.querySelectorAll('.cockpit-qty-chip').forEach(c => {
+        c.classList.toggle('active', c.dataset.qty === v);
+      });
+    }
+    _qtyChipsEl.addEventListener('click', e => {
+      const btn = e.target.closest('[data-qty]');
+      if (!btn) return;
+      _qtyInpEl.value = btn.dataset.qty;
+      _qtyInpEl.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    _qtyInpEl.addEventListener('input', _syncQtyChips);
+    _syncQtyChips();
 
     // Entry price mode buttons — reset to AUTO on each arm, persist within session
     cockpitEntryMode = 'auto';

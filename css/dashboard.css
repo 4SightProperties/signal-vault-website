@@ -1824,6 +1824,47 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-top: 1px solid var(--border);
 }
 
+/* Numbered section heading (1. Order Basics / 3. Exit Strategy) */
+.cockpit-section-hd {
+  font-size: 0.52rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.09em;
+  color: var(--text-muted);
+  margin-bottom: 0.24rem;
+  padding-bottom: 0.06rem;
+  border-bottom: 1px solid var(--border);
+  user-select: none;
+}
+
+/* Quantity row — chips + input + TIF chip on one line */
+.cockpit-qty-row {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  margin-top: 0.2rem;
+}
+
+.cockpit-qty-chips { display: flex; gap: 0.12rem; }
+
+.cockpit-qty-chip {
+  font-size: 0.56rem;
+  font-weight: 700;
+  padding: 0.05rem 0.22rem;
+  border-radius: var(--radius-sm);
+  border: 1px solid var(--border);
+  background: var(--bg-elevated);
+  color: var(--text-muted);
+  cursor: pointer;
+  transition: border-color 0.15s, color 0.15s;
+}
+.cockpit-qty-chip:hover { border-color: var(--accent); color: var(--text-secondary); }
+.cockpit-qty-chip.active {
+  border-color: rgba(59,130,246,0.4);
+  background: rgba(59,130,246,0.08);
+  color: var(--blue);
+}
+
 .cockpit-section-label {
   font-size: 0.55rem;
   font-weight: 700;
@@ -2070,12 +2111,13 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .cockpit-summary-warn .cockpit-sum-risk-wrap { color: var(--warning, #f59e0b); }
 .cockpit-summary-warn .cockpit-summary-val   { color: var(--warning, #f59e0b); font-weight: 700; }
 
-/* LIMIT PRICE row — entry mode + resolved price + bid/ask + qty on one line */
+/* LIMIT PRICE row — entry mode + resolved price + bid/ask */
 .cockpit-limit-row {
   display: flex;
   align-items: center;
   gap: 0.3rem;
   flex-wrap: wrap;
+  margin-bottom: 0.1rem;
 }
 
 /* Sub-labels below LIMIT PRICE row */
