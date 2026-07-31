@@ -96,6 +96,7 @@
   let chainLastStrikesData = null;  // {strikes, bias, srCtx} — saved for compact-strip expand
   let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
   let cockpitExitLayer     = 'default'; // exit layer: 'default' | 'tight_trail' | 'cloud_break' | 'oco_bracket'
+  let _tif                 = 'day';     // TIF for order open: 'day' | 'gtc'; reset on re-arm
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
   let chainArmedCloudLevels = null; // five cloud SR edges frozen at arm (direction-appropriate)
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
@@ -2622,11 +2623,15 @@
       </div>
       <input class="chain-qty-input" id="chainQty" type="number" min="1" max="20" value="2">
       <span class="cockpit-section-label" style="margin-left:0.4rem">tif</span>
-      <span class="cockpit-field-chip">day</span>
+      <div id="cockpitTifChips" style="display:flex;gap:0.12rem">
+        <button class="cockpit-qty-chip active" type="button" data-tif="day">DAY</button>
+        <button class="cockpit-qty-chip" type="button" data-tif="gtc">GTC</button>
+      </div>
+      <span id="cockpitTifNote" style="font-size:0.53rem;color:var(--text-muted)"></span>
     </div>
 
     <div class="cockpit-entry-sublabels">
-      <span class="cockpit-entry-sublabel">limit order · day</span>
+      <span class="cockpit-entry-sublabel" id="cockpitEntrySublabel">limit order · day</span>
       <span class="cockpit-entry-sublabel">market &amp; stop entry not supported</span>
     </div>
   </div>
@@ -2752,6 +2757,7 @@
     // Entry price mode buttons — reset to AUTO on each arm, persist within session
     cockpitEntryMode = 'auto';
     cockpitExitLayer = 'default';
+    _tif             = 'day';
     document.getElementById('cockpitEntryModeBtns').addEventListener('click', e => {
       const btn = e.target.closest('[data-entry-mode]');
       if (!btn) return;
@@ -2772,6 +2778,42 @@
       cockpitExitLayer = e.target.value;
       _updateBrokerBotCols(cockpitExitLayer);
     });
+
+    // TIF toggle — DAY/GTC chips; DTE-driven guard: 0DTE disables GTC, 1DTE warns on select
+    {
+      const _tifChips  = document.querySelectorAll('#cockpitTifChips .cockpit-qty-chip');
+      const _tifNoteEl = document.getElementById('cockpitTifNote');
+      const _gtcChip   = document.querySelector('#cockpitTifChips [data-tif="gtc"]');
+      const _subEl     = document.getElementById('cockpitEntrySublabel');
+
+      if (dte === 0) {
+        // GTC is functionally identical to DAY on 0DTE — block it entirely
+        _gtcChip.disabled      = true;
+        _gtcChip.style.opacity = '0.35';
+        _gtcChip.style.cursor  = 'not-allowed';
+        if (_tifNoteEl) _tifNoteEl.textContent = 'GTC = DAY today';
+      }
+      // dte === 1: chips enabled; warning fires on select below
+      // dte >= 2: no guard needed
+
+      _tifChips.forEach(btn => {
+        btn.addEventListener('click', () => {
+          if (btn.disabled) return;
+          _tif = btn.dataset.tif;
+          _tifChips.forEach(c => c.classList.toggle('active', c === btn));
+          if (_subEl) _subEl.textContent = `limit order · ${_tif}`;
+          if (_tifNoteEl && dte !== 0) {
+            if (dte === 1 && _tif === 'gtc') {
+              _tifNoteEl.style.color = 'var(--amber, #f59e0b)';
+              _tifNoteEl.textContent = 'GTC rests to next session';
+            } else {
+              _tifNoteEl.style.color = 'var(--text-muted)';
+              _tifNoteEl.textContent = '';
+            }
+          }
+        });
+      });
+    }
 
     function _updateOcoHints() {
       const tpInp    = document.getElementById('cockpitOcoTpInput');
@@ -3180,6 +3222,7 @@
               expiry:        armedContract.expiration,
               qty,
               bid_price:     ask,
+              tif:           _tif,
             };
             if (limitPricePayload !== undefined) {
               body.limit_price = limitPricePayload;
