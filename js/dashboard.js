@@ -4054,12 +4054,17 @@
       : `R:R 1:${rrRatio} · risk $${riskDol} · reward $${rwdDol}`;
 
     let _atrFooterPfx = '';
+    let _footerAmberStyle = '';
     if (_gaugeAtrRatio !== null) {
-      const _atrPct  = Math.round(_gaugeAtrRatio * 100);
-      const _atrLeft = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
-      _atrFooterPfx  = `day range ${_atrPct}% used · ${_atrLeft} left · `;
+      if (_gaugeAtrRatio >= 0.95) {
+        _atrFooterPfx     = 'ATR EXHAUSTED · ';
+        _footerAmberStyle = ' style="color:#eda100"';
+      } else {
+        const _atrPct  = Math.round(_gaugeAtrRatio * 100);
+        const _atrLeft = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
+        _atrFooterPfx  = `day range ${_atrPct}% used · ${_atrLeft} left · `;
+      }
     }
-    const _footerAmberStyle = _gaugeExhausted ? ' style="color:#eda100"' : '';
     el.innerHTML = `${svg}<div class="rrl-footer"${_footerAmberStyle}>${_atrFooterPfx}${_rrPfx}</div>`;
     el.style.display = '';
   }
@@ -4515,21 +4520,6 @@
   <td class="mat-dol-cell">${fmtDol(expRow)}</td>
 </tr>`;
     }).join('');
-
-    let _atrBannerHtml = '';
-    const _atrRatio = (chainAtr > 0 && chainDayRange != null) ? chainDayRange / chainAtr : null;
-    if (_atrRatio !== null) {
-      if (_atrRatio >= 0.95) {
-        _atrBannerHtml = '<div class="mat-atr-banner mat-atr-banner-exhausted">ATR EXHAUSTED</div>';
-      } else {
-        const _leftStr = `$${Math.max(0, chainAtr - chainDayRange).toFixed(2)}`;
-        _atrBannerHtml = `<div class="mat-atr-banner">day range ${Math.round(_atrRatio * 100)}% used · ${_leftStr} left</div>`;
-      }
-    }
-
-    // ATR banner is outside the scroll container — write to its own element
-    const _bannerEl = document.getElementById('cockpitAtrBanner');
-    if (_bannerEl) _bannerEl.innerHTML = _atrBannerHtml;
 
     wrapEl.innerHTML = `
 <table class="cockpit-level-matrix">
