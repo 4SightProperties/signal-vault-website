@@ -6945,8 +6945,8 @@ ${pos.exit_layer === 'oco_bracket' ? `
       { key: 'pm_break_state', label: 'PM Break', right: false,                width: '13%' },
       { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '9%'  },
       { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '9%'  },
-      { key: 'trigger',        label: 'Trigger',  right: true,                 width: '12%' },
-      { key: 'arm_state',      label: 'State',    right: false,                width: '17%' },
+      { key: 'gex_state',      label: 'GAMMA',    right: false, center: true,  width: '12%' },
+      { key: 'gex_put_wall',   label: 'WALLS',    right: true,                 width: '17%' },
     ];
 
     const colgroup = '<colgroup>' +
@@ -6997,14 +6997,14 @@ ${pos.exit_layer === 'oco_bracket' ? `
             return `<td class="univ-td univ-r${cls}">${pct != null ? pct + '%' : '—'}</td>`;
           }
 
-          case 'trigger':
-            return `<td class="univ-td univ-r">${v != null ? '$' + v.toFixed(2) : '—'}</td>`;
+          case 'gex_state': {
+            const dot = v === 'Expansion' ? '🟢' : v === 'Compression' ? '🔵' : '⚪';
+            return `<td class="univ-td univ-center"><span class="univ-gex-chip">${dot} ${v || '—'}</span></td>`;
+          }
 
-          case 'arm_state': {
-            if (!v) return '<td class="univ-td">—</td>';
-            const lbl = ({ armed: 'armed', at_risk: 'at risk', fired: 'fired', invalidated: 'inv.', deactivated: 'off' })[v] || v;
-            const cls = 'wl-zone wl-zone-' + v.replace(/_/g, '-');
-            return `<td class="univ-td"><span class="${cls}">${lbl}</span></td>`;
+          case 'gex_put_wall': {
+            const fmtW = n => n == null ? '—' : (n % 1 === 0 ? Math.round(n).toString() : n.toFixed(2));
+            return `<td class="univ-td univ-r">${fmtW(r.gex_put_wall)} · ${fmtW(r.gex_magnet)} · ${fmtW(r.gex_call_wall)}</td>`;
           }
 
           default:
