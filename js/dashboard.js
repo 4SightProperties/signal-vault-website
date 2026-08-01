@@ -2101,7 +2101,29 @@
     const row = watchlistDataCache.find(r => r.ticker === ticker);
     if (!row) {
       if (sourceEl) sourceEl.textContent = 'not on today\'s watchlist';
-      gridEl.innerHTML = '<div class="dash-placeholder" style="font-size:0.68rem;padding:0.5rem">—</div>';
+      // ATR bar from chain data only — no row fallbacks available off-watchlist.
+      const _atr  = (chainAtr && chainAtr > 0) ? chainAtr : null;
+      const _open = chainDayOpen ?? null;
+      const _high = chainDayHigh ?? null;
+      const _low  = chainDayLow  ?? null;
+      const _px   = chainCurrentPrice > 0 ? chainCurrentPrice : null;
+      let _atrHtml = '';
+      if (_atr && _open != null) {
+        const _h = (_high != null) ? _high : _px;
+        const _l = (_low  != null) ? _low  : _px;
+        if (_h != null && _l != null) {
+          const _dn  = Math.max(0, (_open - _l) / _atr);
+          const _upv = Math.max(0, (_h - _open) / _atr);
+          const _exh = (_dn + _upv) >= 0.95;
+          const _dp  = Math.round(_dn  * 100);
+          const _up  = Math.round(_upv * 100);
+          const _tot = Math.round((_dn + _upv) * 100);
+          const _xc  = _exh ? ' dash-atr-lbl--exh'  : '';
+          const _xf  = _exh ? ' dash-atr-fill--exh' : '';
+          _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR <span class="dash-atr-total${_xc}">${_tot}%</span></span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d${_xc}">↓${_dp}%</span><div class="dash-atr-bar${_exh ? ' dash-atr-bar--exh' : ''}"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d${_xf}" style="width:${Math.min(100,_dp)}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u${_xf}" style="width:${Math.min(100,_up)}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u${_xc}">↑${_up}%</span></div></div>`;
+        }
+      }
+      gridEl.innerHTML = '<div class="dash-placeholder" style="font-size:0.68rem;padding:0.5rem">—</div>' + _atrHtml;
     } else {
       if (sourceEl) sourceEl.textContent = 'watchlist board';
 
