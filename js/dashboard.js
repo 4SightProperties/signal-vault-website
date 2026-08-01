@@ -2103,26 +2103,32 @@
     const row = watchlistDataCache.find(r => r.ticker === ticker);
     if (!row) {
       if (sourceEl) sourceEl.textContent = 'not on today\'s watchlist';
-      // ATR bar from chain data only — no row fallbacks available off-watchlist.
-      const _atr  = (chainAtr && chainAtr > 0) ? chainAtr : null;
-      const _open = chainDayOpen ?? null;
-      const _high = chainDayHigh ?? null;
-      const _low  = chainDayLow  ?? null;
-      const _px   = chainCurrentPrice > 0 ? chainCurrentPrice : null;
+      // ATR from chain (real-time, preferred) or sr_levels cache (always-on fallback).
+      const _atr  = (chainAtr && chainAtr > 0) ? chainAtr
+                      : (srLevelsCache?.sr_atr > 0 ? srLevelsCache.sr_atr : null);
+      const _open = chainDayOpen ?? srLevelsCache?.day_open ?? null;
+      const _high = chainDayHigh ?? srLevelsCache?.day_high ?? null;
+      const _low  = chainDayLow  ?? srLevelsCache?.day_low  ?? null;
+      const _px   = chainCurrentPrice > 0 ? chainCurrentPrice : (srLevelsCache?.price ?? null);
       let _atrHtml = '';
-      if (_atr && _open != null) {
-        const _h = (_high != null) ? _high : _px;
-        const _l = (_low  != null) ? _low  : _px;
-        if (_h != null && _l != null) {
-          const _dn  = Math.max(0, (_open - _l) / _atr);
-          const _upv = Math.max(0, (_h - _open) / _atr);
-          const _exh = (_dn + _upv) >= 0.95;
-          const _dp  = Math.round(_dn  * 100);
-          const _up  = Math.round(_upv * 100);
-          const _tot = Math.round((_dn + _upv) * 100);
-          const _xc  = _exh ? ' dash-atr-lbl--exh'  : '';
-          const _xf  = _exh ? ' dash-atr-fill--exh' : '';
-          _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR <span class="dash-atr-total${_xc}">${_tot}%</span></span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d${_xc}">↓${_dp}%</span><div class="dash-atr-bar${_exh ? ' dash-atr-bar--exh' : ''}"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d${_xf}" style="width:${Math.min(100,_dp)}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u${_xf}" style="width:${Math.min(100,_up)}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u${_xc}">↑${_up}%</span></div></div>`;
+      if (_atr) {
+        if (_open != null) {
+          const _h = (_high != null) ? _high : _px;
+          const _l = (_low  != null) ? _low  : _px;
+          if (_h != null && _l != null) {
+            const _dn  = Math.max(0, (_open - _l) / _atr);
+            const _upv = Math.max(0, (_h - _open) / _atr);
+            const _exh = (_dn + _upv) >= 0.95;
+            const _dp  = Math.round(_dn  * 100);
+            const _up  = Math.round(_upv * 100);
+            const _tot = Math.round((_dn + _upv) * 100);
+            const _xc  = _exh ? ' dash-atr-lbl--exh'  : '';
+            const _xf  = _exh ? ' dash-atr-fill--exh' : '';
+            _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR <span class="dash-atr-total${_xc}">${_tot}%</span></span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d${_xc}">↓${_dp}%</span><div class="dash-atr-bar${_exh ? ' dash-atr-bar--exh' : ''}"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d${_xf}" style="width:${Math.min(100,_dp)}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u${_xf}" style="width:${Math.min(100,_up)}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u${_xc}">↑${_up}%</span></div></div>`;
+          }
+        } else {
+          // Session OHLC unavailable (market closed / pre-open): show ATR dollar value only.
+          _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR</span><span class="dash-atr-lbl">$${_atr.toFixed(2)}</span></div>`;
         }
       }
       gridEl.innerHTML = '<div class="dash-placeholder" style="font-size:0.68rem;padding:0.5rem">—</div>' + _atrHtml;
@@ -2182,6 +2188,40 @@
       const url = `/api/sr_levels?ticker=${encodeURIComponent(ticker)}${px ? '&price=' + px : ''}`;
       apiFetch(url).then(d => {
         srLevelsCache = (d && d.available) ? d : null;
+        // Immediately render the off-watchlist ATR bar from sr_levels data if the live
+        // chain hasn't loaded yet (chainAtr still null). Guards: focusedTicker must still
+        // match — avoids writing stale data when a second ticker was focused mid-flight.
+        if (focusedTicker === ticker && d && d.sr_atr > 0 && !chainAtr) {
+          const _offRow = watchlistDataCache.find(r => r.ticker === ticker);
+          if (!_offRow && gridEl) {
+            const _sa = d.sr_atr;
+            const _so = d.day_open  ?? null;
+            const _sh = d.day_high  ?? null;
+            const _sl = d.day_low   ?? null;
+            const _sp = d.price     ?? null;
+            let _slHtml = '';
+            if (_so != null) {
+              const _hv = (_sh != null) ? _sh : _sp;
+              const _lv = (_sl != null) ? _sl : _sp;
+              if (_hv != null && _lv != null) {
+                const _dn2  = Math.max(0, (_so - _lv) / _sa);
+                const _upv2 = Math.max(0, (_hv - _so) / _sa);
+                const _exh2 = (_dn2 + _upv2) >= 0.95;
+                const _dp2  = Math.round(_dn2  * 100);
+                const _up2  = Math.round(_upv2 * 100);
+                const _tot2 = Math.round((_dn2 + _upv2) * 100);
+                const _xc2  = _exh2 ? ' dash-atr-lbl--exh'  : '';
+                const _xf2  = _exh2 ? ' dash-atr-fill--exh' : '';
+                _slHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR <span class="dash-atr-total${_xc2}">${_tot2}%</span></span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d${_xc2}">↓${_dp2}%</span><div class="dash-atr-bar${_exh2 ? ' dash-atr-bar--exh' : ''}"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d${_xf2}" style="width:${Math.min(100,_dp2)}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u${_xf2}" style="width:${Math.min(100,_up2)}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u${_xc2}">↑${_up2}%</span></div></div>`;
+              }
+            } else {
+              _slHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR</span><span class="dash-atr-lbl">$${_sa.toFixed(2)}</span></div>`;
+            }
+            if (_slHtml) {
+              gridEl.innerHTML = '<div class="dash-placeholder" style="font-size:0.68rem;padding:0.5rem">—</div>' + _slHtml;
+            }
+          }
+        }
         if (!d || !d.available) return;
         const fmtN = v => v != null ? '$' + Number(v).toFixed(2) : null;
         const rows = [];
