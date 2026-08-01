@@ -2107,14 +2107,35 @@
         { label: 'Direction', value: (row.direction || '—').replace(/_/g, ' ').toUpperCase(), cls: dirClass },
         { label: 'Vs',        value: row.vs       != null ? fmtPrice(row.vs)      : '—' },
         { label: 'Arm',       value: row.arm_state || '—' },
-        { label: 'Rank',      value: row.rank     != null ? '#' + row.rank         : '—' },
       ];
+
+      const _atr = row.daily_atr;
+      let _atrHtml = '';
+      if (_atr && _atr > 0) {
+        const _open = row.day_open, _high = row.day_high, _low = row.day_low;
+        const _px   = row.current_price;
+        let _dn = null, _upv = null;
+        if (_open != null && _high != null && _low != null) {
+          _dn  = Math.min(1, Math.max(0, (_open - _low)  / _atr));
+          _upv = Math.min(1, Math.max(0, (_high - _open) / _atr));
+        } else if (_open != null && _px != null) {
+          _dn  = Math.min(1, Math.max(0, (_open - _px) / _atr));
+          _upv = Math.min(1, Math.max(0, (_px  - _open) / _atr));
+        }
+        if (_dn !== null) {
+          const _dp = Math.round(_dn * 100), _up = Math.round(_upv * 100);
+          _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR</span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d">↓${_dp}%</span><div class="dash-atr-bar"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d" style="width:${_dp}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u" style="width:${_up}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u">↑${_up}%</span></div></div>`;
+        }
+      }
+      if (!_atrHtml) {
+        _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR</span><span class="dash-atr-lbl">—</span></div>`;
+      }
 
       gridEl.innerHTML = fields.map(f => `
 <div class="dash-level-cell">
   <span class="dash-level-cell-label">${f.label}</span>
   <span class="dash-level-cell-value${f.cls ? ' ' + f.cls : ''}">${f.value}</span>
-</div>`).join('');
+</div>`).join('') + _atrHtml;
     }
 
     // Structural levels — async fetch, graceful degradation

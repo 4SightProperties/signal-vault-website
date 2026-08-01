@@ -765,6 +765,50 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .dash-level-cell-value.bull { color: var(--accent); }
 .dash-level-cell-value.bear { color: var(--danger); }
 
+/* ATR consumption bar — right-side of watchlist board strip */
+.dash-atr-room {
+  margin-left: auto;
+  padding-left: 1.2rem;
+  padding-right: 0.45rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.08rem;
+  justify-content: center;
+  align-self: center;
+}
+.dash-atr-row {
+  display: flex;
+  align-items: center;
+  gap: 0.25rem;
+}
+.dash-atr-bar {
+  display: flex;
+  width: 72px;
+  height: 5px;
+  border-radius: 2px;
+  overflow: hidden;
+}
+.dash-atr-h {
+  width: 50%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--border);
+}
+.dash-atr-h--d { display: flex; justify-content: flex-end; }
+.dash-atr-h--u { display: flex; justify-content: flex-start; }
+.dash-atr-fill { height: 100%; }
+.dash-atr-fill--d { background: var(--danger); }
+.dash-atr-fill--u { background: var(--accent); }
+.dash-atr-lbl {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.58rem;
+  white-space: nowrap;
+  min-width: 2.8ch;
+  color: var(--text-muted);
+}
+.dash-atr-lbl--d { color: var(--danger); text-align: right; }
+.dash-atr-lbl--u { color: var(--accent); }
+
 /* Structural levels section (below watchlist grid) */
 .dash-structural-levels {
   padding: 0.25rem 0.5rem 0.3rem;
