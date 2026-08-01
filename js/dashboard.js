@@ -115,6 +115,7 @@
 
   // History tab state
   let isAdmin           = false;
+  let isElite           = false;
   let histCurrentPeriod = 'all';
   let histCurrentScope  = 'me';   // 'me' | 'all' | 'user' — admin only
   let histCurrentUser   = null;   // discord_id when histCurrentScope === 'user'
@@ -247,6 +248,7 @@
       authToken  = DiscordAuth.getToken();
       const me   = await apiFetch('/api/me');
       isAdmin = !!me.is_admin;
+      isElite = (me.tier === 'elite');
       document.getElementById('dashUser').textContent =
         (me.username || 'subscriber') + ' · ' + (me.tier || '');
       const badge = document.getElementById('envBadge');
@@ -1475,7 +1477,7 @@
       );
 
       // GEX stat row — admin only
-      loadGexFlipCell(ticker).catch(() => {});
+      if (isElite || isAdmin) loadGexFlipCell(ticker).catch(() => {});
 
       // P/C Flow
       _setAcCell('acPcFlow', 'acCellPcFlow', data.pc_flow, v => {
