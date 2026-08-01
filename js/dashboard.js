@@ -104,7 +104,9 @@
   let payoutCurveCache     = null;  // range-mode response — for qty/as-of rerenders
   let chainAtr             = null;  // Wilder EWM ATR14 from _sr_atr_context at chain load
   let chainDayRange        = null;  // today's RTH hi-lo range; updated on ↻ via chain/quote
-  let chainDayOpen         = null;  // today's session open stock price; null until backend supplies day_open
+  let chainDayOpen         = null;  // today's session open — first RTH bar open from Polygon (same basis as chainDayRange)
+  let chainDayHigh         = null;  // session high from Polygon (same basis as chainDayRange)
+  let chainDayLow          = null;  // session low from Polygon (same basis as chainDayRange)
   let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
   let _armedRefreshTimer   = null;  // interval handle — ticks refreshArmedQuote every 30s while armed
   let _armedQuoteRefreshing = false; // in-flight guard — prevents overlapping /api/chain/quote calls
@@ -1101,8 +1103,10 @@
     matrixProjCache       = null;
     payoutCurveCache = null;
     chainAtr         = null;
-    chainDayRange   = null;
+    chainDayRange    = null;
     chainDayOpen     = null;
+    chainDayHigh     = null;
+    chainDayLow      = null;
 
     const searchInput = document.getElementById('tickerSearch');
     if (searchInput) searchInput.value = t;
@@ -2109,22 +2113,30 @@
         { label: 'Arm',       value: row.arm_state || '—' },
       ];
 
-      const _atr = row.daily_atr;
+      // Wilder ATR (chainAtr) — same denominator as ladder's "now X% ATR".
+      // Polygon session OHLC (chainDayOpen/High/Low) — same basis as chainDayRange.
+      // Guarantee: up + down = chainDayRange/chainAtr = ladder's exact number.
+      // Fallback to watchlist-cache values while chain hasn't loaded yet.
+      const _atr  = (chainAtr  && chainAtr  > 0) ? chainAtr  : row.daily_atr;
+      const _open = chainDayOpen ?? row.day_open;
+      const _high = chainDayHigh ?? row.day_high;
+      const _low  = chainDayLow  ?? row.day_low;
+      const _px   = row.current_price;
       let _atrHtml = '';
-      if (_atr && _atr > 0) {
-        const _open = row.day_open, _high = row.day_high, _low = row.day_low;
-        const _px   = row.current_price;
-        let _dn = null, _upv = null;
-        if (_open != null && _high != null && _low != null) {
-          _dn  = Math.min(1, Math.max(0, (_open - _low)  / _atr));
-          _upv = Math.min(1, Math.max(0, (_high - _open) / _atr));
-        } else if (_open != null && _px != null) {
-          _dn  = Math.min(1, Math.max(0, (_open - _px) / _atr));
-          _upv = Math.min(1, Math.max(0, (_px  - _open) / _atr));
-        }
-        if (_dn !== null) {
-          const _dp = Math.round(_dn * 100), _up = Math.round(_upv * 100);
-          _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR</span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d">↓${_dp}%</span><div class="dash-atr-bar"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d" style="width:${_dp}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u" style="width:${_up}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u">↑${_up}%</span></div></div>`;
+      if (_atr && _atr > 0 && _open != null) {
+        // Prefer session high/low (range-extremes); fall back to current price if unavailable.
+        const _h = (_high != null) ? _high : _px;
+        const _l = (_low  != null) ? _low  : _px;
+        if (_h != null && _l != null) {
+          const _dn  = Math.max(0, (_open - _l) / _atr);   // no per-side clamp — allow >100%
+          const _upv = Math.max(0, (_h - _open) / _atr);   // sum = chainDayRange/chainAtr
+          const _exh = (_dn + _upv) >= 0.95;               // matches ladder's EXHAUSTED threshold
+          const _dp  = Math.round(_dn  * 100);
+          const _up  = Math.round(_upv * 100);
+          const _tot = Math.round((_dn + _upv) * 100);
+          const _xc  = _exh ? ' dash-atr-lbl--exh'  : '';
+          const _xf  = _exh ? ' dash-atr-fill--exh' : '';
+          _atrHtml = `<div class="dash-atr-room"><span class="dash-level-cell-label">ATR <span class="dash-atr-total${_xc}">${_tot}%</span></span><div class="dash-atr-row"><span class="dash-atr-lbl dash-atr-lbl--d${_xc}">↓${_dp}%</span><div class="dash-atr-bar${_exh ? ' dash-atr-bar--exh' : ''}"><div class="dash-atr-h dash-atr-h--d"><div class="dash-atr-fill dash-atr-fill--d${_xf}" style="width:${Math.min(100,_dp)}%"></div></div><div class="dash-atr-h dash-atr-h--u"><div class="dash-atr-fill dash-atr-fill--u${_xf}" style="width:${Math.min(100,_up)}%"></div></div></div><span class="dash-atr-lbl dash-atr-lbl--u${_xc}">↑${_up}%</span></div></div>`;
         }
       }
       if (!_atrHtml) {
@@ -2309,6 +2321,10 @@
     chainAtr      = (srCtx.sr_atr > 0) ? srCtx.sr_atr : null;
     chainDayRange = srCtx.day_range ?? null;
     chainDayOpen  = srCtx.day_open  ?? null;
+    chainDayHigh  = srCtx.day_high  ?? null;
+    chainDayLow   = srCtx.day_low   ?? null;
+    // Re-render the ATR bar with Wilder ATR + Polygon OHLC now that chain state is populated.
+    if (focusedTicker) renderLevels(focusedTicker);
 
     // When atr_reachable is explicitly false, grey the @TP1 column and suppress values.
     // The SR level exists but is outside today's ATR budget; projecting to it would be
@@ -3423,11 +3439,14 @@
       });
       const fresh = await apiFetch(`/api/chain/quote?${params}`);
 
-      // Refresh day_range so Rem ATR column stays current (ATR itself is daily, unchanged)
+      // Refresh day_range + OHLC split so ATR bar and Rem ATR column stay current.
       if (fresh.day_range   != null) chainDayRange    = fresh.day_range;
       if (fresh.day_open    != null) chainDayOpen     = fresh.day_open;
+      if (fresh.day_high    != null) chainDayHigh     = fresh.day_high;
+      if (fresh.day_low     != null) chainDayLow      = fresh.day_low;
       // Live underlying — null pre-market or on fetch failure; leave chainCurrentPrice unchanged then.
       if (fresh.underlying  != null) chainCurrentPrice = fresh.underlying;
+      if (focusedTicker) renderLevels(focusedTicker);
 
       // Update in-place so qty handler and Open button use fresh ask/bid
       armedContract.bid = fresh.bid;

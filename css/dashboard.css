@@ -783,9 +783,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .dash-atr-bar {
   display: flex;
-  width: 72px;
-  height: 5px;
-  border-radius: 2px;
+  width: 96px;
+  height: 7px;
+  border-radius: 3px;
   overflow: hidden;
 }
 .dash-atr-h {
@@ -808,6 +808,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .dash-atr-lbl--d { color: var(--danger); text-align: right; }
 .dash-atr-lbl--u { color: var(--accent); }
+.dash-atr-total     { color: var(--text-secondary); font-weight: 600; }
+.dash-atr-lbl--exh  { color: #eda100; }
+.dash-atr-fill--exh { background: #eda100; }
+.dash-atr-bar--exh  { box-shadow: 0 0 0 1px #eda10066; }
 
 /* Structural levels section (below watchlist grid) */
 .dash-structural-levels {
