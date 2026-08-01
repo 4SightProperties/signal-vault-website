@@ -6719,7 +6719,6 @@ ${pos.exit_layer === 'oco_bracket' ? `
       if (cellEl) cellEl.classList.toggle('stale', !!gex.stale_exposure);
 
     } catch (_) {
-      focusGexCache = null;
       valueEl.textContent = '—';
       valueEl.style.color = 'var(--text-muted)';
     }
