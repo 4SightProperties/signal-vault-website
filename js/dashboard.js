@@ -1475,7 +1475,7 @@
       );
 
       // GEX stat row — admin only
-      if (isAdmin) loadGexFlipCell(ticker).catch(() => {});
+      loadGexFlipCell(ticker).catch(() => {});
 
       // P/C Flow
       _setAcCell('acPcFlow', 'acCellPcFlow', data.pc_flow, v => {
