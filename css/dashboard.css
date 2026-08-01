@@ -3675,6 +3675,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 .univ-freshness.stale { color: var(--warning); }
 
+/* GEX state strip — between toolbar and table, Phase 1 sign-only display */
+.univ-gex-strip {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.2rem 0.75rem;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.univ-gex-chip { font-size: 0.65rem; font-weight: 600; white-space: nowrap; color: var(--text-secondary); }
+
 /* Scrollable table area */
 .univ-table-wrap {
   flex: 1;

@@ -6700,6 +6700,20 @@ ${pos.exit_layer === 'oco_bracket' ? `
     document.getElementById('univViewBtn').addEventListener('click', _enterUniverseMode);
   }
 
+  function renderGexStrip(rows) {
+    const el = document.getElementById('gexStrip');
+    if (!el) return;
+    const rowMap = {};
+    (rows || []).forEach(r => { rowMap[r.ticker] = r; });
+    const chips = ['SPY', 'QQQ', 'IWM'].map(tk => {
+      const state = (rowMap[tk] || {}).gex_state || null;
+      const dot   = state === 'Expansion' ? '🟢' : state === 'Compression' ? '🔵' : '⚪';
+      const lbl   = state || '—';
+      return `<span class="univ-gex-chip">${tk} ${dot} ${lbl}</span>`;
+    }).join('');
+    el.innerHTML = '<span class="univ-flabel">GEX γ</span>' + chips;
+  }
+
   function _injectUniverseView() {
     const mainEl = document.querySelector('.cmd-main');
     if (!mainEl) return;
@@ -6739,6 +6753,7 @@ ${pos.exit_layer === 'oco_bracket' ? `
         '</div>' +
         '<span class="univ-disclaimer">Informational screen — not trade advice</span>' +
       '</div>' +
+      '<div class="univ-gex-strip" id="gexStrip"></div>' +
       '<div class="univ-table-wrap" id="univTableWrap">' +
         '<div class="dash-placeholder">Loading universe…</div>' +
       '</div>';
@@ -6771,6 +6786,7 @@ ${pos.exit_layer === 'oco_bracket' ? `
     // Render immediately with cached data if available; otherwise fetch
     if (universeDataCache) {
       _renderUniverseFreshness(universeDataCache);
+      renderGexStrip(universeDataCache.rows || []);
       renderUniverseTable(universeDataCache.rows || []);
     } else {
       loadUniverse();
@@ -6801,6 +6817,7 @@ ${pos.exit_layer === 'oco_bracket' ? `
           '<div class="dash-placeholder">No scan data yet — populates at next scan cycle</div>';
         return;
       }
+      renderGexStrip(data.rows || []);
       renderUniverseTable(data.rows || []);
     } catch (err) {
       if (err.status === 403) return;
