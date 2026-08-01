@@ -4472,7 +4472,7 @@
           label:    `${sr.label} + ${gLvl.label}`,
           srLabel:  sr.label,
           gexLabel: gLvl.label,
-          price:    (sr.price + gLvl.price) / 2,
+          price:    sr.price,
           type:     'confluence',
           role:     sr.role,
           gexRole:  gLvl.role,
