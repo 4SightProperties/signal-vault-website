@@ -3687,6 +3687,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   flex-shrink: 0;
 }
 .univ-gex-chip { font-size: 0.65rem; font-weight: 600; white-space: nowrap; color: var(--text-secondary); }
+.flow-gex-row  { display: flex; gap: 0.5rem; margin-top: 0.18rem; flex-wrap: wrap; }
 
 /* Scrollable table area */
 .univ-table-wrap {
