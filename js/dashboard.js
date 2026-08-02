@@ -4176,6 +4176,29 @@
       }
     });
 
+    // ── §GEX Wall/Magnet markers — hollow amber, drawn before solid dots ───────
+    // put_wall and call_wall → hollow circles (r=6); gamma_magnet → hollow diamond.
+    // Each is independent: null value → no marker. Off-chart price → omit (no edge stub).
+    if (focusGexCache && focusGexCache.available) {
+      const _ga = '#BA7517';
+      [
+        { price: focusGexCache.put_wall,     shape: 'circle'  },
+        { price: focusGexCache.call_wall,    shape: 'circle'  },
+        { price: focusGexCache.gamma_magnet, shape: 'diamond' },
+      ].forEach(m => {
+        if (m.price == null) return;
+        const gx = toX(m.price);
+        if (gx < 0 || gx > W) return;
+        svgParts.push(`<line x1="${gx.toFixed(1)}" y1="0" x2="${gx.toFixed(1)}" y2="${SVG_H}" stroke="${_ga}" stroke-width="1" stroke-dasharray="2 4" opacity="0.35"/>`);
+        if (m.shape === 'circle') {
+          svgParts.push(`<circle cx="${gx.toFixed(1)}" cy="${AXIS_Y}" r="6" fill="none" stroke="${_ga}" stroke-width="1.5"/>`);
+        } else {
+          const _d = 5;
+          svgParts.push(`<path d="M${gx.toFixed(1)},${(AXIS_Y - _d)} L${(+gx + _d).toFixed(1)},${AXIS_Y} L${gx.toFixed(1)},${(AXIS_Y + _d)} L${(+gx - _d).toFixed(1)},${AXIS_Y} Z" fill="none" stroke="${_ga}" stroke-width="1.5"/>`);
+        }
+      });
+    }
+
     // Render dots
     _allDots.forEach(dot => {
       if (dot.stockPrice == null) {
