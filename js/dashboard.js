@@ -6931,15 +6931,15 @@ ${pos.exit_layer === 'oco_bracket' ? `
 
     const COLS = [
       { key: 'ticker',         label: 'Ticker',   right: false,                width: '13%' },
-      { key: 'live_price',     label: 'Price',    right: true,                 width: '8%'  },
-      { key: 'cloud_10m',      label: '10m',      right: false, center: true,  width: '4%'  },
-      { key: 'cloud_1h',       label: '1h',       right: false, center: true,  width: '4%'  },
-      { key: 'cloud_1d',       label: '1d',       right: false, center: true,  width: '4%'  },
+      { key: 'live_price',     label: 'Price',    right: true,                 width: '9%'  },
+      { key: 'cloud_10m',      label: '10m',      right: false, center: true,  width: '6%'  },
+      { key: 'cloud_1h',       label: '1h',       right: false, center: true,  width: '6%'  },
+      { key: 'cloud_1d',       label: '1d',       right: false, center: true,  width: '6%'  },
       { key: 'pm_break_state', label: 'PM Break', right: false,                width: '13%' },
-      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '8%'  },
-      { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '7%'  },
-      { key: 'gex_state',      label: 'GAMMA',    right: false, center: true,  width: '15%' },
-      { key: 'gex_put_wall',   label: 'WALLS',    right: true,                 width: '24%' },
+      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '9%'  },
+      { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '9%'  },
+      { key: 'gex_state',      label: 'GAMMA',    right: false,                width: '12%' },
+      { key: 'gex_put_wall',   label: 'WALLS',    right: false,                width: '17%' },
     ];
 
     const colgroup = '<colgroup>' +
@@ -6992,12 +6992,12 @@ ${pos.exit_layer === 'oco_bracket' ? `
 
           case 'gex_state': {
             const dot = v === 'Expansion' ? '🟢' : v === 'Compression' ? '🔵' : '⚪';
-            return `<td class="univ-td univ-center"><span class="univ-gex-chip">${dot} ${v || '—'}</span></td>`;
+            return `<td class="univ-td"><span class="univ-gex-chip">${dot} ${v || '—'}</span></td>`;
           }
 
           case 'gex_put_wall': {
             const fmtW = n => n == null ? '—' : (n % 1 === 0 ? Math.round(n).toString() : n.toFixed(2));
-            return `<td class="univ-td univ-r">${fmtW(r.gex_put_wall)} · ${fmtW(r.gex_magnet)} · ${fmtW(r.gex_call_wall)}</td>`;
+            return `<td class="univ-td">${fmtW(r.gex_put_wall)} · ${fmtW(r.gex_magnet)} · ${fmtW(r.gex_call_wall)}</td>`;
           }
 
           default:
