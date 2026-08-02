@@ -3687,7 +3687,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   flex-shrink: 0;
 }
 .univ-gex-chip { font-size: 0.65rem; font-weight: 600; white-space: nowrap; color: var(--text-secondary); }
-.flow-gex-row  { display: flex; gap: 0.5rem; margin-top: 0.18rem; flex-wrap: wrap; }
+.flow-gex-row   { display: flex; flex-direction: column; align-items: flex-start; gap: 0.08rem; margin-top: 0.3rem; }
+.flow-gex-label { font-size: 0.58rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; color: var(--text-muted); margin-bottom: 0.04rem; }
 
 /* Scrollable table area */
 .univ-table-wrap {

@@ -1274,10 +1274,11 @@
 
     const igx = indexGex || {};
     const gexRow = '<div class="flow-gex-row">' +
+      '<span class="flow-gex-label">GEX γ</span>' +
       ['SPY', 'QQQ', 'IWM'].map(tk => {
         const st  = igx[tk] || null;
         const dot = st === 'Expansion' ? '🟢' : st === 'Compression' ? '🔵' : '⚪';
-        return `<span class="univ-gex-chip">${tk} ${dot} ${st || '—'}</span>`;
+        return `<span class="univ-gex-chip">${dot} ${tk} ${st || '—'}</span>`;
       }).join('') +
       '</div>';
 
