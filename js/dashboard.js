@@ -4979,9 +4979,6 @@
           setTicketStatus(profitStatus, `Resting at $${result.limit_price.toFixed(2)} ${tif.toUpperCase()} — fill reconciles automatically.`, 'ok');
           const c = card.querySelector('.pos-console');
           if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
-        } else if (result.status === 'dry_run') {
-          setTicketStatus(profitStatus, 'Dry-run — EXIT_ORDERS_ENABLED=False. Payload verified, no order sent.', 'warn');
-          btn.disabled = false;
         } else if (result.status === 'pdt_protected') {
           setTicketStatus(profitStatus, 'PDT protected — close manually.', 'error');
           btn.disabled = false;
@@ -5047,9 +5044,6 @@
           setTicketStatus(bktStatus, `OCO resting: TP $${result.limit_price.toFixed(2)} · stop $${stop.toFixed(2)} GTC. Fill reconciles automatically.`, 'ok');
           const c = card.querySelector('.pos-console');
           if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
-        } else if (result.status === 'dry_run') {
-          setTicketStatus(bktStatus, 'Dry-run — EXIT_ORDERS_ENABLED=False. OCO payload verified, no order sent.', 'warn');
-          btn.disabled = false;
         } else if (result.status === 'pdt_protected') {
           setTicketStatus(bktStatus, 'PDT protected — close manually.', 'error');
           btn.disabled = false;
@@ -6667,10 +6661,7 @@ ${pos.exit_layer === 'oco_bracket' ? `
           bracket:       isBracket,
         }),
       });
-      if (resp.dry_run) {
-        resultEl.className = 'gex-exit-result dry-run';
-        resultEl.innerHTML = `<strong>DRY-RUN</strong> (no order placed)<br>${resp.summary}`;
-      } else if (resp.order_id) {
+      if (resp.order_id) {
         resultEl.className   = 'gex-exit-result success';
         resultEl.textContent = `✓ Staged — order ${resp.order_id}: ${resp.summary}`;
       } else {
