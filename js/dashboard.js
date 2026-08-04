@@ -154,6 +154,21 @@
     return Math.floor(diff / 86400) + 'd ago';
   }
 
+  // Single source of truth for option-price availability state.
+  // Returns { state: 'live'|'stale'|'none', label: string }
+  // label is the human-readable badge/field text for non-live states.
+  function priceState(current_price, price_age_secs) {
+    if (current_price != null) return { state: 'live', label: 'LIVE' };
+    if (price_age_secs != null) {
+      const a = price_age_secs;
+      const ageStr = a < 60
+        ? Math.round(a) + 's'
+        : Math.floor(a / 60) + 'm' + Math.round(a % 60) + 's';
+      return { state: 'stale', label: 'STALE · ' + ageStr + ' old' };
+    }
+    return { state: 'none', label: 'NO PRICE' };
+  }
+
   function _etDateStr() {
     const f = new Intl.DateTimeFormat('en-US', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' });
     const [m, d, y] = f.format(new Date()).split('/');
@@ -378,31 +393,20 @@
       const dir      = (pos.direction || '').toLowerCase().includes('put') ? 'put' : 'call';
       const dirLabel = dir === 'put' ? 'PUT' : 'CALL';
 
-      const isLive  = pos.current_price != null;
-      const isStale = !isLive && pos.price_age_secs != null;
+      const ps = priceState(pos.current_price, pos.price_age_secs);
 
       let livePnlHtml;
-      if (isLive) {
+      if (ps.state === 'live') {
         const cls = pos.unrealized_pnl >= 0 ? 'positive' : 'negative';
         livePnlHtml = `
   <div class="pos-pnl-row">
     <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge live">LIVE</span></span>
     <span class="pos-pnl-value ${cls}">${fmt$(Math.round(pos.unrealized_pnl))} (${fmtPct(pos.unrealized_pnl_pct)})</span>
   </div>`;
-      } else if (isStale) {
-        const ageSecs = pos.price_age_secs;
-        const ageStr  = ageSecs < 60
-          ? Math.round(ageSecs) + 's'
-          : Math.floor(ageSecs / 60) + 'm' + Math.round(ageSecs % 60) + 's';
-        livePnlHtml = `
-  <div class="pos-pnl-row stale-row">
-    <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge stale">STALE · ${ageStr} old</span></span>
-    <span class="pos-pnl-value neutral">—</span>
-  </div>`;
       } else {
         livePnlHtml = `
   <div class="pos-pnl-row stale-row">
-    <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge stale">NO PRICE</span></span>
+    <span class="pos-pnl-label">Current P&amp;L <span class="pnl-badge stale">${ps.label}</span></span>
     <span class="pos-pnl-value neutral">—</span>
   </div>`;
       }
@@ -5175,19 +5179,13 @@
     set('trail-stop-stock', pos.trail_stop_stock_price ? fmtPrice(pos.trail_stop_stock_price) : '—');
 
     // Live P&L — mirrors the card badges but inside the console.
-    const isLive  = pos.current_price != null;
-    const isStale = !isLive && pos.price_age_secs != null;
-    if (isLive) {
+    const ps = priceState(pos.current_price, pos.price_age_secs);
+    if (ps.state === 'live') {
       set('cur-opt-price', fmtPrice(pos.current_price));
       const sign = pos.unrealized_pnl >= 0 ? '+' : '';
       set('cur-pnl', sign + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ') • LIVE');
-    } else if (isStale) {
-      const ageSecs = pos.price_age_secs;
-      const ageStr  = ageSecs < 60 ? Math.round(ageSecs) + 's' : Math.floor(ageSecs / 60) + 'm' + Math.round(ageSecs % 60) + 's';
-      set('cur-opt-price', 'STALE · ' + ageStr);
-      set('cur-pnl', '—');
     } else {
-      set('cur-opt-price', 'NO PRICE');
+      set('cur-opt-price', ps.label);
       set('cur-pnl', '—');
     }
     if (pos.peak_pnl != null) {
@@ -5520,11 +5518,10 @@
     </div>` : '';
 
     // Initial P&L render — updateConsoleLiveFields will keep these current on each WS tick.
-    const isLive0  = pos.current_price != null;
-    const isStale0 = !isLive0 && pos.price_age_secs != null;
-    const curOptInit = isLive0 ? fmtPrice(pos.current_price) : (isStale0 ? 'STALE' : 'NO PRICE');
+    const ps0 = priceState(pos.current_price, pos.price_age_secs);
+    const curOptInit = ps0.state === 'live' ? fmtPrice(pos.current_price) : ps0.label;
     let curPnlInit = '—';
-    if (isLive0 && pos.unrealized_pnl != null) {
+    if (ps0.state === 'live' && pos.unrealized_pnl != null) {
       const sign0 = pos.unrealized_pnl >= 0 ? '+' : '';
       curPnlInit = sign0 + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ') • LIVE';
     }
@@ -6204,7 +6201,7 @@ ${pos.exit_layer === 'oco_bracket' ? `
     ['gexExitTp', 'gexExitStop'].forEach(id => {
       document.getElementById(id).addEventListener('input', _renderExitSummary);
     });
-    document.getElementById('gexExitStageBtn').addEventListener('click', _stageExitBracket);
+    document.getElementById('gexExitStageBtn')?.addEventListener('click', _stageExitBracket);
 
     // Delegated click handler for GEX button on each pos-card
     document.getElementById('positionsBody').addEventListener('click', e => {
