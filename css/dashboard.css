@@ -2436,6 +2436,50 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   .rs-chip { padding: 0 0.5rem 0 0.4rem; }
 }
 
+/* ── Stage 2: bracket presence marker in strip chip ─────────────────────── */
+.rs-bkt { flex: none; }
+.rs-bkt--none { color: var(--text-muted); font-size: 0.72rem; }
+
+/* ── Stage 2: orders section inside position cards ───────────────────────── */
+.pos-orders-section {
+  border-top: 1px solid var(--border);
+  margin-top: 0.5rem;
+  padding-top: 0.4rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
+.pos-orders-age {
+  font-size: 0.64rem;
+  color: var(--text-muted);
+  margin-top: 0.2rem;
+}
+
+/* ── Stage 2: orphan / unmatched orders section ──────────────────────────── */
+.pos-orphan-section {
+  border-top: 1px solid var(--border);
+  margin-top: 0.75rem;
+  padding-top: 0.5rem;
+}
+
+.pos-orphan-section--empty { opacity: 0.45; }
+
+.pos-orphan-hd {
+  font-size: 0.64rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 0.3rem;
+}
+
+.pos-orphan-body {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+}
+
 .cmd-regime-cell {
   display: flex;
   flex-direction: column;

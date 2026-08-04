@@ -37,6 +37,7 @@
   let _restingInterval   = null; // setInterval handle for the resting-orders poll
   let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
   let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
+  let _lastOrdersData    = { ok: null, orders: null, fetchedAt: null }; // last /api/orders/working result
 
   // Universe screener state (authenticated members)
   let universeMode      = false;
@@ -305,7 +306,8 @@
     setupHealthPopover();
     setupBasketTooltip();
     setupDrawer();
-    setupWorkingOrdersPanel();
+    _pollOrders();
+    _workingInterval = setInterval(_pollOrders, 30_000);
     _injectUniverseView();
     _injectUniverseToggle();
     loadUniverse();
@@ -376,7 +378,10 @@
 
     if (!positions.length) {
       body.innerHTML = '<div class="dash-empty">No open positions</div>';
+      body.insertAdjacentHTML('beforeend', _renderOrphanSection());
+      _wireOrderHandlers(body);
       openConsoleId = null;
+      renderRiskStrip(positions);
       return;
     }
 
@@ -460,8 +465,12 @@
     </div>
   </div>
   ${isAdmin ? '<button class="pos-gex-btn" title="GEX terrain + option projection">GEX ▸</button>' : ''}
+  ${_renderOrdersForPosition(pos.position_id)}
 </div>`;
     }).join('');
+
+    body.insertAdjacentHTML('beforeend', _renderOrphanSection());
+    _wireOrderHandlers(body);
 
     // Re-attach the preserved console — same node, no DOM destruction, no state loss.
     if (openConsoleId) {
@@ -574,6 +583,23 @@
         ? `<span class="rs-closing-chip">CLOSING</span> `
         : '';
 
+      // Bracket marker — three states, omit only before first fetch (ok === null):
+      //   resting   → OCO  pnl-badge live
+      //   none      → —    muted text
+      //   unreadable → ?   pnl-badge stale
+      // Rendering nothing on failure would make "unreadable" look like "no bracket" on the strip.
+      let bktHtml = '';
+      if (_lastOrdersData.ok === false) {
+        bktHtml = ' <span class="rs-bkt pnl-badge stale" title="Bracket status unreadable">?</span>';
+      } else if (_lastOrdersData.ok === true) {
+        const hasOrders = (_lastOrdersData.orders || []).some(
+          o => o.bracket_position_id != null && String(o.bracket_position_id) === String(p.position_id)
+        );
+        bktHtml = hasOrders
+          ? ' <span class="rs-bkt pnl-badge live" title="OCO bracket resting — see Positions tab">OCO</span>'
+          : ' <span class="rs-bkt rs-bkt--none">—</span>';
+      }
+
       return `<div class="rs-chip${closing ? ' rs-chip--closing' : ''}" data-pos-id="${p.position_id}">\
 ${closingChip}<span class="rs-ticker">${p.ticker}</span> \
 <span class="rs-dir ${dir}">${dir === 'put' ? 'PUT' : 'CALL'}</span> \
@@ -583,7 +609,7 @@ ${closingChip}<span class="rs-ticker">${p.ticker}</span> \
 <span class="rs-sep">·</span> \
 ${priceHtml} \
 <span class="rs-sep">·</span> \
-${pnlHtml}\
+${pnlHtml}${bktHtml}\
 <span class="rs-sell-slot" aria-hidden="true"></span></div>`;
     }).join('');
   }
@@ -5229,7 +5255,7 @@ ${pnlHtml}\
             } else if (result.reason === 'partial') {
               setStatus(result.error || 'Partial update — check working orders', 'error');
               setTicketStatus(ocoStopStatus, result.error || 'Partial update', 'error');
-              fetchWorkingOrders();
+              _pollOrders();
             } else {
               setStatus('Error: ' + (result.error || 'update failed'), 'error');
               setTicketStatus(ocoStopStatus, 'Error: ' + (result.error || 'update failed'), 'error');
@@ -5318,101 +5344,162 @@ ${pnlHtml}\
     }
   }
 
-  // Fetches account-level working orders and renders workingOrdersPanel.
-  // Called on panel init, after any cancel mutation, and on the 30 s cadence.
-  // NOT on the 3 s WS tick.  Mirrors the fetchRestingOrders cadence; the two
-  // polls target different endpoints and the resting poll only runs while a
-  // console is open, so combined rate stays at most 2 calls / 30 s.
-  async function fetchWorkingOrders() {
-    const el = document.getElementById('workingOrdersBody');
-    if (!el) return;
+  // Fetches /api/orders/working, updates _lastOrdersData, then re-renders positions.
+  // Called on the 30 s interval and by cancel/modify handlers after an action completes.
+  async function _pollOrders() {
     try {
       const data = await apiFetch('/api/orders/working');
       if (!data.ok) {
-        el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
-        return;
+        _lastOrdersData = { ok: false, orders: null, fetchedAt: Date.now() };
+      } else {
+        _lastOrdersData = { ok: true, orders: data.orders || [], fetchedAt: Date.now() };
       }
-      if (!data.orders || !data.orders.length) {
-        el.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem">— nothing working —</span>';
-        return;
-      }
-      el.innerHTML = data.orders.map(o => {
-        const isStop  = o.classification === 'protective_stop';
-        const isEntry = o.classification === 'entry';
-        const dirCls  = isEntry ? 'call' : isStop ? 'put' : '';
-        const clsLabel = isEntry ? 'ENTRY'
-                       : isStop  ? 'STOP ⚠'
-                       : o.classification === 'take_profit' ? 'TP'
-                       : 'ORDER';
-        const priceStr = o.stop_price
-          ? 'stop $' + Number(o.stop_price).toFixed(2)
-          : (o.price ? 'limit $' + Number(o.price).toFixed(2) : '—');
-        const sym     = o.option_symbol || o.ticker || '?';
-        const dur     = o.duration ? o.duration.toUpperCase() : '';
-        const untracked = !o.tracked
-          ? ' <span class="pnl-badge stale" title="Broker has this order but system does not track it">untracked</span>'
-          : '';
-        const isBracketLeg = !!o.bracket_position_id;
-        const safeSym      = (sym + '').replace(/"/g, '&quot;');
-        const safePid      = (o.bracket_position_id + '').replace(/"/g, '&quot;');
-        const currentPrice = isStop
-          ? (o.stop_price ? Number(o.stop_price).toFixed(2) : '')
-          : (o.price      ? Number(o.price).toFixed(2)      : '');
-        const rightGroup = isBracketLeg
-          ? '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:0.2rem">' +
-              '<span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem"' +
-                ' title="Part of an OCO bracket — Cancel removes both legs">OCO</span>' +
-              '<input type="number" class="pos-modify-input" step="0.01" min="0.01"' +
-                ' value="' + currentPrice + '">' +
-              '<button class="pos-console-btn" style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-                ' data-modify-pid="' + safePid + '"' +
-                ' data-classification="' + o.classification + '"' +
-                ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
-                ' data-current-price="' + currentPrice + '">Update</button>' +
-              '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
-                ' style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-                ' data-bracket-pid="' + safePid + '"' +
-                ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
-                ' data-sym="' + safeSym + '">Cancel bracket</button>' +
-            '</span>'
-          : '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
-              ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-              ' data-cancel-id="' + o.order_id + '"' +
-              ' data-classification="' + o.classification + '"' +
-              ' data-ticker="' + (o.ticker || '') + '"' +
-              ' data-sym="' + safeSym + '">Cancel</button>';
-        return '<div class="pos-target-row" style="flex-wrap:wrap;gap:0.2rem 0.4rem;align-items:center">' +
-          '<span class="pos-direction ' + dirCls + '" style="font-size:0.68rem;padding:0.1rem 0.3rem">' + clsLabel + '</span>' +
-          '<span class="pos-target-type">' + (o.ticker || '?') + '</span>' +
-          '<span class="pos-target-price" style="font-size:0.72rem;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeSym + '">' + sym + '</span>' +
-          '<span class="pos-target-badge">' + priceStr + ' · ' + (o.quantity || '?') + '× · ' + (o.status || '') + (dur ? ' · ' + dur : '') + '</span>' +
-          untracked +
-          rightGroup +
-          '</div>';
-      }).join('');
-
-      // Bind cancel handlers — buttons are rebuilt each render, so listeners are always fresh.
-      el.querySelectorAll('[data-cancel-id]').forEach(btn => {
-        btn.addEventListener('click', () => _onCancelWorkingOrder(btn));
-      });
-      el.querySelectorAll('[data-bracket-pid]').forEach(btn => {
-        btn.addEventListener('click', () => _onCancelBracket(btn));
-      });
-      el.querySelectorAll('[data-modify-pid]').forEach(btn => {
-        btn.addEventListener('click', () => _onModifyBracketLeg(btn));
-      });
     } catch (err) {
       if (err.status === 403) {
-        // Not authorized — remove the panel and stop polling rather than
-        // showing a false "broker unreachable" error.  Mirrors the
-        // loadIndexLevels 403 handler (dashboard.js:618).
-        const panel = document.getElementById('workingOrdersPanel');
-        if (panel) panel.remove();
-        if (_workingInterval) { clearInterval(_workingInterval); _workingInterval = null; }
-        return;
+        // Not authorized — stop polling.  Mirrors loadIndexLevels 403 handler.
+        clearInterval(_workingInterval);
+        _workingInterval = null;
       }
-      el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
+      _lastOrdersData = { ok: false, orders: null, fetchedAt: Date.now() };
     }
+    renderPositions(currentPositions);
+  }
+
+  // Returns seconds-ago string for the last successful orders fetch, or '' if not yet fetched.
+  // Only displayed when ok === true so stale data is never claimed as fresh.
+  function _fmtOrdersAge() {
+    if (_lastOrdersData.ok !== true || !_lastOrdersData.fetchedAt) return '';
+    const secs = Math.round((Date.now() - _lastOrdersData.fetchedAt) / 1000);
+    if (secs < 5)  return 'just refreshed';
+    if (secs < 60) return 'refreshed ' + secs + 's ago';
+    return 'refreshed ' + Math.floor(secs / 60) + 'm ago';
+  }
+
+  // Renders a single order row — shared between position cards and the orphan section.
+  // Rows are keyed data-pos-id + data-order-id for Stage 4 per-lot migration.
+  function _renderOrderRow(o) {
+    const isStop  = o.classification === 'protective_stop';
+    const isEntry = o.classification === 'entry';
+    const dirCls  = isEntry ? 'call' : isStop ? 'put' : '';
+    const clsLabel = isEntry ? 'ENTRY'
+                   : isStop  ? 'STOP ⚠'
+                   : o.classification === 'take_profit' ? 'TP'
+                   : 'ORDER';
+    const priceStr = o.stop_price
+      ? 'stop $' + Number(o.stop_price).toFixed(2)
+      : (o.price ? 'limit $' + Number(o.price).toFixed(2) : '—');
+    const sym     = o.option_symbol || o.ticker || '?';
+    const dur     = o.duration ? o.duration.toUpperCase() : '';
+    // anything signaling a degraded state in this section uses `pnl-badge stale`;
+    // no local amber, no inline var(--warning).
+    const untracked = !o.tracked
+      ? ' <span class="pnl-badge stale" title="Broker has this order but system does not track it">untracked</span>'
+      : '';
+    const isBracketLeg = !!o.bracket_position_id;
+    const safeSym      = (sym + '').replace(/"/g, '&quot;');
+    const safePid      = (o.bracket_position_id + '').replace(/"/g, '&quot;');
+    const currentPrice = isStop
+      ? (o.stop_price ? Number(o.stop_price).toFixed(2) : '')
+      : (o.price      ? Number(o.price).toFixed(2)      : '');
+    const rightGroup = isBracketLeg
+      ? '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:0.2rem">' +
+          '<span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem"' +
+            ' title="Part of an OCO bracket — Cancel removes both legs">OCO</span>' +
+          '<input type="number" class="pos-modify-input" step="0.01" min="0.01"' +
+            ' value="' + currentPrice + '">' +
+          '<button class="pos-console-btn" style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+            ' data-modify-pid="' + safePid + '"' +
+            ' data-classification="' + o.classification + '"' +
+            ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
+            ' data-current-price="' + currentPrice + '">Update</button>' +
+          '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+            ' style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+            ' data-bracket-pid="' + safePid + '"' +
+            ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
+            ' data-sym="' + safeSym + '">Cancel bracket</button>' +
+        '</span>'
+      : '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+          ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+          ' data-cancel-id="' + o.order_id + '"' +
+          ' data-classification="' + o.classification + '"' +
+          ' data-ticker="' + (o.ticker || '') + '"' +
+          ' data-sym="' + safeSym + '">Cancel</button>';
+    return '<div class="pos-target-row" style="flex-wrap:wrap;gap:0.2rem 0.4rem;align-items:center"' +
+      ' data-pos-id="' + (o.bracket_position_id || '') + '"' +
+      ' data-order-id="' + (o.order_id || '') + '">' +
+      '<span class="pos-direction ' + dirCls + '" style="font-size:0.68rem;padding:0.1rem 0.3rem">' + clsLabel + '</span>' +
+      '<span class="pos-target-type">' + (o.ticker || '?') + '</span>' +
+      '<span class="pos-target-price" style="font-size:0.72rem;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeSym + '">' + sym + '</span>' +
+      '<span class="pos-target-badge">' + priceStr + ' · ' + (o.quantity || '?') + '× · ' + (o.status || '') + (dur ? ' · ' + dur : '') + '</span>' +
+      untracked +
+      rightGroup +
+      '</div>';
+  }
+
+  // Returns the orders subsection HTML for a single position card.
+  // Three visually distinct states: checking… / ⚠ orders unreadable / rows (possibly none).
+  function _renderOrdersForPosition(positionId) {
+    if (_lastOrdersData.ok === null) {
+      return '<div class="pos-orders-section"><span style="color:var(--text-muted);font-size:0.72rem">checking…</span></div>';
+    }
+    if (_lastOrdersData.ok === false) {
+      return '<div class="pos-orders-section"><span class="pnl-badge stale">⚠ orders unreadable</span></div>';
+    }
+    const orders = (_lastOrdersData.orders || []).filter(
+      o => o.bracket_position_id != null && String(o.bracket_position_id) === String(positionId)
+    );
+    if (!orders.length) {
+      return '<div class="pos-orders-section"><span style="color:var(--text-muted);font-size:0.72rem">— no bracket —</span></div>';
+    }
+    const age = _fmtOrdersAge();
+    return '<div class="pos-orders-section">' +
+      orders.map(_renderOrderRow).join('') +
+      (age ? '<div class="pos-orders-age">' + age + '</div>' : '') +
+      '</div>';
+  }
+
+  // Returns the always-present orphan section HTML.
+  // Orphans: sell-side orders with bracket_position_id=null and tracked=false —
+  // placed by the now-disabled exit-bracket endpoint which never wrote exit_layer='oco_bracket'.
+  function _renderOrphanSection() {
+    const hd = '<div class="pos-orphan-hd">Unmatched Orders</div>';
+    if (_lastOrdersData.ok === null) {
+      return '<section class="pos-orphan-section">' + hd +
+        '<div class="pos-orphan-body"><span style="color:var(--text-muted);font-size:0.72rem">checking…</span></div>' +
+        '</section>';
+    }
+    if (_lastOrdersData.ok === false) {
+      return '<section class="pos-orphan-section">' + hd +
+        '<div class="pos-orphan-body"><span class="pnl-badge stale">⚠ orders unreadable</span></div>' +
+        '</section>';
+    }
+    const orphans = (_lastOrdersData.orders || []).filter(o => o.bracket_position_id == null && !o.tracked);
+    if (!orphans.length) {
+      return '<section class="pos-orphan-section pos-orphan-section--empty">' + hd +
+        '<div class="pos-orphan-body"><span style="color:var(--text-muted);font-size:0.72rem">— none —</span></div>' +
+        '</section>';
+    }
+    const age = _fmtOrdersAge();
+    return '<section class="pos-orphan-section">' + hd +
+      '<div class="pos-orphan-body">' +
+      orphans.map(_renderOrderRow).join('') +
+      (age ? '<div class="pos-orders-age">' + age + '</div>' : '') +
+      '</div>' +
+      '</section>';
+  }
+
+  // Wires cancel/modify button handlers across a freshly rendered container.
+  // Buttons are rebuilt each render, so listeners are always fresh.
+  function _wireOrderHandlers(container) {
+    container.querySelectorAll('[data-cancel-id]').forEach(btn => {
+      btn.addEventListener('click', () => _onCancelWorkingOrder(btn));
+    });
+    container.querySelectorAll('[data-bracket-pid]').forEach(btn => {
+      btn.addEventListener('click', () => _onCancelBracket(btn));
+    });
+    container.querySelectorAll('[data-modify-pid]').forEach(btn => {
+      btn.addEventListener('click', () => _onModifyBracketLeg(btn));
+    });
   }
 
   function _onCancelWorkingOrder(btn) {
@@ -5441,10 +5528,10 @@ ${pnlHtml}\
           const result = await apiPost('/api/orders/cancel', { order_id: orderId });
           if (result.ok) {
             setStatus('Canceled', 'ok');
-            fetchWorkingOrders();
+            _pollOrders();
           } else if (result.reason === 'already_filled') {
             setStatus('Already filled — position may now exist. Refreshing…', 'error');
-            fetchWorkingOrders();
+            _pollOrders();
           } else {
             setStatus('Error: ' + (result.error || 'cancel failed'), 'error');
           }
@@ -5475,10 +5562,10 @@ ${pnlHtml}\
           const result = await apiPost('/api/orders/cancel-bracket', { position_id: positionId });
           if (result.ok) {
             setStatus('Bracket canceled — bot exits resumed', 'ok');
-            fetchWorkingOrders();
+            _pollOrders();
           } else if (result.reason === 'already_filled') {
             setStatus('A leg already filled — position is closing. Refreshing…', 'error');
-            fetchWorkingOrders();
+            _pollOrders();
           } else {
             setStatus('Error: ' + (result.error || 'cancel failed'), 'error');
           }
@@ -5529,10 +5616,10 @@ ${pnlHtml}\
           const result = await apiPost('/api/orders/modify-bracket', payload);
           if (result.ok) {
             setStatus(result.message || 'Bracket updated', 'ok');
-            fetchWorkingOrders();
+            _pollOrders();
           } else if (result.reason === 'partial') {
             setStatus(result.error || 'Partial update — check working orders', 'error');
-            fetchWorkingOrders();
+            _pollOrders();
           } else {
             setStatus('Error: ' + (result.error || 'update failed'), 'error');
           }
@@ -5542,36 +5629,6 @@ ${pnlHtml}\
         }
       },
     });
-  }
-
-  // Injects the account-level working orders panel above the positions panel
-  // and starts the 30 s poll.  Called unconditionally after auth succeeds —
-  // the backend authorize_trading() is the gate; do not add an isAdmin check here.
-  function setupWorkingOrdersPanel() {
-    const rightCol  = document.getElementById('rightCol');
-    const histPanel = document.getElementById('rightHistPanel');
-    if (!rightCol || !histPanel) return;
-
-    const section = document.createElement('section');
-    section.className = 'dash-panel';
-    section.id        = 'workingOrdersPanel';
-    section.style.cssText = 'flex:0 0 auto;margin-bottom:0.5rem';
-    section.innerHTML =
-      '<div class="dash-panel-header">' +
-        '<span class="dash-panel-title">Working Orders</span>' +
-        '<span class="dash-panel-meta">account-level · 30 s refresh</span>' +
-      '</div>' +
-      '<div id="workingOrdersBody" class="dash-panel-body" style="padding:0.4rem 0.5rem">' +
-        '<span style="color:var(--text-muted);font-size:0.75rem">loading…</span>' +
-      '</div>';
-    rightCol.insertBefore(section, histPanel);
-
-    fetchWorkingOrders();
-    _workingInterval = setInterval(() => {
-      const el = document.getElementById('workingOrdersBody');
-      if (el) fetchWorkingOrders();
-      else { clearInterval(_workingInterval); _workingInterval = null; }
-    }, 30_000);
   }
 
   // Builds the HTML for the inline management console.
