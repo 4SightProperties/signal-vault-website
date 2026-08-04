@@ -145,6 +145,7 @@
     <span class="risk-strip-title">Positions</span>
     <span id="riskStripCount" class="risk-strip-count">—</span>
     <span id="riskStripQuality" class="risk-strip-quality" style="display:none"></span>
+    <button id="sellAllBtn" class="rs-sell-all-btn">SELL ALL</button>
   </div>
   <div id="riskStripBody" class="risk-strip-body">
     <span class="risk-strip-empty">No open positions</span>
@@ -546,6 +547,25 @@
       <button class="gex-exit-stage-btn" id="gexExitStageBtn" disabled>Stage Exit Order</button>
       <div class="gex-exit-result" id="gexExitResult"></div>
     </div>
+  </div>
+</div>
+
+<!-- ── SELL ALL sheet modal (Stage 3b) ────────────────────────────────────── -->
+<div id="sellAllModal" class="dash-modal-overlay" style="display:none">
+  <div class="sa-modal-card">
+    <div class="dash-modal-title">SELL ALL — Review and confirm</div>
+    <div id="saSheetBody" class="sa-sheet-body">
+      <span class="sa-loading">Loading positions&hellip;</span>
+    </div>
+    <div id="saAdvisory" class="sa-advisory" style="display:none">
+      Scanner auto-execute is <strong>NOT paused</strong>. To pause it, run
+      <code>/admin risk killswitch</code> in Discord — it will remain paused until you reset it manually.
+    </div>
+    <div class="dash-modal-actions">
+      <button class="dash-modal-btn" id="saCancel">Cancel</button>
+      <button class="dash-modal-btn danger" id="saConfirm" disabled>Reprice 0 TP legs</button>
+    </div>
+    <div class="dash-modal-status" id="saStatus"></div>
   </div>
 </div>
 

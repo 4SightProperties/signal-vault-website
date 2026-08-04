@@ -2477,6 +2477,122 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .rs-bkt { flex: none; }
 .rs-bkt--none { color: var(--text-muted); font-size: 0.72rem; }
 
+/* ── Stage 3b: SELL ALL button in strip header ───────────────────────────── */
+.rs-sell-all-btn {
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.35);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 0.1rem 0.45rem;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.rs-sell-all-btn:hover {
+  background: rgba(239,68,68,0.25);
+  border-color: var(--danger);
+}
+
+/* ── Stage 3b: SELL ALL sheet modal ─────────────────────────────────────── */
+.sa-modal-card {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  padding: 1.25rem 1.5rem;
+  min-width: 440px;
+  max-width: 580px;
+  width: 100%;
+}
+.sa-sheet-body {
+  margin-bottom: 0.85rem;
+  max-height: 300px;
+  overflow-y: auto;
+}
+.sa-loading { font-size: 0.72rem; color: var(--text-muted); }
+.sa-error   { font-size: 0.72rem; color: var(--danger); }
+.sa-row {
+  display: flex;
+  flex-direction: column;
+  gap: 0.18rem;
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--border);
+}
+.sa-row:last-child { border-bottom: none; }
+.sa-row-hd {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+}
+.sa-ticker {
+  font-weight: 700;
+  font-family: var(--font-display);
+  font-size: 0.74rem;
+  color: var(--text-primary);
+}
+.sa-dir {
+  font-size: 0.57rem;
+  font-weight: 700;
+  padding: 0.04rem 0.25rem;
+  border-radius: 3px;
+}
+.sa-dir.call { background: rgba(74,222,128,0.15); color: var(--accent); }
+.sa-dir.put  { background: rgba(239,68,68,0.12);  color: var(--danger); }
+.sa-meta { color: var(--text-muted); font-size: 0.63rem; }
+.sa-method {
+  font-size: 0.64rem;
+  color: var(--text-secondary);
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+}
+.sa-badge {
+  font-size: 0.56rem;
+  font-weight: 700;
+  padding: 0.04rem 0.28rem;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.sa-badge.reprice { background: rgba(239,68,68,0.12); color: var(--danger); }
+.sa-badge.skip    { background: var(--bg-elevated);   color: var(--text-muted); }
+.sa-pnl {
+  font-size: 0.63rem;
+  font-family: var(--font-display);
+}
+.sa-pnl.positive { color: var(--accent); }
+.sa-pnl.negative { color: var(--danger); }
+.sa-pnl.neutral  { color: var(--text-muted); }
+.sa-outcome {
+  font-size: 0.64rem;
+  font-weight: 600;
+  margin-top: 0.1rem;
+}
+.sa-outcome.running    { color: var(--text-muted); }
+.sa-outcome.confirmed  { color: var(--accent); }
+.sa-outcome.unverified { color: var(--warning, #f59e0b); }
+.sa-outcome.error      { color: var(--danger); }
+.sa-advisory {
+  font-size: 0.67rem;
+  color: var(--text-secondary);
+  background: var(--bg-elevated);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  margin-bottom: 0.85rem;
+  line-height: 1.55;
+}
+.sa-advisory code {
+  font-family: var(--font-mono, monospace);
+  font-size: 0.65rem;
+  background: rgba(255,255,255,0.06);
+  padding: 0.04rem 0.25rem;
+  border-radius: 3px;
+}
+
 /* ── Stage 2: orders section inside position cards ───────────────────────── */
 .pos-orders-section {
   border-top: 1px solid var(--border);

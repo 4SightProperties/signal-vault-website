@@ -46,6 +46,9 @@
   let   _sellNowHoldInterval = null;
   let   _sellNowHoldBtn      = null;
 
+  // ── SELL ALL state ──────────────────────────────────────────────────────────
+  let _sellAllInFlight = false;   // true while sequential execution loop is running
+
   // Universe screener state (authenticated members)
   let universeMode      = false;
   let universeDataCache = null;  // last /api/scan-universe payload
@@ -377,6 +380,7 @@
     _pollOrders();
     _workingInterval = setInterval(_pollOrders, 30_000);
     _wireStripSellNow();
+    _wireSellAllBtn();
     _injectUniverseView();
     _injectUniverseToggle();
     loadUniverse();
@@ -5916,6 +5920,191 @@ ${pnlHtml}${bktHtml}\
     body.addEventListener('pointerup',    _cancelSellNowHold);
     body.addEventListener('pointercancel', _cancelSellNowHold);
     body.addEventListener('pointerleave',  _cancelSellNowHold);
+  }
+
+  // ── Stage 3b: SELL ALL sheet ──────────────────────────────────────────────
+
+  // Classify one position for the sheet. Does NOT fire anything.
+  // ordersData must be the parsed JSON body from GET /api/orders/working.
+  function _deriveSellAllMethod(pos, ordersData) {
+    if (!ordersData.ok) return { method: 'skip', reason: 'Orders unreadable' };
+    const TERMINAL = ['filled', 'canceled', 'rejected', 'expired', 'partially_filled'];
+    const tpLeg = (ordersData.orders || []).find(o =>
+      o.classification === 'take_profit' &&
+      String(o.bracket_position_id) === String(pos.position_id)
+    );
+    if (!tpLeg) return { method: 'skip', reason: 'No bracket resting' };
+    if (tpLeg.status === 'pending') return { method: 'skip', reason: 'Market closed — order suspended' };
+    if (TERMINAL.includes(tpLeg.status)) return { method: 'skip', reason: 'TP leg ' + tpLeg.status };
+    if (priceState(pos.current_price, pos.price_age_secs).state !== 'live') {
+      return { method: 'skip', reason: 'No price data' };
+    }
+    return { method: 'reprice', reason: null };
+  }
+
+  // Builds one position row for the sheet. outcomeEl is hidden until execution runs.
+  function _buildSaRowHtml(pos, det) {
+    const dir       = (pos.direction || '').toLowerCase().includes('put') ? 'put' : 'call';
+    const strikeStr = pos.strike ? '$' + parseFloat(pos.strike).toFixed(0) : '—';
+    const expShort  = pos.expiry ? pos.expiry.slice(5).replace('-', '/') : '—';
+    const qty       = (pos.contracts_open != null ? pos.contracts_open : '—') + 'c';
+
+    let pnlHtml;
+    if (pos.unrealized_pnl != null) {
+      const cls  = pos.unrealized_pnl >= 0 ? 'positive' : 'negative';
+      const sign = pos.unrealized_pnl >= 0 ? '+' : '';
+      const age  = pos.price_age_secs != null ? Math.round(pos.price_age_secs) + 's old' : '?s old';
+      pnlHtml = `<span class="sa-pnl ${cls}">${sign}${fmt$(Math.round(pos.unrealized_pnl))} · ${fmtPct(pos.unrealized_pnl_pct)} at last price <span class="sa-meta">(${age})</span></span>`;
+    } else {
+      pnlHtml = `<span class="sa-pnl neutral">P&amp;L unavailable — no price data</span>`;
+    }
+
+    const badgeCls   = det.method === 'reprice' ? 'reprice' : 'skip';
+    const badgeLabel = det.method === 'reprice' ? 'REPRICE TP' : 'SKIP';
+    const methodDesc = det.method === 'reprice' ? 'Reprice TP leg to current mid' : det.reason;
+
+    return `<div class="sa-row">
+  <div class="sa-row-hd">
+    <span class="sa-ticker">${pos.ticker}</span>
+    <span class="sa-dir ${dir}">${dir === 'put' ? 'PUT' : 'CALL'}</span>
+    <span class="sa-meta">${strikeStr} ${expShort} · ${qty}</span>
+  </div>
+  <div class="sa-method"><span class="sa-badge ${badgeCls}">${badgeLabel}</span>${methodDesc}</div>
+  ${pnlHtml}
+  <div class="sa-outcome" data-sa-outcome="${pos.position_id}" style="display:none"></div>
+</div>`;
+  }
+
+  // Opens the SELL ALL sheet. Fetches fresh positions + working orders on open,
+  // derives method per position, then waits for user to confirm before executing.
+  async function _openSellAllSheet() {
+    const modal      = document.getElementById('sellAllModal');
+    const sheetBody  = document.getElementById('saSheetBody');
+    const advisory   = document.getElementById('saAdvisory');
+    const statusEl   = document.getElementById('saStatus');
+    const cancelBtn  = document.getElementById('saCancel');
+    let   confirmBtn = document.getElementById('saConfirm');
+
+    // Reset to loading state before showing.
+    sheetBody.innerHTML    = '<span class="sa-loading">Loading positions&hellip;</span>';
+    advisory.style.display = 'none';
+    confirmBtn.disabled    = true;
+    confirmBtn.textContent = 'Reprice 0 TP legs';
+    statusEl.textContent   = '';
+    statusEl.className     = 'dash-modal-status';
+    cancelBtn.disabled     = false;
+    cancelBtn.textContent  = 'Cancel';
+    modal.style.display    = 'flex';
+
+    // Fresh reads — re-fetching rather than using cached poll data so the
+    // sheet reflects now, not up to 30 s ago.
+    let posResp, ordersData;
+    try {
+      [posResp, ordersData] = await Promise.all([
+        apiFetch('/api/positions'),
+        apiFetch('/api/orders/working'),
+      ]);
+    } catch (err) {
+      sheetBody.innerHTML = `<span class="sa-error">Failed to load: ${err.message || 'network error'}</span>`;
+      return;
+    }
+
+    const open = (posResp.positions || []).filter(
+      p => p.state === 'open' || p.state === 'closing_pending'
+    );
+
+    if (open.length === 0) {
+      sheetBody.innerHTML    = '<span class="sa-loading">No open positions — nothing to act on.</span>';
+      advisory.style.display = 'none';
+      return;
+    }
+
+    const rows       = open.map(pos => ({ pos, det: _deriveSellAllMethod(pos, ordersData) }));
+    const actionable = rows.filter(r => r.det.method === 'reprice');
+
+    sheetBody.innerHTML    = rows.map(r => _buildSaRowHtml(r.pos, r.det)).join('');
+    advisory.style.display = '';
+
+    // Clone confirm button to shed any listener from a previous sheet open.
+    const newConfirm = confirmBtn.cloneNode(true);
+    confirmBtn.parentNode.replaceChild(newConfirm, confirmBtn);
+    confirmBtn = newConfirm;
+
+    if (actionable.length === 0) {
+      confirmBtn.disabled    = true;
+      confirmBtn.textContent = 'No positions actionable';
+    } else {
+      confirmBtn.disabled    = false;
+      confirmBtn.textContent = `Reprice ${actionable.length} TP leg${actionable.length !== 1 ? 's' : ''}`;
+
+      confirmBtn.addEventListener('click', async () => {
+        _sellAllInFlight      = true;
+        confirmBtn.disabled   = true;
+        cancelBtn.disabled    = true;
+        statusEl.textContent  = `Executing — 0 of ${actionable.length} complete`;
+        statusEl.className    = 'dash-modal-status';
+
+        try {
+          let done = 0;
+          for (const { pos } of actionable) {
+            const outcomeEl = sheetBody.querySelector(`[data-sa-outcome="${pos.position_id}"]`);
+            if (outcomeEl) {
+              outcomeEl.style.display = '';
+              outcomeEl.className     = 'sa-outcome running';
+              outcomeEl.textContent   = '⋯ Repricing…';
+            }
+
+            try {
+              await _executeSellNow(pos.position_id);
+            } catch (_) {
+              // _executeSellNow wrote error state before re-throwing — swallow re-throw.
+            }
+
+            const st = _sellNowState.get(pos.position_id);
+            if (outcomeEl) {
+              if (st && st.status === 'confirmed') {
+                outcomeEl.className   = 'sa-outcome confirmed';
+                outcomeEl.textContent = `✓ Repriced to $${parseFloat(st.mid).toFixed(2)}`;
+              } else if (st && st.status === 'unverified') {
+                outcomeEl.className   = 'sa-outcome unverified';
+                outcomeEl.textContent = '⚠ Sent — price unverified, check broker';
+              } else {
+                outcomeEl.className   = 'sa-outcome error';
+                outcomeEl.textContent = '✗ ' + (st ? st.msg || 'Failed' : 'No state — check console');
+              }
+            }
+
+            done++;
+            statusEl.textContent = `Executing — ${done} of ${actionable.length} complete`;
+          }
+
+          statusEl.textContent = `Done — ${actionable.length} position${actionable.length !== 1 ? 's' : ''} processed`;
+          statusEl.className   = 'dash-modal-status ok';
+        } finally {
+          _sellAllInFlight      = false;
+          cancelBtn.disabled    = false;
+          cancelBtn.textContent = 'Close';
+        }
+      });
+    }
+  }
+
+  // Wired once at init. Backdrop click and Cancel close the sheet; confirm is
+  // re-wired each time the sheet opens to avoid stale closure state.
+  function _wireSellAllBtn() {
+    const btn   = document.getElementById('sellAllBtn');
+    const modal = document.getElementById('sellAllModal');
+    if (!btn || !modal) return;
+
+    btn.addEventListener('click', () => _openSellAllSheet());
+
+    document.getElementById('saCancel').addEventListener('click', () => {
+      if (_sellAllInFlight) return;
+      modal.style.display = 'none';
+    });
+    modal.addEventListener('click', e => {
+      if (e.target === modal && !_sellAllInFlight) modal.style.display = 'none';
+    });
   }
 
   // Builds the HTML for the inline management console.
