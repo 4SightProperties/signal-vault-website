@@ -39,6 +39,13 @@
   let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
   let _lastOrdersData    = { ok: null, orders: null, fetchedAt: null }; // last /api/orders/working result
 
+  // ── SELL NOW state ──────────────────────────────────────────────────────────
+  const _sellNowInFlight = new Set();   // position_ids with a modify in flight
+  const _sellNowState    = new Map();   // position_id → {status, mid?, msg?} — persists across re-renders
+  let   _sellNowHoldTimer    = null;
+  let   _sellNowHoldInterval = null;
+  let   _sellNowHoldBtn      = null;
+
   // Universe screener state (authenticated members)
   let universeMode      = false;
   let universeDataCache = null;  // last /api/scan-universe payload
@@ -168,6 +175,67 @@
       return { state: 'stale', label: 'STALE · ' + ageStr + ' old' };
     }
     return { state: 'none', label: 'NO PRICE' };
+  }
+
+  function optionMid(bid, ask) {
+    return (bid + ask) / 2;
+  }
+
+  // Returns true when within regular trading hours (9:30–16:00 ET).
+  function _isMarketHours() {
+    const fmt = new Intl.DateTimeFormat('en-US', {
+      timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false,
+    });
+    const p = Object.fromEntries(fmt.formatToParts(new Date()).map(x => [x.type, x.value]));
+    const t = parseInt(p.hour, 10) * 60 + parseInt(p.minute, 10);
+    return t >= 570 && t < 960;
+  }
+
+  // Returns a string reason when SELL NOW must be disabled, or null when it is enabled.
+  function _sellNowDisableReason(positionId, pos) {
+    if (_sellNowInFlight.has(positionId)) return 'In flight';
+    if (_lastOrdersData.ok === null)      return 'Checking…';
+    if (_lastOrdersData.ok === false)     return 'Orders unreadable';
+    const tpLeg = (_lastOrdersData.orders || []).find(o =>
+      o.classification === 'take_profit' &&
+      String(o.bracket_position_id) === String(positionId)
+    );
+    if (!tpLeg)                                              return 'No bracket resting';
+    if (!_isMarketHours() || tpLeg.status === 'pending')    return 'Market closed — order suspended';
+    if (pos && priceState(pos.current_price, pos.price_age_secs).state !== 'live')
+                                                             return 'No price data';
+    return null;
+  }
+
+  // Returns the inner HTML for the rs-sell-slot / card SELL NOW slot.
+  // Reads _sellNowState for transient status; falls back to disable-reason check.
+  function _sellSlotContent(positionId, pos) {
+    const st = _sellNowState.get(positionId);
+    if (st) {
+      if (st.status === 'fetching') {
+        return '<button class="rs-sell-btn" disabled>Fetching…</button>';
+      }
+      if (st.status === 'sent') {
+        return '<button class="rs-sell-btn" disabled>Sent…</button>';
+      }
+      if (st.status === 'confirmed') {
+        const p = parseFloat(st.mid).toFixed(2);
+        return '<span class="pnl-badge rs-sell-result">Repriced $' + p + '</span>';
+      }
+      if (st.status === 'unverified') {
+        return '<span class="pnl-badge stale rs-sell-result" title="Modify sent but price unverified — check broker">⚠ unverified</span>';
+      }
+      if (st.status === 'error') {
+        const safeMsg = (st.msg || 'error').replace(/"/g, '&quot;');
+        return '<button class="rs-sell-btn rs-sell-err" data-sell-pid="' + positionId + '" title="' + safeMsg + '">SELL NOW ⚠</button>';
+      }
+    }
+    const reason = _sellNowDisableReason(positionId, pos);
+    if (reason !== null) {
+      const safe = reason.replace(/"/g, '&quot;');
+      return '<button class="rs-sell-btn" disabled title="' + safe + '">SELL NOW<small class="rs-sell-reason"> — ' + safe + '</small></button>';
+    }
+    return '<button class="rs-sell-btn" data-sell-pid="' + positionId + '">SELL NOW</button>';
   }
 
   function _etDateStr() {
@@ -308,6 +376,7 @@
     setupDrawer();
     _pollOrders();
     _workingInterval = setInterval(_pollOrders, 30_000);
+    _wireStripSellNow();
     _injectUniverseView();
     _injectUniverseToggle();
     loadUniverse();
@@ -610,7 +679,7 @@ ${closingChip}<span class="rs-ticker">${p.ticker}</span> \
 ${priceHtml} \
 <span class="rs-sep">·</span> \
 ${pnlHtml}${bktHtml}\
-<span class="rs-sell-slot" aria-hidden="true"></span></div>`;
+<span class="rs-sell-slot">${_sellSlotContent(p.position_id, p)}</span></div>`;
     }).join('');
   }
 
@@ -3322,7 +3391,7 @@ ${pnlHtml}${bktHtml}\
       let spreadPct      = null;
       let spreadWarnHtml = '';
       if (bid > 0 && ask > 0) {
-        const mid = (bid + ask) / 2;
+        const mid = optionMid(bid, ask);
         spreadPct = (ask - bid) / mid;
         if (spreadPct > 0.60) {
           const pct = (spreadPct * 100).toFixed(0);
@@ -3504,7 +3573,7 @@ ${pnlHtml}${bktHtml}\
     const bid = armedContract.bid ?? 0;
     if (cockpitEntryMode === 'auto') {
       if (bid <= 0) return { payload: undefined, displayPrice: null, gatePrice: ask };
-      const mid     = (bid + ask) / 2;
+      const mid     = optionMid(bid, ask);
       const derived = Math.min(ask * 1.02, mid * 1.08);
       return { payload: undefined, displayPrice: derived, gatePrice: ask };
     } else if (cockpitEntryMode === 'take_ask') {
@@ -5401,6 +5470,14 @@ ${pnlHtml}${bktHtml}\
     const currentPrice = isStop
       ? (o.stop_price ? Number(o.stop_price).toFixed(2) : '')
       : (o.price      ? Number(o.price).toFixed(2)      : '');
+    // SELL NOW button for the TP leg — shares the same code path as the strip chip.
+    const isTP        = o.classification === 'take_profit';
+    const posForSell  = isBracketLeg && isTP
+      ? currentPositions.find(p => p.position_id === String(o.bracket_position_id)) || null
+      : null;
+    const sellNowHtml = (isBracketLeg && isTP)
+      ? _sellSlotContent(String(o.bracket_position_id), posForSell)
+      : '';
     const rightGroup = isBracketLeg
       ? '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:0.2rem">' +
           '<span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem"' +
@@ -5417,6 +5494,7 @@ ${pnlHtml}${bktHtml}\
             ' data-bracket-pid="' + safePid + '"' +
             ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
             ' data-sym="' + safeSym + '">Cancel bracket</button>' +
+          sellNowHtml +
         '</span>'
       : '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
           ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
@@ -5488,7 +5566,7 @@ ${pnlHtml}${bktHtml}\
       '</section>';
   }
 
-  // Wires cancel/modify button handlers across a freshly rendered container.
+  // Wires cancel/modify/sell-now button handlers across a freshly rendered container.
   // Buttons are rebuilt each render, so listeners are always fresh.
   function _wireOrderHandlers(container) {
     container.querySelectorAll('[data-cancel-id]').forEach(btn => {
@@ -5499,6 +5577,13 @@ ${pnlHtml}${bktHtml}\
     });
     container.querySelectorAll('[data-modify-pid]').forEach(btn => {
       btn.addEventListener('click', () => _onModifyBracketLeg(btn));
+    });
+    // SELL NOW — hold mechanic: pointerdown starts 600ms hold, pointerup/cancel aborts early.
+    container.querySelectorAll('[data-sell-pid]').forEach(btn => {
+      btn.addEventListener('pointerdown', e => { e.preventDefault(); _startSellNowHold(btn, btn.dataset.sellPid); });
+      btn.addEventListener('pointerup',    _cancelSellNowHold);
+      btn.addEventListener('pointercancel', _cancelSellNowHold);
+      btn.addEventListener('pointerleave',  _cancelSellNowHold);
     });
   }
 
@@ -5629,6 +5714,208 @@ ${pnlHtml}${bktHtml}\
         }
       },
     });
+  }
+
+  // ── SELL NOW mechanics ───────────────────────────────────────────────────────
+  // Shared by both entry points: strip chip (rs-sell-slot) and card TP row.
+  // Hold = 600ms press-and-hold. Release before 600ms cancels with no action.
+  // During hold: mid is fetched and fresh orders are read. After hold completes
+  // the modify fires immediately without a second confirm step.
+
+  function _startSellNowHold(btn, positionId) {
+    if (_sellNowInFlight.has(positionId)) return;
+    _cancelSellNowHold();
+    _sellNowHoldBtn = btn;
+
+    let remaining = 600;
+    const TICK    = 50;
+    btn.textContent = '600ms…';
+    _sellNowHoldInterval = setInterval(() => {
+      remaining -= TICK;
+      if (remaining > 0) btn.textContent = remaining + 'ms…';
+    }, TICK);
+
+    _sellNowHoldTimer = setTimeout(() => {
+      clearInterval(_sellNowHoldInterval);
+      _sellNowHoldInterval = null;
+      _sellNowHoldTimer    = null;
+      const pid = positionId;
+      const b   = _sellNowHoldBtn;
+      _sellNowHoldBtn = null;
+      if (b) b.textContent = 'Fetching…';
+      _executeSellNow(pid);
+    }, 600);
+  }
+
+  function _cancelSellNowHold() {
+    if (_sellNowHoldTimer) { clearTimeout(_sellNowHoldTimer); _sellNowHoldTimer = null; }
+    if (_sellNowHoldInterval) { clearInterval(_sellNowHoldInterval); _sellNowHoldInterval = null; }
+    if (_sellNowHoldBtn) {
+      _sellNowHoldBtn.textContent = 'SELL NOW';
+      _sellNowHoldBtn = null;
+    }
+  }
+
+  function _setSellNowState(positionId, state) {
+    _sellNowState.set(positionId, state);
+    // Update all live DOM elements for this position without a full re-render.
+    const pos = currentPositions.find(p => p.position_id === positionId) || null;
+    document.querySelectorAll(
+      '.rs-sell-slot[data-spid="' + positionId + '"], .rs-sell-slot'
+    ).forEach(slot => {
+      // rs-sell-slot elements don't carry the position id — find via parent chip.
+      const chip = slot.closest('[data-pos-id]');
+      if (chip && chip.dataset.posId === positionId) {
+        slot.innerHTML = _sellSlotContent(positionId, pos);
+        // Re-wire the new button if it has data-sell-pid.
+        const btn = slot.querySelector('[data-sell-pid]');
+        if (btn) {
+          btn.addEventListener('pointerdown', e => { e.preventDefault(); _startSellNowHold(btn, positionId); });
+          btn.addEventListener('pointerup',    _cancelSellNowHold);
+          btn.addEventListener('pointercancel', _cancelSellNowHold);
+          btn.addEventListener('pointerleave',  _cancelSellNowHold);
+        }
+      }
+    });
+    // Also update any matching sell slots inside the position console (TP row).
+    // Re-render is handled by the next _pollOrders() call; transient states are
+    // visible via the button text set imperatively in _startSellNowHold.
+  }
+
+  async function _executeSellNow(positionId) {
+    if (_sellNowInFlight.has(positionId)) return;
+    _sellNowInFlight.add(positionId);
+    _setSellNowState(positionId, { status: 'fetching' });
+
+    const abort = (msg) => {
+      _sellNowInFlight.delete(positionId);
+      _setSellNowState(positionId, { status: 'error', msg });
+    };
+
+    try {
+      // 1. Resolve position for chain/quote params.
+      const pos = currentPositions.find(p => p.position_id === positionId);
+      if (!pos) return abort('Position not found in local state');
+
+      // 2. Fetch mid — abort immediately on bad quote.
+      let sentPrice;
+      try {
+        const optionType = (pos.direction || '').includes('put') ? 'put' : 'call';
+        const px = (pos.current_price > 0) ? pos.current_price : pos.strike;
+        const params = new URLSearchParams({
+          ticker:      pos.ticker,
+          strike:      pos.strike,
+          expiry:      pos.expiry,
+          option_type: optionType,
+          price:       px,
+        });
+        const q = await apiFetch('/api/chain/quote?' + params);
+        const bid = q.bid ?? 0;
+        const ask = q.ask ?? 0;
+        if (bid <= 0 || ask <= 0) return abort('Invalid quote — bid=' + bid + ' ask=' + ask);
+        // sentPrice is the 2-decimal value actually sent to the broker via change_order().
+        // Confirmation compares against sentPrice, not the raw mid, to avoid spurious
+        // unverified when rounding shifts the last decimal (e.g. raw 1.835 → sent 1.84).
+        sentPrice = parseFloat(optionMid(bid, ask).toFixed(2));
+      } catch (err) {
+        return abort('Quote fetch failed — ' + (err.message || 'network error'));
+      }
+
+      // 3. Fresh order read — verify TP leg is still resting and modifiable.
+      let freshOrders;
+      try {
+        freshOrders = await apiFetch('/api/orders/working');
+      } catch (err) {
+        return abort('Orders read failed — ' + (err.message || 'network error'));
+      }
+      if (!freshOrders.ok) return abort('Orders unreadable — ' + (freshOrders.error || 'broker error'));
+
+      const tpLeg = (freshOrders.orders || []).find(o =>
+        o.classification === 'take_profit' &&
+        String(o.bracket_position_id) === String(positionId)
+      );
+      if (!tpLeg) return abort('No TP leg in fresh read — bracket may have filled or been canceled');
+
+      const TERMINAL = ['filled', 'canceled', 'rejected', 'expired', 'partially_filled'];
+      if (tpLeg.status === 'pending') {
+        return abort('Market closed — order suspended, cannot reprice');
+      }
+      if (TERMINAL.includes(tpLeg.status)) {
+        return abort('TP leg is ' + tpLeg.status + ' — cannot reprice');
+      }
+
+      // 4. Fire the modify.
+      _setSellNowState(positionId, { status: 'sent' });
+      let modResult;
+      try {
+        modResult = await apiPost('/api/orders/modify-bracket', {
+          position_id: positionId,
+          tp_price:    sentPrice,
+        });
+      } catch (err) {
+        _sellNowInFlight.delete(positionId);
+        return _setSellNowState(positionId, { status: 'error', msg: 'Modify failed — ' + (err.message || 'network error') });
+      }
+      if (!modResult.ok) {
+        _sellNowInFlight.delete(positionId);
+        return _setSellNowState(positionId, { status: 'error', msg: modResult.error || 'Broker rejected modify' });
+      }
+
+      // 5. Confirmation read — 1200ms wait, one retry at 800ms if inconclusive.
+      // Compare leg.price against sentPrice (the rounded value the broker received),
+      // not the raw mid, so floating-point rounding never causes a spurious unverified.
+      const checkLeg = async () => {
+        try {
+          const r = await apiFetch('/api/orders/working');
+          if (!r.ok) return null;
+          return (r.orders || []).find(o =>
+            o.classification === 'take_profit' &&
+            String(o.bracket_position_id) === String(positionId)
+          ) || null;
+        } catch (_) { return null; }
+      };
+
+      await new Promise(r => setTimeout(r, 1200));
+      let leg = await checkLeg();
+      let confirmed = leg && Math.abs((leg.price || 0) - sentPrice) < 0.005;
+
+      if (!confirmed && leg) {
+        // Inconclusive (leg exists, old price) — one retry.
+        await new Promise(r => setTimeout(r, 800));
+        leg = await checkLeg();
+        confirmed = leg && Math.abs((leg.price || 0) - sentPrice) < 0.005;
+      }
+
+      _sellNowInFlight.delete(positionId);
+      _setSellNowState(positionId, confirmed
+        ? { status: 'confirmed', mid: sentPrice }
+        : { status: 'unverified' }
+      );
+      _pollOrders();
+
+    } catch (err) {
+      // Outer catch: releases the in-flight lock on any unexpected async exception
+      // so the button never gets stuck disabled. Named exception per constraint.
+      _sellNowInFlight.delete(positionId);
+      _setSellNowState(positionId, { status: 'error', msg: 'Unexpected error — check console' });
+      throw err;
+    }
+  }
+
+  // One-time delegated listener for the strip SELL NOW buttons.
+  // The strip is innerHTML-replaced — per-button listeners die on re-render.
+  function _wireStripSellNow() {
+    const body = document.getElementById('riskStripBody');
+    if (!body) return;
+    body.addEventListener('pointerdown', e => {
+      const btn = e.target.closest('[data-sell-pid]');
+      if (!btn || btn.disabled) return;
+      e.preventDefault();
+      _startSellNowHold(btn, btn.dataset.sellPid);
+    });
+    body.addEventListener('pointerup',    _cancelSellNowHold);
+    body.addEventListener('pointercancel', _cancelSellNowHold);
+    body.addEventListener('pointerleave',  _cancelSellNowHold);
   }
 
   // Builds the HTML for the inline management console.

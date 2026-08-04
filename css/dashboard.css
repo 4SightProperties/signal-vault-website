@@ -2428,8 +2428,45 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   padding: 0.05rem 0.26rem;
   border-radius: 3px;
 }
-/* Reserved slot for Stage 3 SELL NOW button — keeps chip width stable */
-.rs-sell-slot { width: 52px; flex-shrink: 0; }
+/* Stage 3a: SELL NOW button + state indicators */
+.rs-sell-slot { flex-shrink: 0; display: flex; align-items: center; }
+.rs-sell-btn {
+  background: rgba(239,68,68,0.12);
+  border: 1px solid rgba(239,68,68,0.35);
+  border-radius: var(--radius-sm);
+  color: var(--danger);
+  cursor: pointer;
+  font-size: 0.57rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.12rem 0.4rem;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.rs-sell-btn:not(:disabled):hover {
+  background: rgba(239,68,68,0.25);
+  border-color: var(--danger);
+}
+.rs-sell-btn:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+.rs-sell-btn.rs-sell-err {
+  border-color: rgba(245,158,11,0.5);
+  color: var(--warning,#f59e0b);
+  background: rgba(245,158,11,0.1);
+}
+.rs-sell-reason {
+  font-weight: 400;
+  font-size: 0.52rem;
+  opacity: 0.8;
+}
+.rs-sell-result {
+  margin-left: 0;
+  font-size: 0.57rem;
+}
 
 @media (max-width: 640px) {
   .risk-strip-hd { padding: 0 0.5rem; }
