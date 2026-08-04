@@ -496,6 +496,9 @@
       <div class="cockpit-verdict" id="gexProjVerdict" style="display:none"></div>
       <div class="gex-proj-footnote" id="gexProjFootnote"></div>
     </div>
+    <!-- gexExitSection disabled 2026-08-03 — exit-bracket endpoint retired (no idempotency,
+         no close_order_id write, OCO_BRACKET_GATE never fires, fills become reconciliation
+         phantoms with estimated prices). Section kept for audit trail; never shown by JS. -->
     <div class="gex-modal-section" id="gexExitSection" style="display:none">
       <div class="gex-section-label">
         Exit Order

@@ -6577,7 +6577,8 @@ ${pos.exit_layer === 'oco_bracket' ? `
         `gain/loss vs entry · analysis only, not an order`;
     }
 
-    _updateExitSection(proj);
+    // _updateExitSection removed 2026-08-03 — exit-bracket endpoint retired;
+    // #gexExitSection stays hidden, see trading.py /api/trading/exit-bracket
   }
 
   function _updateExitSection(proj) {
