@@ -498,6 +498,7 @@
         _restingOpenSym  = null;
       }
     }
+    renderRiskStrip(positions);
   }
 
   async function loadPositions() {
@@ -505,6 +506,86 @@
       const data = await apiFetch('/api/positions');
       renderPositions(data.positions || []);
     } catch (_) {}
+  }
+
+  // ── Risk strip — always-visible, survives COCKPIT/UNIVERSE tab switch ────────
+  // Driven by the same positions array as renderPositions. Aggregate data-quality
+  // badge appears only when at least one position is non-live so it's never noise.
+  // SELL NOW slot reserved per-chip (Stage 3). closing_pending distinguished by
+  // amber left-border + CLOSING chip.
+
+  function renderRiskStrip(positions) {
+    const body      = document.getElementById('riskStripBody');
+    const countEl   = document.getElementById('riskStripCount');
+    const qualityEl = document.getElementById('riskStripQuality');
+    if (!body || !countEl || !qualityEl) return;
+
+    const open = positions.filter(p => p.state === 'open' || p.state === 'closing_pending');
+
+    countEl.textContent = open.length || '0';
+
+    if (open.length === 0) {
+      body.innerHTML = '<span class="risk-strip-empty">No open positions</span>';
+      qualityEl.style.display = 'none';
+      return;
+    }
+
+    // Aggregate data-quality: count degraded positions for header badge
+    let staleCnt = 0, noPriceCnt = 0;
+    open.forEach(p => {
+      const s = priceState(p.current_price, p.price_age_secs).state;
+      if (s === 'stale') staleCnt++;
+      else if (s === 'none') noPriceCnt++;
+    });
+    if (staleCnt === 0 && noPriceCnt === 0) {
+      qualityEl.style.display = 'none';
+    } else {
+      const parts = [];
+      if (staleCnt)   parts.push(staleCnt + ' STALE');
+      if (noPriceCnt) parts.push(noPriceCnt + ' NO PRICE');
+      qualityEl.textContent  = '· ' + parts.join(' · ');
+      qualityEl.style.display = '';
+    }
+
+    body.innerHTML = open.map(p => {
+      const ps      = priceState(p.current_price, p.price_age_secs);
+      const dir     = (p.direction || '').toLowerCase().includes('put') ? 'put' : 'call';
+      const closing = p.state === 'closing_pending';
+
+      const strikeStr = p.strike ? '$' + parseFloat(p.strike).toFixed(0) : '—';
+      const expShort  = p.expiry ? p.expiry.slice(5).replace('-', '/') : '—'; // "MM/DD"
+      const qty       = (p.contracts_open != null ? p.contracts_open : '—') + 'c';
+      const entryStr  = fmtPrice(p.entry_price);
+
+      let priceHtml, pnlHtml;
+      if (ps.state === 'live') {
+        const pnlCls = p.unrealized_pnl == null ? 'neutral'
+                     : p.unrealized_pnl >= 0    ? 'positive' : 'negative';
+        const pnlStr = p.unrealized_pnl == null ? '—'
+                     : fmt$(Math.round(p.unrealized_pnl)) + ' ' + fmtPct(p.unrealized_pnl_pct);
+        priceHtml = `<span class="rs-meta">${entryStr}→${fmtPrice(p.current_price)}</span>`;
+        pnlHtml   = `<span class="rs-pnl ${pnlCls}">${pnlStr}</span>`;
+      } else {
+        priceHtml = `<span class="rs-meta">${entryStr}→</span><span class="rs-price-badge">${ps.label}</span>`;
+        pnlHtml   = `<span class="rs-pnl neutral">—</span>`;
+      }
+
+      const closingChip = closing
+        ? `<span class="rs-closing-chip">CLOSING</span> `
+        : '';
+
+      return `<div class="rs-chip${closing ? ' rs-chip--closing' : ''}" data-pos-id="${p.position_id}">\
+${closingChip}<span class="rs-ticker">${p.ticker}</span> \
+<span class="rs-dir ${dir}">${dir === 'put' ? 'PUT' : 'CALL'}</span> \
+<span class="rs-meta">${strikeStr} ${expShort}</span> \
+<span class="rs-sep">·</span> \
+<span class="rs-meta">${qty}</span> \
+<span class="rs-sep">·</span> \
+${priceHtml} \
+<span class="rs-sep">·</span> \
+${pnlHtml}\
+<span class="rs-sell-slot" aria-hidden="true"></span></div>`;
+    }).join('');
   }
 
   // ── Signals ────────────────────────────────────────────────────────────────
