@@ -2317,117 +2317,57 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   overflow: hidden;
 }
 
-/* ── Risk strip — always-visible position summary bar ────────────── */
-.risk-strip {
+/* ── POSITIONS tab summary header ───────────────────────────────────── */
+.pos-summary-hd {
   display: flex;
   align-items: center;
-  flex-shrink: 0;
-  height: 36px;
+  justify-content: space-between;
+  padding: 0.4rem 0.7rem;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
-  overflow: hidden;
+  flex-shrink: 0;
+  gap: 0.5rem;
 }
-.risk-strip-hd {
+.pos-summary-stats {
   display: flex;
   align-items: center;
   gap: 0.35rem;
-  padding: 0 0.7rem;
-  flex-shrink: 0;
-  border-right: 1px solid var(--border);
-  height: 100%;
+  flex-wrap: wrap;
+  font-size: 0.67rem;
+  min-width: 0;
 }
-.risk-strip-title {
-  font-size: 0.54rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.1em;
-  color: var(--text-muted);
-}
-.risk-strip-count {
-  font-size: 0.7rem;
+.pos-summary-count {
   font-weight: 600;
   color: var(--text-secondary);
-  font-family: var(--font-display);
-}
-.risk-strip-quality {
-  font-size: 0.6rem;
-  font-weight: 600;
-  color: var(--danger);
-  background: rgba(239,68,68,0.12);
-  padding: 0.1rem 0.4rem;
-  border-radius: 3px;
-}
-.risk-strip-body {
-  display: flex;
-  align-items: center;
-  flex: 1;
-  height: 100%;
-  overflow-x: auto;
-  overflow-y: hidden;
-  scrollbar-width: none;
-}
-.risk-strip-body::-webkit-scrollbar { display: none; }
-.risk-strip-empty {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-  padding: 0 0.75rem;
-}
-
-/* Risk strip: per-position chips */
-.rs-chip {
-  display: flex;
-  align-items: center;
-  gap: 0.28rem;
-  height: 100%;
-  padding: 0 0.7rem 0 0.55rem;
-  border-right: 1px solid var(--border);
-  border-left: 3px solid var(--accent);
-  flex-shrink: 0;
   white-space: nowrap;
 }
-.rs-chip--closing { border-left-color: var(--warning); }
-.rs-ticker {
-  font-weight: 700;
-  color: var(--text-primary);
-  font-family: var(--font-display);
-  font-size: 0.64rem;
+.pos-summary-sep { color: var(--text-muted); }
+.pos-summary-stat {
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
-.rs-dir {
-  font-size: 0.56rem;
-  font-weight: 700;
-  padding: 0.05rem 0.26rem;
-  border-radius: 3px;
-}
-.rs-dir.call { background: rgba(74,222,128,0.15); color: var(--accent); }
-.rs-dir.put  { background: rgba(239,68,68,0.12);  color: var(--danger); }
-.rs-meta { color: var(--text-muted); font-size: 0.63rem; }
-.rs-sep  { color: var(--border-bright); font-size: 0.6rem; }
-.rs-pnl {
-  font-family: var(--font-display);
-  font-size: 0.63rem;
+.pos-summary-pnl-label { color: var(--text-muted); white-space: nowrap; }
+.pos-summary-pnl {
   font-weight: 600;
+  color: var(--text-secondary);
+  white-space: nowrap;
 }
-.rs-pnl.positive { color: var(--accent); }
-.rs-pnl.negative { color: var(--danger); }
-.rs-pnl.neutral  { color: var(--text-muted); }
-.rs-price-badge {
-  font-size: 0.57rem;
-  font-weight: 600;
-  padding: 0.05rem 0.26rem;
+.pos-summary-pnl[data-state="pos"]   { color: var(--accent); }
+.pos-summary-pnl[data-state="neg"]   { color: var(--danger); }
+.pos-summary-pnl[data-state="flat"]  { color: var(--text-muted); }
+.pos-summary-pnl[data-state="stale"] { color: var(--text-muted); opacity: 0.6; }
+.pos-summary-naked {
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.35);
   border-radius: 3px;
-  background: rgba(239,68,68,0.12);
   color: var(--danger);
-}
-.rs-closing-chip {
-  font-size: 0.54rem;
+  font-size: 0.57rem;
   font-weight: 700;
-  text-transform: uppercase;
   letter-spacing: 0.04em;
-  color: var(--warning);
-  background: rgba(245,158,11,0.12);
-  padding: 0.05rem 0.26rem;
-  border-radius: 3px;
+  padding: 0.05rem 0.3rem;
+  white-space: nowrap;
 }
+
 /* Stage 3a: SELL NOW button + state indicators */
 .rs-sell-slot { flex-shrink: 0; display: flex; align-items: center; }
 .rs-sell-btn {
@@ -2468,125 +2408,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   font-size: 0.57rem;
 }
 
-@media (max-width: 640px) {
-  .risk-strip-hd { padding: 0 0.5rem; }
-  .rs-chip { padding: 0 0.5rem 0 0.4rem; }
-}
-
-/* ── Stage 2: bracket presence marker in strip chip ─────────────────────── */
-.rs-bkt { flex: none; }
-.rs-bkt--none { color: var(--text-muted); font-size: 0.72rem; }
-
-/* ── Tier 1: strip header stats and naked pill ──────────────────────────── */
-.rs-hd-sep {
-  color: var(--text-muted);
-  font-size: 0.6rem;
-  flex-shrink: 0;
-}
-.risk-strip-stat {
-  font-size: 0.62rem;
-  color: var(--text-secondary);
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-.risk-strip-stat--pnl[data-state="pos"] { color: var(--accent); }
-.risk-strip-stat--pnl[data-state="neg"] { color: var(--danger); }
-.risk-strip-stat--pnl[data-state="flat"]  { color: var(--text-muted); }
-.risk-strip-stat--pnl[data-state="stale"] { color: var(--text-muted); opacity: 0.6; }
-.risk-strip-naked {
-  background: rgba(239,68,68,0.15);
-  border: 1px solid rgba(239,68,68,0.35);
-  border-radius: 3px;
-  color: var(--danger);
-  font-size: 0.54rem;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  padding: 0.05rem 0.3rem;
-  white-space: nowrap;
-  flex-shrink: 0;
-}
-
-/* ── Tier 1: expand/collapse toggle ─────────────────────────────────────── */
-.rs-toggle-btn {
-  background: none;
-  border: none;
-  color: var(--text-muted);
-  cursor: pointer;
-  font-size: 0.58rem;
-  line-height: 1;
-  padding: 0.1rem 0.2rem;
-  flex-shrink: 0;
-  transition: color 0.15s;
-  user-select: none;
-  -webkit-user-select: none;
-}
-.rs-toggle-btn:hover { color: var(--text-secondary); }
-
-/* ── Tier 1: expanded strip body ─────────────────────────────────────────── */
-.risk-strip--expanded .risk-strip-body {
-  max-height: 200px;
-  overflow-y: auto;
-  scrollbar-width: none;
-}
-.risk-strip--expanded .risk-strip-body::-webkit-scrollbar { display: none; }
-
-/* ── Tier 1: row-mode chips ─────────────────────────────────────────────── */
-.rs-chip--row {
-  flex-direction: column;
-  align-items: stretch;
-  gap: 0;
-  padding-bottom: 0.3rem;
-}
-.rs-chip-main {
-  display: flex;
-  align-items: center;
-  gap: 0.28rem;
-  flex-wrap: nowrap;
-  min-width: 0;
-}
-/* In non-expanded chips, main takes full layout role — no change needed */
-
-/* ── Tier 1: exit-row under each expanded chip ───────────────────────────── */
-.rs-exit-row {
-  display: flex;
-  align-items: center;
-  gap: 0.35rem;
-  padding: 0.18rem 0.35rem 0;
-  flex-wrap: wrap;
-  font-size: 0.6rem;
-}
-.rs-exit-lbl {
-  color: var(--text-muted);
-  font-weight: 600;
-  letter-spacing: 0.03em;
-  flex-shrink: 0;
-}
-.rs-exit-val {
-  color: var(--text-secondary);
-  font-family: var(--font-mono, monospace);
-  flex-shrink: 0;
-}
-.rs-exit-stk {
-  color: var(--text-muted);
-  font-size: 0.56rem;
-  font-style: italic;
-}
-.rs-exit-muted {
-  color: var(--text-muted);
-  font-style: italic;
-}
-.rs-dies-flag {
-  background: rgba(239,68,68,0.12);
-  border-radius: 2px;
-  color: var(--danger);
-  font-size: 0.54rem;
-  font-weight: 600;
-  margin-left: auto;
-  padding: 0.02rem 0.25rem;
-  white-space: nowrap;
-}
-
-/* ── Stage 3b: SELL ALL button in strip header ───────────────────────────── */
+/* ── Stage 3b: SELL ALL button ───────────────────────────────────────────── */
 .rs-sell-all-btn {
   background: rgba(239,68,68,0.12);
   border: 1px solid rgba(239,68,68,0.35);
