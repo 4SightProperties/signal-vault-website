@@ -5043,21 +5043,14 @@
   }
 
   function _t2UpdateArmButton(consoleEl, entry) {
-    const armRow     = consoleEl && consoleEl.querySelector('[data-live="t2-arm-row"]');
-    const armBtn     = armRow && armRow.querySelector('.t2-arm-btn');
-    const armPreview = armRow && armRow.querySelector('[data-live="t2-arm-preview"]');
+    const armRow = consoleEl && consoleEl.querySelector('[data-live="t2-arm-row"]');
+    const armBtn = armRow && armRow.querySelector('.t2-arm-btn');
     if (!armBtn) return;
     const tpInp = consoleEl.querySelector('[data-leg-inp="tp"]');
     const slInp = consoleEl.querySelector('[data-leg-inp="sl"]');
     const tp = tpInp ? parseFloat(tpInp.value) : 0;
     const sl = slInp ? parseFloat(slInp.value) : 0;
-    const valid = tp > 0 && sl > 0 && sl < tp && (!entry || sl < entry);
-    armBtn.disabled = !valid;
-    if (armPreview) {
-      armPreview.textContent = valid
-        ? 'TP $' + tp.toFixed(2) + ' · SL $' + sl.toFixed(2) + ' · OCO GTC'
-        : 'Enter prices above, then arm';
-    }
+    armBtn.disabled = !(tp > 0 && sl > 0 && sl < tp && (!entry || sl < entry));
   }
 
   function _t2AddChangelog(consoleEl, text) {
@@ -5284,8 +5277,12 @@
         }
 
         if (curLayer === 'default' && newVal === 'oco_bracket') {
-          const tpInp = consoleEl.querySelector('[data-leg-inp="tp"]');
-          if (tpInp) tpInp.focus();
+          const armRowEl = consoleEl.querySelector('[data-live="t2-arm-row"]');
+          if (armRowEl) {
+            armRowEl.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+            armRowEl.classList.add('t2-arm-row--flash');
+            setTimeout(() => armRowEl.classList.remove('t2-arm-row--flash'), 800);
+          }
         }
       });
     }
@@ -5597,24 +5594,6 @@
     set('t2-trail-arm',   pos.trail_armed ? '⬆ armed' : '⭕ waiting');
     set('t2-trail-width', tw);
     set('t2-trail-stop',  pos.trail_stop_price ? fmtPrice(pos.trail_stop_price) : '—');
-
-    // Header P&L
-    const markEl = consoleEl.querySelector('[data-live="t2-mark"]');
-    if (markEl) {
-      if (ps.state === 'live') { markEl.textContent = '$' + fmtPrice(pos.current_price); markEl.className = ''; }
-      else                     { markEl.textContent = ps.label; markEl.className = 'pnl-badge stale'; }
-    }
-    const pnlEl = consoleEl.querySelector('[data-live="t2-pnl"]');
-    if (pnlEl) {
-      if (ps.state === 'live' && pos.unrealized_pnl != null) {
-        const sign = pos.unrealized_pnl >= 0 ? '+' : '';
-        pnlEl.textContent = sign + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ')';
-        pnlEl.className   = 't2-hd-pnl-val ' + (pos.unrealized_pnl >= 0 ? 'positive' : 'negative');
-      } else {
-        pnlEl.textContent = '—';
-        pnlEl.className   = 't2-hd-pnl-val';
-      }
-    }
 
     // Refresh leg metadata % from mark on every WS tick
     if (_t2State && _t2State.broker && pos.current_price != null) {
@@ -6334,19 +6313,6 @@
     const slDimmed  = (!slEdit && layer !== 'default');
     const proposeMode = (layer === 'default');
 
-    // Initial P&L render
-    const ps0 = priceState(pos.current_price, pos.price_age_secs);
-    const markHtml = ps0.state === 'live'
-      ? '$' + fmtPrice(pos.current_price)
-      : '<span class="pnl-badge stale">' + ps0.label + '</span>';
-
-    let pnlTxt = '—', pnlCls = 't2-hd-pnl-val';
-    if (ps0.state === 'live' && pos.unrealized_pnl != null) {
-      const sign0 = pos.unrealized_pnl >= 0 ? '+' : '';
-      pnlTxt = sign0 + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ')';
-      pnlCls = 't2-hd-pnl-val ' + (pos.unrealized_pnl >= 0 ? 'positive' : 'negative');
-    }
-
     // Trail state
     const tw = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
 
@@ -6385,7 +6351,6 @@
 
     const armRow = proposeMode
       ? '<div class="t2-arm-row" data-live="t2-arm-row">' +
-          '<div class="t2-arm-preview" data-live="t2-arm-preview">Enter prices above, then arm</div>' +
           '<button class="t2-arm-btn" disabled>Arm bracket</button>' +
           '<div class="t2-arm-status" data-live="t2-arm-status"></div>' +
         '</div>'
@@ -6440,11 +6405,7 @@
 
     return '<div class="pos-console t2-console">' +
 
-      '<div class="t2-header">' +
-        '<div class="t2-hd-sym">' + sym + '</div>' +
-        '<div class="t2-hd-meta">' + cts + '&times; @ $' + entry.toFixed(2) + ' &rarr; <span data-live="t2-mark">' + markHtml + '</span></div>' +
-        '<div class="' + pnlCls + '" data-live="t2-pnl">' + pnlTxt + '</div>' +
-      '</div>' +
+      '<div class="t2-sym-line">' + sym + '</div>' +
 
       '<div class="t2-strategy-row">' +
         '<span class="t2-strategy-lbl">Exit strategy</span>' +

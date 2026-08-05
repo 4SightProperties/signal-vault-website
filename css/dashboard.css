@@ -4084,32 +4084,15 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .t2-console { padding: 0; }
 
 /* Header */
-.t2-header {
-  display: flex;
-  flex-direction: column;
-  gap: 0.18rem;
-  padding: 0.6rem 0.8rem 0.5rem;
-  border-bottom: 1px solid var(--border);
-}
-.t2-hd-sym {
-  font-size: 0.78rem;
-  font-weight: 600;
-  color: var(--text-primary);
+.t2-sym-line {
+  padding: 0.35rem 0.8rem 0.25rem;
+  font-size: 0.65rem;
+  color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+  border-bottom: 1px solid var(--border);
 }
-.t2-hd-meta {
-  font-size: 0.65rem;
-  color: var(--text-muted);
-}
-.t2-hd-pnl-val {
-  font-size: 0.72rem;
-  font-weight: 600;
-  color: var(--text-muted);
-}
-.t2-hd-pnl-val.positive { color: var(--accent); }
-.t2-hd-pnl-val.negative { color: var(--danger); }
 
 /* Strategy row */
 .t2-strategy-row {
@@ -4237,6 +4220,10 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .t2-watch-val { color: var(--text-secondary); text-align: right; }
 
 /* Arm bracket row */
+@keyframes t2ArmFlash {
+  0%   { background: rgba(74, 222, 128, 0.18); }
+  100% { background: transparent; }
+}
 .t2-arm-row {
   display: flex;
   flex-direction: column;
@@ -4245,10 +4232,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-bottom: 1px solid var(--border);
   border-top: 1px solid var(--border);
 }
-.t2-arm-preview {
-  font-size: 0.63rem;
-  color: var(--text-muted);
-}
+.t2-arm-row--flash { animation: t2ArmFlash 0.8s ease-out forwards; }
 .t2-arm-btn {
   align-self: flex-start;
   background: rgba(74, 222, 128, 0.1);
