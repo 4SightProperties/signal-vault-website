@@ -36,6 +36,7 @@
   let openConsoleId      = null; // position_id of the currently expanded management console
   let _restingInterval   = null; // setInterval handle for the resting-orders poll
   let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
+  let _t2State           = null; // tier-2 console state {staged,broker,mark,changelog,initialFetchDone}
   let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
   let _lastOrdersData    = { ok: null, orders: null, fetchedAt: null }; // last /api/orders/working result
   let _pnlToday = { state: 'empty', value: null };
@@ -578,6 +579,7 @@
         clearInterval(_restingInterval);
         _restingInterval = null;
         _restingOpenSym  = null;
+        _t2State         = null;
       }
     }
   }
@@ -4997,6 +4999,7 @@
       clearInterval(_restingInterval);
       _restingInterval = null;
       _restingOpenSym  = null;
+      _t2State         = null;
     } else {
       card.insertAdjacentHTML('beforeend', buildConsoleHtml(pos));
       card.classList.add('expanded');
@@ -5019,341 +5022,619 @@
     }
   }
 
-  function wireConsoleButtons(card, pos) {
-    const pid     = pos.position_id;
-    const cts     = pos.contracts_open || 1;
-    const entry   = pos.entry_price || 0;
-    const sym     = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
+  // ── Tier 2 console — module-level helpers ────────────────────────────────
+  // _t2State is initialized in wireConsoleButtons, nulled in toggleConsole/renderPositions.
 
-    // ── Helpers ──────────────────────────────────────────────────────────────
-    function setTicketStatus(el, msg, cls) {
-      if (!el) return;
-      el.textContent = msg;
-      el.className   = 'pos-ticket-status' + (cls ? ' ' + cls : '');
+  function _t2UpdateStagedBar(consoleEl) {
+    const bar = consoleEl && consoleEl.querySelector('[data-live="t2-staged-bar"]');
+    if (!bar || !_t2State) return;
+    const { staged, broker } = _t2State;
+    const hasTp = staged.tp != null;
+    const hasSl = staged.sl != null;
+    if (!hasTp && !hasSl) { bar.style.display = 'none'; return; }
+    bar.style.display = '';
+    const count = (hasTp ? 1 : 0) + (hasSl ? 1 : 0);
+    const parts = [];
+    if (broker.tp != null) parts.push('TP $' + broker.tp.toFixed(2));
+    if (broker.sl != null) parts.push('SL $' + broker.sl.toFixed(2));
+    const brokerStr = parts.length ? 'broker holds ' + parts.join(' · ') : 'broker state unknown';
+    const descEl = consoleEl.querySelector('[data-live="t2-staged-desc"]');
+    if (descEl) descEl.textContent = count + (count === 1 ? ' change' : ' changes') + ' pending · ' + brokerStr;
+  }
+
+  function _t2UpdateArmButton(consoleEl, entry) {
+    const armRow     = consoleEl && consoleEl.querySelector('[data-live="t2-arm-row"]');
+    const armBtn     = armRow && armRow.querySelector('.t2-arm-btn');
+    const armPreview = armRow && armRow.querySelector('[data-live="t2-arm-preview"]');
+    if (!armBtn) return;
+    const tpInp = consoleEl.querySelector('[data-leg-inp="tp"]');
+    const slInp = consoleEl.querySelector('[data-leg-inp="sl"]');
+    const tp = tpInp ? parseFloat(tpInp.value) : 0;
+    const sl = slInp ? parseFloat(slInp.value) : 0;
+    const valid = tp > 0 && sl > 0 && sl < tp && (!entry || sl < entry);
+    armBtn.disabled = !valid;
+    if (armPreview) {
+      armPreview.textContent = valid
+        ? 'TP $' + tp.toFixed(2) + ' · SL $' + sl.toFixed(2) + ' · OCO GTC'
+        : 'Enter prices above, then arm';
     }
-    function fmtProceeds(price, qty) {
-      return '$' + (price * qty * 100).toFixed(2);
+  }
+
+  function _t2AddChangelog(consoleEl, text) {
+    if (!_t2State) return;
+    const ts = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+    _t2State.changelog.unshift({ text, ts });
+    const el = consoleEl && consoleEl.querySelector('[data-live="t2-changelog"]');
+    if (!el) return;
+    el.innerHTML = _t2State.changelog.slice(0, 8).map(entry =>
+      '<div class="t2-clog-entry">' +
+      '<span class="t2-clog-ts">' + entry.ts + '</span> ' +
+      '<span class="t2-clog-text">' + entry.text + '</span>' +
+      '</div>'
+    ).join('');
+  }
+
+  async function _t2FetchLegRows(sym, consoleEl, options) {
+    const opts         = options || {};
+    const updateInputs = opts.updateInputs !== undefined
+      ? opts.updateInputs
+      : !(_t2State && _t2State.initialFetchDone);
+
+    let data;
+    try {
+      data = await apiFetch('/api/orders/resting?option_symbol=' + encodeURIComponent(sym));
+    } catch (_) {
+      ['tp', 'sl'].forEach(leg => {
+        const m = consoleEl && consoleEl.querySelector('[data-leg-meta="' + leg + '"]');
+        if (m) m.innerHTML = '<span class="pnl-badge stale">⚠ broker unreachable</span>';
+      });
+      return null;
     }
+
+    if (!data.ok) {
+      ['tp', 'sl'].forEach(leg => {
+        const m = consoleEl && consoleEl.querySelector('[data-leg-meta="' + leg + '"]');
+        if (m) m.innerHTML = '<span class="pnl-badge stale">⚠ broker unreachable</span>';
+      });
+      return null;
+    }
+
+    const orders  = data.orders || [];
+    const tpOrder = orders.find(o => o.price != null && !o.stop_price);
+    const slOrder = orders.find(o => o.stop_price != null);
+    const tsStr   = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: false });
+
+    if (_t2State) {
+      _t2State.broker = {
+        tp:          tpOrder ? Number(tpOrder.price)      : null,
+        sl:          slOrder ? Number(slOrder.stop_price) : null,
+        tpId:        tpOrder ? tpOrder.order_id           : null,
+        slId:        slOrder ? slOrder.order_id           : null,
+        confirmedAt: tsStr,
+      };
+      _t2State.initialFetchDone = true;
+    }
+
+    const mark = _t2State && _t2State.mark;
+
+    for (const [leg, order] of [['tp', tpOrder], ['sl', slOrder]]) {
+      const legEl  = consoleEl && consoleEl.querySelector('.t2-leg[data-leg="' + leg + '"]');
+      if (!legEl || legEl.classList.contains('t2-leg--propose') || legEl.classList.contains('t2-leg--dimmed')) continue;
+      const inp    = legEl.querySelector('[data-leg-inp="' + leg + '"]');
+      const metaEl = legEl.querySelector('[data-leg-meta="' + leg + '"]');
+      const price  = order ? (leg === 'tp' ? Number(order.price) : Number(order.stop_price)) : null;
+      const ordId  = order ? order.order_id : null;
+
+      if (price == null) {
+        if (metaEl) metaEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.62rem">— not resting —</span>';
+        if (updateInputs && inp) inp.value = '';
+        continue;
+      }
+
+      if (updateInputs && inp) inp.value = price.toFixed(2);
+
+      let pctStr = '';
+      if (mark && mark > 0) {
+        const pct  = ((price - mark) / mark * 100);
+        const sign = pct >= 0 ? '+' : '';
+        pctStr = ' · ' + sign + pct.toFixed(1) + '% from mark';
+      }
+      if (metaEl) {
+        metaEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.62rem">id&nbsp;' +
+          (ordId || '?') + ' · ' + tsStr + pctStr + '</span>';
+      }
+    }
+
+    _t2UpdateStagedBar(consoleEl);
+
+    if (opts.verify) {
+      const { tp: sentTp, sl: sentSl } = opts.verify;
+      const b = (_t2State || {}).broker || {};
+      const tpMatch = sentTp == null || (b.tp != null && Math.abs(b.tp - sentTp) < 0.005);
+      const slMatch = sentSl == null || (b.sl != null && Math.abs(b.sl - sentSl) < 0.005);
+      return { tpMatch, slMatch };
+    }
+
+    return null;
+  }
+
+  function wireConsoleButtons(card, pos) {
+    const pid    = pos.position_id;
+    const cts    = pos.contracts_open || 1;
+    const entry  = pos.entry_price || 0;
+    const sym    = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
+    const ticker = pos.ticker || '?';
+
+    _t2State = {
+      staged:           { tp: null, sl: null },
+      broker:           { tp: null, sl: null, tpId: null, slId: null, confirmedAt: null },
+      mark:             pos.current_price || null,
+      changelog:        [],
+      initialFetchDone: false,
+    };
+
+    const consoleEl = card.querySelector('.pos-console');
+
+    function fmtProceeds(price, qty) { return '$' + (price * qty * 100).toFixed(2); }
     function fmtGain(price, qty) {
       if (!entry) return '—';
       const pct  = ((price - entry) / entry * 100).toFixed(1);
       const cash = ((price - entry) * qty * 100).toFixed(2);
       const sign = price >= entry ? '+' : '';
-      return `${sign}${pct}% ($${sign}${cash})`;
+      return sign + pct + '% ($' + sign + cash + ')';
+    }
+    function setStratStatus(msg, cls) {
+      const el = consoleEl && consoleEl.querySelector('[data-live="t2-strategy-status"]');
+      if (!el) return;
+      el.textContent = msg;
+      el.className   = 't2-strategy-status' + (cls ? ' t2-strategy-status--' + cls : '');
+    }
+    function setApplyStatus(el, msg, cls) {
+      if (!el) return;
+      el.textContent   = msg;
+      el.className     = 't2-apply-status' + (cls ? ' ' + cls : '');
+      el.style.display = msg ? '' : 'none';
     }
 
-    // ── Market close — "Exit Nx" danger button ────────────────────────────────
+    // ── Exit button — market close ────────────────────────────────────────────
     const closeBtn = card.querySelector('.pos-console-close-btn');
     if (closeBtn) {
       closeBtn.addEventListener('click', e => {
         e.stopPropagation();
         showConfirmModal({
-          title:   `Close ${pos.ticker} position`,
-          body:    `<strong>${sym}</strong><br>` +
-                   `Qty: <strong>${cts} contract${cts !== 1 ? 's' : ''}</strong> · entry $${entry.toFixed(2)}<br><br>` +
-                   `<span style="color:var(--text-muted);font-size:0.68rem">` +
-                   `Market order. Fill may differ from mid. Gated by kill-switch.</span>`,
-          okLabel: `Close ${cts}x at market`,
+          title:   'Close ' + ticker + ' position',
+          body:    '<strong>' + sym + '</strong><br>' +
+                   'Qty: <strong>' + cts + ' contract' + (cts !== 1 ? 's' : '') + '</strong> · entry $' + entry.toFixed(2) + '<br><br>' +
+                   '<span style="color:var(--text-muted);font-size:0.68rem">Market order. Fill may differ from mid. Gated by kill-switch.</span>',
+          okLabel: 'Close ' + cts + '× at market',
           okClass: 'danger',
           onOk: async (setStatus) => {
             setStatus('Placing market close…');
             try {
               const result = await apiPost('/api/v1/orders/close', { position_id: pid, order_type: 'market' });
               if (result.status === 'closed') {
-                setStatus(`Closed @ $${result.fill_price.toFixed(2)}`, 'ok');
+                setStatus('Closed @ $' + result.fill_price.toFixed(2), 'ok');
               } else if (result.status === 'closing_pending') {
                 setStatus('Close pending — fill unconfirmed, GTC intact. Reconciling.', 'warn');
               } else if (result.status === 'pdt_protected') {
                 setStatus('PDT protected — close manually in broker.', 'error');
               } else {
-                setStatus(`Close failed — position still open. (${result.status || 'unknown'})`, 'error');
+                setStatus('Close failed — position still open. (' + (result.status || 'unknown') + ')', 'error');
               }
             } catch(err) {
               const detail = err.data && err.data.detail ? err.data.detail : err.message;
-              if (err.status === 503) setStatus('Kill-switch OFF — web trading disabled', 'error');
+              if (err.status === 503)      setStatus('Kill-switch OFF — web trading disabled', 'error');
               else if (err.status === 403) setStatus('Admin access required', 'error');
-              else setStatus(`Error: ${detail}`, 'error');
+              else                         setStatus('Error: ' + detail, 'error');
             }
           },
         });
       });
     }
 
-    // ── Mode tabs — toggle PROFIT-ONLY / MANUAL+STOP forms ───────────────────
-    // Capture element arrays at wire-time so click handlers remain correct after
-    // the card is replaced by body.innerHTML on each WS render.
-    const modeBtns  = Array.from(card.querySelectorAll('.pos-ticket-mode'));
-    const modeForms = Array.from(card.querySelectorAll('.pos-ticket-form'));
-    modeBtns.forEach(btn => {
+    // ── Strategy dropdown ─────────────────────────────────────────────────────
+    const stratSel = consoleEl && consoleEl.querySelector('.t2-strategy-sel');
+    const curLayer = pos.exit_layer || 'default';
+    if (stratSel) {
+      stratSel.addEventListener('change', e => {
+        e.stopPropagation();
+        const newVal = stratSel.value;
+        stratSel.value = curLayer; // always revert; modal is the real action trigger
+
+        if ((curLayer === 'oco_bracket' || curLayer === 'stop_only' || curLayer === 'tp_only') && newVal === 'default') {
+          const isOco  = curLayer === 'oco_bracket';
+          const isTp   = curLayer === 'tp_only';
+          const title  = isOco ? 'Cancel OCO Bracket' : isTp ? 'Cancel TP Order' : 'Cancel Stop';
+          const warn   = isOco ? 'Both legs of the OCO bracket will be cancelled.'
+                       : isTp  ? 'The resting TP limit order will be cancelled.'
+                       :         'The protective stop will be cancelled.';
+          const body2  = isOco ? 'The TP limit <em>and</em> the protective stop for <strong>' + ticker + '</strong> will be removed. Bot exits resume within ~30 s.'
+                       : isTp  ? 'The TP limit for <strong>' + ticker + '</strong> will be removed. Bot trail stop manages the exit.'
+                       :         'The stop for <strong>' + ticker + '</strong> will be removed. Bot exits resume within ~30 s.';
+          const okLbl  = isOco ? 'Cancel bracket — both legs' : isTp ? 'Cancel TP order' : 'Cancel stop';
+          showConfirmModal({
+            title:   title + ' — ' + ticker,
+            body:    '<strong style="color:var(--danger)">⚠ ' + warn + '</strong><br><br>' +
+                     body2 + '<br><br>' +
+                     'Option: <code style="font-size:0.8rem">' + sym + '</code>',
+            okLabel: okLbl,
+            okClass: 'danger',
+            onOk: async (setModalStatus) => {
+              setModalStatus('Canceling…');
+              try {
+                const result = await apiPost('/api/orders/cancel-bracket', { position_id: pid });
+                if (result.ok) {
+                  setModalStatus('Canceled — bot exits resumed', 'ok');
+                  setStratStatus('Canceled — bot exits resumed', 'ok');
+                  _pollOrders();
+                  if (_restingOpenSym && consoleEl) _t2FetchLegRows(_restingOpenSym, consoleEl, { updateInputs: true });
+                } else if (result.reason === 'already_filled') {
+                  setModalStatus('A leg already filled — position is closing.', 'error');
+                  _pollOrders();
+                } else {
+                  setModalStatus('Error: ' + (result.error || 'cancel failed'), 'error');
+                }
+              } catch (err) {
+                const detail = err.data && err.data.detail ? err.data.detail : err.message;
+                setModalStatus('Error: ' + detail, 'error');
+              }
+            },
+          });
+          return;
+        }
+
+        if (curLayer === 'default' && newVal === 'oco_bracket') {
+          const tpInp = consoleEl.querySelector('[data-leg-inp="tp"]');
+          if (tpInp) tpInp.focus();
+        }
+      });
+    }
+
+    // ── Nudge buttons ─────────────────────────────────────────────────────────
+    consoleEl && consoleEl.querySelectorAll('.t2-nudge').forEach(btn => {
       btn.addEventListener('click', e => {
         e.stopPropagation();
-        const mode = btn.dataset.mode;
-        modeBtns.forEach(b => b.classList.remove('active'));
-        btn.classList.add('active');
-        modeForms.forEach(f => {
-          f.style.display = f.dataset.form === mode ? '' : 'none';
-        });
+        const leg = btn.dataset.nudge;
+        const dir = Number(btn.dataset.dir);
+        const inp = consoleEl.querySelector('[data-leg-inp="' + leg + '"]');
+        if (!inp) return;
+        const cur = parseFloat(inp.value) || (_t2State && _t2State.broker && _t2State.broker[leg]) || 0;
+        inp.value = Math.max(0.01, cur + dir * 0.01).toFixed(2);
+        inp.dispatchEvent(new Event('input', { bubbles: true }));
       });
     });
 
-    // ── PROFIT-ONLY — Review ──────────────────────────────────────────────────
-    const profitForm  = card.querySelector('.pos-ticket-form[data-form="profit"]');
-    const profitReview = card.querySelector('#ticketReview');
-    const profitStatus = card.querySelector('#ticketStatus');
-
-    profitForm && profitForm.querySelector('.pos-ticket-review-btn').addEventListener('click', e => {
-      e.stopPropagation();
-      const tp  = parseFloat(profitForm.querySelector('#ticketTp').value  || '0');
-      const qty = parseInt(profitForm.querySelector('#ticketQty').value   || '0', 10);
-      const tif = profitForm.querySelector('#ticketTif').value || 'gtc';
-
-      if (!(tp > 0))     { setTicketStatus(profitStatus, 'Enter a valid TP limit price.', 'error'); return; }
-      if (!(qty >= 1))   { setTicketStatus(profitStatus, 'Enter a valid quantity.', 'error'); return; }
-      if (qty > cts)     { setTicketStatus(profitStatus, `Qty exceeds contracts open (${cts}).`, 'error'); return; }
-
-      profitForm.querySelector('#ticketReviewBody').innerHTML =
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">TP limit</span> $${tp.toFixed(2)}</div>` +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Proceeds</span> ${fmtProceeds(tp, qty)}</div>` +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">vs entry</span> ${fmtGain(tp, qty)}</div>` +
-        (entry && tp < entry ? `<div class="pos-ticket-review-line" style="color:var(--warning)">⚠ TP is below entry ($${entry.toFixed(2)}) — limit sells at a loss if filled</div>` : '') +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Qty / TIF</span> ${qty}× ${tif.toUpperCase()}</div>`;
-
-      profitReview.style.display   = '';
-      profitReview.dataset.tp      = tp;
-      profitReview.dataset.qty     = qty;
-      profitReview.dataset.tif     = tif;
-      setTicketStatus(profitStatus, '', '');
-    });
-
-    // ── PROFIT-ONLY — Confirm ─────────────────────────────────────────────────
-    profitForm && profitForm.querySelector('.pos-ticket-confirm-btn').addEventListener('click', async e => {
-      e.stopPropagation();
-      const tp  = parseFloat(profitReview.dataset.tp  || '0');
-      const qty = parseInt(profitReview.dataset.qty   || '0', 10);
-      const tif = profitReview.dataset.tif || 'gtc';
-      if (!(tp > 0) || !(qty >= 1)) { setTicketStatus(profitStatus, 'Review the order first.', 'error'); return; }
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      setTicketStatus(profitStatus, 'Placing limit order…');
-      try {
-        const result = await apiPost('/api/v1/orders/close', {
-          position_id: pid, order_type: 'limit', limit_price: tp, quantity: qty, tif,
-        });
-        if (result.status === 'closing_pending') {
-          setTicketStatus(profitStatus, `Resting at $${result.limit_price.toFixed(2)} ${tif.toUpperCase()} — fill reconciles automatically.`, 'ok');
-          const c = card.querySelector('.pos-console');
-          if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
-        } else if (result.status === 'pdt_protected') {
-          setTicketStatus(profitStatus, 'PDT protected — close manually.', 'error');
-          btn.disabled = false;
+    // ── Leg inputs (edit mode) — staged state ─────────────────────────────────
+    ['tp', 'sl'].forEach(leg => {
+      const legEl = consoleEl && consoleEl.querySelector('.t2-leg:not(.t2-leg--propose)[data-leg="' + leg + '"]');
+      if (!legEl) return;
+      const inp    = legEl.querySelector('[data-leg-inp="' + leg + '"]');
+      const staged = legEl.querySelector('[data-staged="' + leg + '"]');
+      if (!inp) return;
+      inp.addEventListener('input', e => {
+        e.stopPropagation();
+        if (!_t2State) return;
+        const val    = parseFloat(inp.value);
+        const broker = _t2State.broker[leg];
+        if (!isNaN(val) && val > 0 && (broker == null || Math.abs(val - broker) >= 0.005)) {
+          _t2State.staged[leg] = val;
+          if (staged) { staged.textContent = '→ $' + val.toFixed(2); staged.style.display = ''; }
         } else {
-          setTicketStatus(profitStatus, `Unexpected: ${result.status}`, 'warn');
-          btn.disabled = false;
+          _t2State.staged[leg] = null;
+          if (staged) staged.style.display = 'none';
         }
-      } catch(err) {
-        const detail = err.data && err.data.detail ? err.data.detail : err.message;
-        setTicketStatus(profitStatus, `Error: ${detail}`, 'error');
-        btn.disabled = false;
-      }
+        _t2UpdateStagedBar(consoleEl);
+      });
     });
 
-    // ── MANUAL+STOP — Review ──────────────────────────────────────────────────
-    const bktForm   = card.querySelector('.pos-ticket-form[data-form="bracket"]');
-    const bktReview = card.querySelector('#ticketReviewBkt');
-    const bktStatus = card.querySelector('#ticketStatusBkt');
-
-    bktForm && bktForm.querySelector('.pos-ticket-review-btn').addEventListener('click', e => {
-      e.stopPropagation();
-      const tp   = parseFloat(bktForm.querySelector('#ticketTpBkt').value  || '0');
-      const stop = parseFloat(bktForm.querySelector('#ticketStop').value   || '0');
-      const qty  = parseInt(bktForm.querySelector('#ticketQtyBkt').value   || '0', 10);
-
-      if (!(tp > 0))     { setTicketStatus(bktStatus, 'Enter a valid TP limit price.', 'error'); return; }
-      if (!(stop > 0))   { setTicketStatus(bktStatus, 'Enter a valid stop price.', 'error'); return; }
-      if (stop >= tp)    { setTicketStatus(bktStatus, 'Stop must be below TP.', 'error'); return; }
-      if (entry && stop >= entry) { setTicketStatus(bktStatus, `Stop premium ($${stop.toFixed(2)}) is at or above entry premium ($${entry.toFixed(2)}) — stop would trigger immediately.`, 'error'); return; }
-      if (!(qty >= 1))   { setTicketStatus(bktStatus, 'Enter a valid quantity.', 'error'); return; }
-      if (qty > cts)     { setTicketStatus(bktStatus, `Qty exceeds contracts open (${cts}).`, 'error'); return; }
-
-      bktForm.querySelector('#ticketReviewBodyBkt').innerHTML =
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">TP limit</span> $${tp.toFixed(2)} &nbsp;·&nbsp; <span class="pos-ticket-rlbl">Stop</span> $${stop.toFixed(2)}</div>` +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">OCO</span> whichever fills first closes</div>` +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Proceeds if TP</span> ${fmtProceeds(tp, qty)} &nbsp;·&nbsp; ${fmtGain(tp, qty)}</div>` +
-        (entry && tp < entry ? `<div class="pos-ticket-review-line" style="color:var(--warning)">⚠ TP is below entry ($${entry.toFixed(2)}) — OCO closes at a loss if TP leg fills</div>` : '') +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Stop loss</span> ${fmtProceeds(stop, qty)}</div>` +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Qty / TIF</span> ${qty}× GTC · both legs</div>`;
-
-      bktReview.style.display  = '';
-      bktReview.dataset.tp     = tp;
-      bktReview.dataset.stop   = stop;
-      bktReview.dataset.qty    = qty;
-      setTicketStatus(bktStatus, '', '');
+    // ── Propose-mode inputs — update arm button on each keystroke ─────────────
+    consoleEl && consoleEl.querySelectorAll('.t2-leg--propose [data-leg-inp]').forEach(inp => {
+      inp.addEventListener('input', e => { e.stopPropagation(); _t2UpdateArmButton(consoleEl, entry); });
     });
 
-    // ── MANUAL+STOP — Confirm ─────────────────────────────────────────────────
-    bktForm && bktForm.querySelector('.pos-ticket-confirm-btn').addEventListener('click', async e => {
-      e.stopPropagation();
-      const tp   = parseFloat(bktReview.dataset.tp   || '0');
-      const stop = parseFloat(bktReview.dataset.stop || '0');
-      const qty  = parseInt(bktReview.dataset.qty    || '0', 10);
-      if (!(tp > 0) || !(stop > 0) || !(qty >= 1)) { setTicketStatus(bktStatus, 'Review the order first.', 'error'); return; }
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      setTicketStatus(bktStatus, 'Placing OCO bracket…');
-      try {
-        const result = await apiPost('/api/v1/orders/close', {
-          position_id: pid, order_type: 'bracket', limit_price: tp, stop_price: stop, quantity: qty,
-        });
-        if (result.status === 'closing_pending') {
-          setTicketStatus(bktStatus, `OCO resting: TP $${result.limit_price.toFixed(2)} · stop $${stop.toFixed(2)} GTC. Fill reconciles automatically.`, 'ok');
-          const c = card.querySelector('.pos-console');
-          if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
-        } else if (result.status === 'pdt_protected') {
-          setTicketStatus(bktStatus, 'PDT protected — close manually.', 'error');
-          btn.disabled = false;
-        } else {
-          setTicketStatus(bktStatus, `Unexpected: ${result.status}`, 'warn');
-          btn.disabled = false;
+    // ── Arm bracket ───────────────────────────────────────────────────────────
+    const armBtn    = consoleEl && consoleEl.querySelector('.t2-arm-btn');
+    const armStatus = consoleEl && consoleEl.querySelector('[data-live="t2-arm-status"]');
+    if (armBtn) {
+      armBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const tpInp = consoleEl.querySelector('[data-leg-inp="tp"]');
+        const slInp = consoleEl.querySelector('[data-leg-inp="sl"]');
+        const tp = parseFloat(tpInp && tpInp.value || '0');
+        const sl = parseFloat(slInp && slInp.value || '0');
+
+        if (!(tp > 0) || !(sl > 0)) {
+          if (armStatus) { armStatus.textContent = 'Enter both TP and SL prices.'; armStatus.className = 't2-arm-status t2-arm-status--error'; }
+          return;
         }
-      } catch(err) {
-        const detail = err.data && err.data.detail ? err.data.detail : err.message;
-        setTicketStatus(bktStatus, `Error: ${detail}`, 'error');
-        btn.disabled = false;
-      }
-    });
-
-    // ── Stop update — Review ──────────────────────────────────────────────────
-    const stopReview     = card.querySelector('#ticketStopReview');
-    const stopStatus     = card.querySelector('#ticketStopStatus');
-    const stopUpdInput   = card.querySelector('#ticketStopUpd');
-    const stopReviewBody = card.querySelector('#ticketStopReviewBody');
-
-    const stopBtn = card.querySelector('.pos-ticket-stop-btn');
-    stopBtn && stopBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const stopPrice = parseFloat(stopUpdInput ? stopUpdInput.value : '0');
-      if (!(stopPrice > 0)) { setTicketStatus(stopStatus, 'Enter a valid stop price.', 'error'); return; }
-      if (stopReviewBody) stopReviewBody.innerHTML =
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">New stop</span> $${stopPrice.toFixed(2)}</div>` +
-        `<div class="pos-ticket-review-line"><span class="pos-ticket-rlbl">Symbol</span> ${sym}</div>` +
-        `<div class="pos-ticket-review-line" style="color:var(--text-muted);font-size:0.58rem">Cancel existing stop → place new · position briefly exposed between steps</div>`;
-      stopReview.style.display     = '';
-      stopReview.dataset.stopPrice = stopPrice;
-      setTicketStatus(stopStatus, '', '');
-    });
-
-    // ── Stop update — Confirm ─────────────────────────────────────────────────
-    card.querySelector('.pos-ticket-confirm-stop-btn') && card.querySelector('.pos-ticket-confirm-stop-btn').addEventListener('click', async e => {
-      e.stopPropagation();
-      const stopPrice = parseFloat(stopReview.dataset.stopPrice || '0');
-      if (!(stopPrice > 0)) { setTicketStatus(stopStatus, 'Review the stop first.', 'error'); return; }
-      const btn = e.currentTarget;
-      btn.disabled = true;
-      setTicketStatus(stopStatus, 'Updating stop…');
-      try {
-        const result = await apiPost('/api/v1/orders/update-stop', { position_id: pid, new_stop_price: stopPrice });
-        if (result.status === 'ok') {
-          setTicketStatus(stopStatus, `Stop set at $${result.new_stop_price.toFixed(2)} · order ${result.new_stop_id || '?'}`, 'ok');
-          // Refresh broker truth immediately so the RESTING section reflects the new stop.
-          const c = card.querySelector('.pos-console');
-          if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
-        } else {
-          setTicketStatus(stopStatus, `Unexpected: ${result.status}`, 'warn');
-          btn.disabled = false;
+        if (sl >= tp) {
+          if (armStatus) { armStatus.textContent = 'Stop must be below TP.'; armStatus.className = 't2-arm-status t2-arm-status--error'; }
+          return;
         }
-      } catch(err) {
-        const detail = err.data && err.data.detail ? err.data.detail : err.message;
-        setTicketStatus(stopStatus, `Error: ${detail}`, 'error');
-        btn.disabled = false;
-      }
-    });
+        if (entry && sl >= entry) {
+          if (armStatus) { armStatus.textContent = 'Stop ($' + sl.toFixed(2) + ') at or above entry ($' + entry.toFixed(2) + ') — would trigger immediately.'; armStatus.className = 't2-arm-status t2-arm-status--error'; }
+          return;
+        }
 
-    // ── OCO in-place stop modify (Feature B) ─────────────────────────────────
-    // Only present in the DOM when pos.exit_layer === 'oco_bracket'.
-    const ocoStopBtn    = card.querySelector('.pos-ticket-oco-stop-btn');
-    const ocoStopStatus = card.querySelector('.pos-oco-stop-status');
-    const ocoStopInput  = card.querySelector('.pos-oco-stop-inp');
+        armBtn.disabled = true;
+        if (armStatus) { armStatus.textContent = 'Placing bracket…'; armStatus.className = 't2-arm-status'; }
 
-    ocoStopBtn && ocoStopBtn.addEventListener('click', e => {
-      e.stopPropagation();
-      const rawVal = parseFloat(ocoStopInput ? ocoStopInput.value : '0');
-      if (!rawVal || rawVal <= 0 || isNaN(rawVal)) {
-        if (ocoStopInput) { ocoStopInput.style.outline = '1.5px solid var(--danger)'; ocoStopInput.focus(); }
-        return;
-      }
-      if (ocoStopInput) ocoStopInput.style.outline = '';
-      const newPrice = rawVal.toFixed(2);
-      const fromStr  = ocoStopInput && ocoStopInput.defaultValue
-        ? '$' + parseFloat(ocoStopInput.defaultValue).toFixed(2)
-        : '(see Resting above)';
-
-      showConfirmModal({
-        title:   'Move OCO stop — ' + pos.ticker,
-        body:    '<strong style="color:var(--danger)">⚠ This modifies a LIVE resting order.</strong><br><br>' +
-                 'Change the <strong>stop-loss</strong> leg for <strong>' + pos.ticker + '</strong>:<br>' +
-                 '<code style="font-size:0.82rem">stop trigger: ' + fromStr + ' → $' + newPrice + '</code><br><br>' +
-                 'The <strong>take-profit</strong> leg is unchanged.<br>' +
-                 '<span style="color:var(--text-muted);font-size:0.76rem">Sent as a PUT to the broker — no cancel occurs. Both legs remain live during the update.</span>',
-        okLabel: 'Update stop at broker',
-        okClass: '',
-        onOk: async (setStatus) => {
-          setStatus('Sending to broker…');
-          try {
-            const result = await apiPost('/api/orders/modify-bracket', { position_id: pid, stop_price: rawVal });
-            if (result.ok) {
-              setStatus(result.message || 'Stop updated', 'ok');
-              setTicketStatus(ocoStopStatus, result.message || 'Updated — see Resting above', 'ok');
-              const c = card.querySelector('.pos-console');
-              if (_restingOpenSym && c) fetchRestingOrders(_restingOpenSym, c);
-            } else if (result.reason === 'partial') {
-              setStatus(result.error || 'Partial update — check working orders', 'error');
-              setTicketStatus(ocoStopStatus, result.error || 'Partial update', 'error');
-              _pollOrders();
-            } else {
-              setStatus('Error: ' + (result.error || 'update failed'), 'error');
-              setTicketStatus(ocoStopStatus, 'Error: ' + (result.error || 'update failed'), 'error');
-            }
-          } catch (err) {
-            const detail = err.data && err.data.detail ? err.data.detail : err.message;
-            setStatus('Error: ' + detail, 'error');
-            setTicketStatus(ocoStopStatus, 'Error: ' + detail, 'error');
+        try {
+          const result = await apiPost('/api/trading/place-bracket', { position_id: pid, tp_price: tp, stop_price: sl });
+          if (!result.ok) {
+            armBtn.disabled = false;
+            if (armStatus) { armStatus.textContent = 'Rejected: ' + (result.error || result.detail || 'placement failed'); armStatus.className = 't2-arm-status t2-arm-status--error'; }
+            return;
           }
-        },
+
+          if (armStatus) { armStatus.textContent = 'Placed — verifying with broker…'; armStatus.className = 't2-arm-status'; }
+
+          const rsym   = _restingOpenSym || sym;
+          const verify = await _t2FetchLegRows(rsym, consoleEl, { updateInputs: true, verify: { tp, sl } });
+
+          if (verify) {
+            const { tpMatch, slMatch } = verify;
+            if (tpMatch && slMatch) {
+              if (armStatus) { armStatus.textContent = 'Bracket armed — TP and SL confirmed at broker.'; armStatus.className = 't2-arm-status t2-arm-status--ok'; }
+              _t2AddChangelog(consoleEl, 'Bracket armed: TP $' + tp.toFixed(2) + ' · SL $' + sl.toFixed(2) + ' — confirmed');
+            } else {
+              const legs = [!tpMatch && 'TP', !slMatch && 'SL'].filter(Boolean).join(' and ');
+              if (armStatus) { armStatus.textContent = 'Placement accepted but ' + legs + ' not confirmed by re-read. Legs may be out of sync.'; armStatus.className = 't2-arm-status t2-arm-status--error'; }
+              _t2AddChangelog(consoleEl, 'Bracket arm: ' + legs + ' MISMATCH — re-read did not confirm');
+            }
+          } else {
+            if (armStatus) { armStatus.textContent = 'Placed but broker re-read failed — check resting orders manually.'; armStatus.className = 't2-arm-status t2-arm-status--error'; }
+          }
+
+          _pollOrders();
+        } catch (err) {
+          armBtn.disabled = false;
+          const detail = err.data && err.data.detail ? err.data.detail : err.message;
+          if (armStatus) { armStatus.textContent = 'Error: ' + detail; armStatus.className = 't2-arm-status t2-arm-status--error'; }
+        }
       });
+    }
+
+    // ── Discard staged changes ────────────────────────────────────────────────
+    const discardBtn = consoleEl && consoleEl.querySelector('.t2-discard-btn');
+    if (discardBtn) {
+      discardBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!_t2State) return;
+        _t2State.staged = { tp: null, sl: null };
+        ['tp', 'sl'].forEach(leg => {
+          const inp    = consoleEl.querySelector('.t2-leg:not(.t2-leg--propose) [data-leg-inp="' + leg + '"]');
+          const staged = consoleEl.querySelector('[data-staged="' + leg + '"]');
+          const price  = _t2State.broker[leg];
+          if (inp && price != null) inp.value = price.toFixed(2);
+          if (staged) staged.style.display = 'none';
+        });
+        _t2UpdateStagedBar(consoleEl);
+      });
+    }
+
+    // ── Apply staged changes ──────────────────────────────────────────────────
+    const applyBtn    = consoleEl && consoleEl.querySelector('.t2-apply-btn');
+    const applyStatus = consoleEl && consoleEl.querySelector('[data-live="t2-apply-status"]');
+    if (applyBtn) {
+      applyBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        if (!_t2State) return;
+
+        const { staged, broker } = _t2State;
+        const sentTp = staged.tp != null ? staged.tp : broker.tp;
+        const sentSl = staged.sl != null ? staged.sl : broker.sl;
+
+        if (sentTp == null || sentSl == null) {
+          setApplyStatus(applyStatus, 'Cannot apply — broker prices unknown. Wait for re-read.', 'error');
+          return;
+        }
+        if (sentSl >= sentTp) {
+          setApplyStatus(applyStatus, 'Stop must be below TP.', 'error');
+          return;
+        }
+
+        applyBtn.disabled = true;
+        setApplyStatus(applyStatus, 'Sending to broker…');
+
+        try {
+          const payload = { position_id: pid };
+          if (staged.tp != null) payload.tp_price   = staged.tp;
+          if (staged.sl != null) payload.stop_price = staged.sl;
+
+          const result = await apiPost('/api/orders/modify-bracket', payload);
+
+          if (!result.ok && result.reason === 'rejected') {
+            applyBtn.disabled = false;
+            setApplyStatus(applyStatus, 'Broker rejected both changes. Legs unchanged.', 'error');
+            _t2AddChangelog(consoleEl, 'Modify rejected — broker unchanged');
+            return;
+          }
+
+          setApplyStatus(applyStatus, 'Accepted — verifying with broker…');
+
+          const rsym   = _restingOpenSym || sym;
+          const verify = await _t2FetchLegRows(rsym, consoleEl, { updateInputs: true, verify: { tp: sentTp, sl: sentSl } });
+
+          applyBtn.disabled = false;
+
+          if (!verify) {
+            setApplyStatus(applyStatus, 'Broker re-read failed. Check resting orders.', 'error');
+            _t2AddChangelog(consoleEl, 'Modify: re-read failed — verification incomplete');
+            return;
+          }
+
+          const { tpMatch, slMatch } = verify;
+          if (tpMatch && slMatch) {
+            _t2State.staged = { tp: null, sl: null };
+            ['tp', 'sl'].forEach(leg => {
+              const el = consoleEl.querySelector('[data-staged="' + leg + '"]');
+              if (el) el.style.display = 'none';
+            });
+            _t2UpdateStagedBar(consoleEl);
+            setApplyStatus(applyStatus, 'MATCH — both legs confirmed at broker.', 'ok');
+            _t2AddChangelog(consoleEl, 'Applied: TP $' + sentTp.toFixed(2) + ' · SL $' + sentSl.toFixed(2) + ' — both legs confirmed');
+          } else {
+            const synced  = [tpMatch && 'TP', slMatch && 'SL'].filter(Boolean);
+            const drifted = [!tpMatch && 'TP', !slMatch && 'SL'].filter(Boolean);
+            setApplyStatus(applyStatus,
+              'MISMATCH: ' + drifted.join(' and ') + ' did not move' +
+              (synced.length ? '; ' + synced.join(' and ') + ' confirmed' : '') +
+              '. Legs are out of sync.',
+              'error'
+            );
+            _t2AddChangelog(consoleEl, 'Modify MISMATCH: ' + drifted.join(', ') + ' not confirmed by broker');
+            if (tpMatch) _t2State.staged.tp = null;
+            if (slMatch) _t2State.staged.sl = null;
+            _t2UpdateStagedBar(consoleEl);
+          }
+
+          _pollOrders();
+        } catch (err) {
+          applyBtn.disabled = false;
+          const detail = err.data && err.data.detail ? err.data.detail : err.message;
+          setApplyStatus(applyStatus, 'Error: ' + detail, 'error');
+        }
+      });
+    }
+
+    // ── Profit-only ticket (admin-gated) ──────────────────────────────────────
+    const profitTpInp   = consoleEl && consoleEl.querySelector('.t2-profit-tp-inp');
+    const profitQtyInp  = consoleEl && consoleEl.querySelector('.t2-profit-qty-inp');
+    const profitTifSel  = consoleEl && consoleEl.querySelector('.t2-profit-tif-sel');
+    const profitStatus  = consoleEl && consoleEl.querySelector('.t2-profit-status');
+    const profitReview  = consoleEl && consoleEl.querySelector('.t2-profit-review');
+    const profitRevBody = consoleEl && consoleEl.querySelector('.t2-profit-review-body');
+    const profitRevBtn  = consoleEl && consoleEl.querySelector('.t2-profit-review-btn');
+    const profitConfBtn = consoleEl && consoleEl.querySelector('.t2-profit-confirm-btn');
+
+    function setProfitStatus(msg, cls) {
+      if (!profitStatus) return;
+      profitStatus.textContent = msg;
+      profitStatus.className   = 't2-profit-status' + (cls ? ' ' + cls : '');
+    }
+
+    if (profitRevBtn) {
+      profitRevBtn.addEventListener('click', e => {
+        e.stopPropagation();
+        const tp  = parseFloat(profitTpInp  && profitTpInp.value  || '0');
+        const qty = parseInt(profitQtyInp   && profitQtyInp.value  || '0', 10);
+        const tif = profitTifSel ? profitTifSel.value : 'gtc';
+        if (!(tp > 0))   { setProfitStatus('Enter a valid TP limit price.', 'error'); return; }
+        if (!(qty >= 1)) { setProfitStatus('Enter a valid quantity.', 'error'); return; }
+        if (qty > cts)   { setProfitStatus('Qty exceeds contracts open (' + cts + ').', 'error'); return; }
+        if (profitRevBody) profitRevBody.innerHTML =
+          '<div class="t2-review-line"><span class="t2-review-lbl">TP limit</span> $' + tp.toFixed(2) + '</div>' +
+          '<div class="t2-review-line"><span class="t2-review-lbl">Proceeds</span> ' + fmtProceeds(tp, qty) + '</div>' +
+          '<div class="t2-review-line"><span class="t2-review-lbl">vs entry</span> ' + fmtGain(tp, qty) + '</div>' +
+          (entry && tp < entry ? '<div class="t2-review-line" style="color:var(--warning)">⚠ TP below entry ($' + entry.toFixed(2) + ') — limit sells at a loss if filled</div>' : '') +
+          '<div class="t2-review-line"><span class="t2-review-lbl">Qty / TIF</span> ' + qty + '× ' + tif.toUpperCase() + '</div>';
+        if (profitReview) {
+          profitReview.style.display = '';
+          profitReview.dataset.tp    = tp;
+          profitReview.dataset.qty   = qty;
+          profitReview.dataset.tif   = tif;
+        }
+        setProfitStatus('', '');
+      });
+    }
+
+    if (profitConfBtn) {
+      profitConfBtn.addEventListener('click', async e => {
+        e.stopPropagation();
+        const tp  = parseFloat(profitReview && profitReview.dataset.tp  || '0');
+        const qty = parseInt(profitReview   && profitReview.dataset.qty || '0', 10);
+        const tif = (profitReview && profitReview.dataset.tif) || 'gtc';
+        if (!(tp > 0) || !(qty >= 1)) { setProfitStatus('Review the order first.', 'error'); return; }
+        profitConfBtn.disabled = true;
+        setProfitStatus('Placing limit order…');
+        try {
+          const result = await apiPost('/api/v1/orders/close', { position_id: pid, order_type: 'limit', limit_price: tp, quantity: qty, tif });
+          if (result.status === 'closing_pending') {
+            setProfitStatus('Resting at $' + result.limit_price.toFixed(2) + ' ' + tif.toUpperCase() + ' — fill reconciles automatically.', 'ok');
+            if (_restingOpenSym && consoleEl) fetchRestingOrders(_restingOpenSym, consoleEl);
+          } else if (result.status === 'pdt_protected') {
+            setProfitStatus('PDT protected — close manually.', 'error');
+            profitConfBtn.disabled = false;
+          } else {
+            setProfitStatus('Unexpected: ' + result.status, 'warn');
+            profitConfBtn.disabled = false;
+          }
+        } catch(err) {
+          const detail = err.data && err.data.detail ? err.data.detail : err.message;
+          setProfitStatus('Error: ' + detail, 'error');
+          profitConfBtn.disabled = false;
+        }
+      });
+    }
+
+    // ── SELL NOW — wire any data-sell-pid buttons in the console ─────────────
+    // _setSellNowState also rewires after each state change, so this only handles
+    // the initial button created by buildConsoleHtml via _sellSlotContent.
+    consoleEl && consoleEl.querySelectorAll('[data-sell-pid]').forEach(btn => {
+      btn.addEventListener('pointerdown', e => { e.preventDefault(); _startSellNowHold(btn, btn.dataset.sellPid); });
+      btn.addEventListener('pointerup',    _cancelSellNowHold);
+      btn.addEventListener('pointercancel', _cancelSellNowHold);
+      btn.addEventListener('pointerleave',  _cancelSellNowHold);
     });
   }
 
-  // Updates only the read-only data rows inside an already-open console node.
-  // Called each WS render instead of rebuilding the whole console DOM.
-  // Interactive controls (mode tabs, inputs, review state) are deliberately untouched.
+  // Updates live fields in the tier 2 console node without rebuilding it.
+  // Called on each WS tick while the console is open (hot-path reattach).
   function updateConsoleLiveFields(consoleEl, pos) {
+    const ps = priceState(pos.current_price, pos.price_age_secs);
+
+    // Keep _t2State.mark current so leg metadata % from mark stays fresh.
+    if (_t2State && pos.current_price != null) _t2State.mark = pos.current_price;
+
     function set(attr, text) {
-      const el = consoleEl.querySelector(`[data-live="${attr}"]`);
+      const el = consoleEl.querySelector('[data-live="' + attr + '"]');
       if (el) el.textContent = text;
     }
+
+    // Bot-watches column
     const tw = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
-    set('tp1-stock',        pos.tp1_stock_price        ? fmtPrice(pos.tp1_stock_price)        : '—');
-    set('tp2-stock',        pos.tp2_stock_price        ? fmtPrice(pos.tp2_stock_price)        : '—');
-    set('sl-stock',         pos.sl_stock_price         ? fmtPrice(pos.sl_stock_price)         : '—');
-    set('trail-width',      tw);
-    set('trail-stop-stock', pos.trail_stop_stock_price ? fmtPrice(pos.trail_stop_stock_price) : '—');
+    set('t2-trail-arm',   pos.trail_armed ? '⬆ armed' : '⭕ waiting');
+    set('t2-trail-width', tw);
+    set('t2-trail-stop',  pos.trail_stop_price ? fmtPrice(pos.trail_stop_price) : '—');
 
-    // Live P&L — mirrors the card badges but inside the console.
-    const ps = priceState(pos.current_price, pos.price_age_secs);
-    if (ps.state === 'live') {
-      set('cur-opt-price', fmtPrice(pos.current_price));
-      const sign = pos.unrealized_pnl >= 0 ? '+' : '';
-      set('cur-pnl', sign + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ') • LIVE');
-    } else {
-      set('cur-opt-price', ps.label);
-      set('cur-pnl', '—');
+    // Header P&L
+    const markEl = consoleEl.querySelector('[data-live="t2-mark"]');
+    if (markEl) {
+      if (ps.state === 'live') { markEl.textContent = '$' + fmtPrice(pos.current_price); markEl.className = ''; }
+      else                     { markEl.textContent = ps.label; markEl.className = 'pnl-badge stale'; }
     }
-    if (pos.peak_pnl != null) {
-      set('peak-pnl-console', fmt$(Math.round(pos.peak_pnl)) + ' (' + fmtPct(pos.peak_pnl_pct) + ')');
+    const pnlEl = consoleEl.querySelector('[data-live="t2-pnl"]');
+    if (pnlEl) {
+      if (ps.state === 'live' && pos.unrealized_pnl != null) {
+        const sign = pos.unrealized_pnl >= 0 ? '+' : '';
+        pnlEl.textContent = sign + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ')';
+        pnlEl.className   = 't2-hd-pnl-val ' + (pos.unrealized_pnl >= 0 ? 'positive' : 'negative');
+      } else {
+        pnlEl.textContent = '—';
+        pnlEl.className   = 't2-hd-pnl-val';
+      }
     }
 
-    // Keep the Exit button in sync with closing_pending transitions so double-close
-    // is blocked even while the console is held open across renders.
+    // Refresh leg metadata % from mark on every WS tick
+    if (_t2State && _t2State.broker && pos.current_price != null) {
+      const mark = pos.current_price;
+      for (const leg of ['tp', 'sl']) {
+        const price  = _t2State.broker[leg];
+        const ordId  = _t2State.broker[leg === 'tp' ? 'tpId' : 'slId'];
+        const ts     = _t2State.broker.confirmedAt;
+        if (!price) continue;
+        const metaEl = consoleEl.querySelector('[data-leg-meta="' + leg + '"]');
+        if (!metaEl) continue;
+        const pct  = ((price - mark) / mark * 100);
+        const sign = pct >= 0 ? '+' : '';
+        metaEl.innerHTML = '<span style="color:var(--text-muted);font-size:0.62rem">id&nbsp;' +
+          (ordId || '?') + (ts ? ' · ' + ts : '') +
+          ' · ' + sign + pct.toFixed(1) + '% from mark</span>';
+      }
+    }
+
+    // Exit button — sync with closing_pending transitions
     const closeBtn = consoleEl.querySelector('.pos-console-close-btn');
     if (closeBtn) {
       const isPending = pos.state === 'closing_pending';
@@ -5364,26 +5645,23 @@
     }
   }
 
-  // Fetches resting orders from the broker and renders them into the console's
-  // data-live="resting-orders" target.  Called on console open, after any
-  // mutation, and on the 30 s poll cadence — NOT on the 3 s WS tick.
+  // Fetches resting orders.  For tier 2 consoles, drives the TP/SL leg rows
+  // via _t2FetchLegRows.  Called on console open, after any mutation, and on
+  // the 30 s poll cadence.
   async function fetchRestingOrders(sym, consoleEl) {
-    const el = consoleEl && consoleEl.querySelector('[data-live="resting-orders"]');
-    if (!el || !sym) return;
+    if (!consoleEl || !sym) return;
+    if (consoleEl.classList.contains('t2-console')) {
+      return _t2FetchLegRows(sym, consoleEl);
+    }
+    // Legacy path for any non-tier-2 console still in the DOM.
+    const el = consoleEl.querySelector('[data-live="resting-orders"]');
+    if (!el) return;
     try {
       const data = await apiFetch('/api/orders/resting?option_symbol=' + encodeURIComponent(sym));
-      if (!data.ok) {
-        el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>';
-        return;
-      }
-      if (!data.orders || !data.orders.length) {
-        el.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem">— none resting —</span>';
-        return;
-      }
+      if (!data.ok) { el.innerHTML = '<span class="pnl-badge stale">⚠ could not reach broker</span>'; return; }
+      if (!data.orders || !data.orders.length) { el.innerHTML = '<span style="color:var(--text-muted);font-size:0.75rem">— none resting —</span>'; return; }
       el.innerHTML = data.orders.map(o => {
-        const priceStr = o.stop_price
-          ? 'stop $' + o.stop_price.toFixed(2)
-          : (o.price ? 'limit $' + o.price.toFixed(2) : '—');
+        const priceStr = o.stop_price ? 'stop $' + o.stop_price.toFixed(2) : (o.price ? 'limit $' + o.price.toFixed(2) : '—');
         const dur = o.duration ? o.duration.toUpperCase() : '';
         return '<div class="pos-target-row">' +
           '<span class="pos-target-type">' + (o.type || '?').toUpperCase() + '</span>' +
@@ -5428,8 +5706,7 @@
     return 'refreshed ' + Math.floor(secs / 60) + 'm ago';
   }
 
-  // Renders a single order row — shared between position cards and the orphan section.
-  // Rows are keyed data-pos-id + data-order-id for Stage 4 per-lot migration.
+  // Renders a single order row for the orphan section (unmatched working orders only).
   function _renderOrderRow(o) {
     const isStop  = o.classification === 'protective_stop';
     const isEntry = o.classification === 'entry';
@@ -5441,83 +5718,45 @@
     const priceStr = o.stop_price
       ? 'stop $' + Number(o.stop_price).toFixed(2)
       : (o.price ? 'limit $' + Number(o.price).toFixed(2) : '—');
-    const sym     = o.option_symbol || o.ticker || '?';
-    const dur     = o.duration ? o.duration.toUpperCase() : '';
-    // anything signaling a degraded state in this section uses `pnl-badge stale`;
-    // no local amber, no inline var(--warning).
+    const sym      = o.option_symbol || o.ticker || '?';
+    const dur      = o.duration ? o.duration.toUpperCase() : '';
+    const safeSym  = (sym + '').replace(/"/g, '&quot;');
     const untracked = !o.tracked
       ? ' <span class="pnl-badge stale" title="Broker has this order but system does not track it">untracked</span>'
       : '';
-    const isBracketLeg = !!o.bracket_position_id;
-    const safeSym      = (sym + '').replace(/"/g, '&quot;');
-    const safePid      = (o.bracket_position_id + '').replace(/"/g, '&quot;');
-    const currentPrice = isStop
-      ? (o.stop_price ? Number(o.stop_price).toFixed(2) : '')
-      : (o.price      ? Number(o.price).toFixed(2)      : '');
-    // SELL NOW button for the TP leg — shares the same code path as the strip chip.
-    const isTP        = o.classification === 'take_profit';
-    const posForSell  = isBracketLeg && isTP
-      ? currentPositions.find(p => p.position_id === String(o.bracket_position_id)) || null
-      : null;
-    const sellNowHtml = (isBracketLeg && isTP)
-      ? _sellSlotContent(String(o.bracket_position_id), posForSell)
-      : '';
-    const rightGroup = isBracketLeg
-      ? '<span style="margin-left:auto;display:inline-flex;align-items:center;gap:0.2rem">' +
-          '<span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-muted);font-size:0.6rem"' +
-            ' title="Part of an OCO bracket — Cancel removes both legs">OCO</span>' +
-          '<input type="number" class="pos-modify-input" step="0.01" min="0.01"' +
-            ' value="' + currentPrice + '">' +
-          '<button class="pos-console-btn" style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-            ' data-modify-pid="' + safePid + '"' +
-            ' data-classification="' + o.classification + '"' +
-            ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
-            ' data-current-price="' + currentPrice + '">Update</button>' +
-          '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
-            ' style="flex:none;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-            ' data-bracket-pid="' + safePid + '"' +
-            ' data-ticker="' + (o.ticker || '').replace(/"/g, '&quot;') + '"' +
-            ' data-sym="' + safeSym + '">Cancel bracket</button>' +
-          sellNowHtml +
-        '</span>'
-      : '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
-          ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
-          ' data-cancel-id="' + o.order_id + '"' +
-          ' data-classification="' + o.classification + '"' +
-          ' data-ticker="' + (o.ticker || '') + '"' +
-          ' data-sym="' + safeSym + '">Cancel</button>';
+    const cancelBtn = '<button class="pos-console-btn' + (isStop ? ' danger' : '') + '"' +
+      ' style="margin-left:auto;font-size:0.65rem;padding:0.1rem 0.4rem"' +
+      ' data-cancel-id="' + o.order_id + '"' +
+      ' data-classification="' + o.classification + '"' +
+      ' data-ticker="' + (o.ticker || '') + '"' +
+      ' data-sym="' + safeSym + '">Cancel</button>';
     return '<div class="pos-target-row" style="flex-wrap:wrap;gap:0.2rem 0.4rem;align-items:center"' +
-      ' data-pos-id="' + (o.bracket_position_id || '') + '"' +
-      ' data-order-id="' + (o.order_id || '') + '">' +
+      ' data-pos-id="" data-order-id="' + (o.order_id || '') + '">' +
       '<span class="pos-direction ' + dirCls + '" style="font-size:0.68rem;padding:0.1rem 0.3rem">' + clsLabel + '</span>' +
       '<span class="pos-target-type">' + (o.ticker || '?') + '</span>' +
       '<span class="pos-target-price" style="font-size:0.72rem;max-width:11rem;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="' + safeSym + '">' + sym + '</span>' +
       '<span class="pos-target-badge">' + priceStr + ' · ' + (o.quantity || '?') + '× · ' + (o.status || '') + (dur ? ' · ' + dur : '') + '</span>' +
       untracked +
-      rightGroup +
+      cancelBtn +
       '</div>';
   }
 
-  // Returns the orders subsection HTML for a single position card.
-  // Three visually distinct states: checking… / ⚠ orders unreadable / rows (possibly none).
+  // Returns a badge-only bracket status for a single position card.
+  // Three states: checking… / ⚠ unreadable / OCO resting / — no bracket —
   function _renderOrdersForPosition(positionId) {
     if (_lastOrdersData.ok === null) {
-      return '<div class="pos-orders-section"><span style="color:var(--text-muted);font-size:0.72rem">checking…</span></div>';
+      return '<div class="pos-orders-badge-row"><span style="color:var(--text-muted);font-size:0.72rem">checking…</span></div>';
     }
     if (_lastOrdersData.ok === false) {
-      return '<div class="pos-orders-section"><span class="pnl-badge stale">⚠ orders unreadable</span></div>';
+      return '<div class="pos-orders-badge-row"><span class="pnl-badge stale">⚠ unreadable</span></div>';
     }
     const orders = (_lastOrdersData.orders || []).filter(
       o => o.bracket_position_id != null && String(o.bracket_position_id) === String(positionId)
     );
     if (!orders.length) {
-      return '<div class="pos-orders-section"><span style="color:var(--text-muted);font-size:0.72rem">— no bracket —</span></div>';
+      return '<div class="pos-orders-badge-row"><span style="color:var(--text-muted);font-size:0.72rem">— no bracket —</span></div>';
     }
-    const age = _fmtOrdersAge();
-    return '<div class="pos-orders-section">' +
-      orders.map(_renderOrderRow).join('') +
-      (age ? '<div class="pos-orders-age">' + age + '</div>' : '') +
-      '</div>';
+    return '<div class="pos-orders-badge-row"><span class="pnl-badge" style="background:var(--accent-muted,#444);color:var(--text-on-accent,#fff);font-size:0.65rem">OCO resting</span></div>';
   }
 
   // Returns the always-present orphan section HTML.
@@ -6082,176 +6321,188 @@
   // Scale and Rebase are stubs. Exit at market uses the legacy modal path.
   // Order Ticket (Rungs 1-2) and Moving Stop A are wired via wireConsoleButtons.
   function buildConsoleHtml(pos) {
-    const cts     = pos.contracts_open || 1;
-    const halfCts = Math.max(1, Math.floor(cts / 2));
-    const tw      = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
-    const sym     = pos.option_symbol || `${pos.ticker} $${pos.strike} ${pos.direction}`;
-    const entry   = pos.entry_price || 0;
+    const cts    = pos.contracts_open || 1;
+    const entry  = pos.entry_price || 0;
+    const sym    = pos.option_symbol || (pos.ticker + ' $' + pos.strike + ' ' + pos.direction);
+    const layer  = pos.exit_layer || 'default';
     const isClose = pos.state === 'closing_pending';
 
-    const tp2Row = pos.tp2_stock_price ? `
-    <div class="pos-target-row">
-      <span class="pos-target-type">TP2 Stock</span>
-      <span class="pos-target-price" data-live="tp2-stock">${fmtPrice(pos.tp2_stock_price)}</span>
-      <span class="pos-target-badge system">SYSTEM</span>
-    </div>` : '';
+    // Which legs are in edit vs propose mode
+    const tpEdit    = (layer === 'oco_bracket' || layer === 'tp_only');
+    const slEdit    = (layer === 'oco_bracket' || layer === 'stop_only');
+    const tpDimmed  = (!tpEdit && layer !== 'default');
+    const slDimmed  = (!slEdit && layer !== 'default');
+    const proposeMode = (layer === 'default');
 
-    const trailStkRow = pos.trail_stop_stock_price ? `
-    <div class="pos-target-row">
-      <span class="pos-target-type">Trail stk</span>
-      <span class="pos-target-price" data-live="trail-stop-stock">${fmtPrice(pos.trail_stop_stock_price)}</span>
-    </div>` : '';
-
-    // Initial P&L render — updateConsoleLiveFields will keep these current on each WS tick.
+    // Initial P&L render
     const ps0 = priceState(pos.current_price, pos.price_age_secs);
-    const curOptInit = ps0.state === 'live' ? fmtPrice(pos.current_price) : ps0.label;
-    let curPnlInit = '—';
+    const markHtml = ps0.state === 'live'
+      ? '$' + fmtPrice(pos.current_price)
+      : '<span class="pnl-badge stale">' + ps0.label + '</span>';
+
+    let pnlTxt = '—', pnlCls = 't2-hd-pnl-val';
     if (ps0.state === 'live' && pos.unrealized_pnl != null) {
       const sign0 = pos.unrealized_pnl >= 0 ? '+' : '';
-      curPnlInit = sign0 + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ') • LIVE';
+      pnlTxt = sign0 + fmt$(Math.round(pos.unrealized_pnl)) + ' (' + fmtPct(pos.unrealized_pnl_pct) + ')';
+      pnlCls = 't2-hd-pnl-val ' + (pos.unrealized_pnl >= 0 ? 'positive' : 'negative');
     }
-    const peakPnlInit = pos.peak_pnl != null
-      ? fmt$(Math.round(pos.peak_pnl)) + ' (' + fmtPct(pos.peak_pnl_pct) + ')'
-      : '—';
 
-    return `<div class="pos-console">
-  <div class="pos-console-section">
-    <div class="pos-console-label">P&amp;L</div>
-    <div class="pos-target-row">
-      <span class="pos-target-type">Option price</span>
-      <span class="pos-target-price" data-live="cur-opt-price">${curOptInit}</span>
-    </div>
-    <div class="pos-target-row">
-      <span class="pos-target-type">Unrealized</span>
-      <span class="pos-target-price" data-live="cur-pnl">${curPnlInit}</span>
-    </div>
-    <div class="pos-target-row">
-      <span class="pos-target-type">Peak</span>
-      <span class="pos-target-price" data-live="peak-pnl-console">${peakPnlInit}</span>
-    </div>
-  </div>
-  <div class="pos-console-section">
-    <div class="pos-console-label">System exits — read-only</div>
-    <div class="pos-target-row">
-      <span class="pos-target-type">TP1 Stock</span>
-      <span class="pos-target-price" data-live="tp1-stock">${pos.tp1_stock_price ? fmtPrice(pos.tp1_stock_price) : '—'}</span>
-      <span class="pos-target-badge system">SYSTEM</span>
-    </div>${tp2Row}
-    <div class="pos-target-row">
-      <span class="pos-target-type">SL Stock</span>
-      <span class="pos-target-price" data-live="sl-stock">${pos.sl_stock_price ? fmtPrice(pos.sl_stock_price) : '—'}</span>
-      <span class="pos-target-badge system">SYSTEM</span>
-    </div>
-  </div>
-  <div class="pos-console-section">
-    <div class="pos-console-label">Trail</div>
-    <div class="pos-target-row">
-      <span class="pos-target-type">Width</span>
-      <span class="pos-target-price" data-live="trail-width">${tw}</span>
-    </div>${trailStkRow}
-  </div>
+    // Trail state
+    const tw = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
 
-  <div class="pos-console-section">
-    <div class="pos-console-label">Resting at broker</div>
-    <div data-live="resting-orders"><span style="color:var(--text-muted);font-size:0.75rem">fetching…</span></div>
-  </div>
+    function legHtml(leg, isEdit, isDimmed) {
+      const label   = leg === 'tp' ? 'Take profit' : 'Stop loss';
+      const dimNote = isDimmed ? ' <span class="t2-leg-dim-note">not resting</span>' : '';
+      const cls     = 't2-leg' + (isDimmed ? ' t2-leg--dimmed' : '') + (!isEdit && !isDimmed ? ' t2-leg--propose' : '');
+      const stagedEl = isEdit
+        ? '<span class="t2-leg-staged" data-staged="' + leg + '" style="display:none"></span>'
+        : '';
+      const metaInit = isEdit ? 'fetching…' : (leg === 'tp' ? 'enter TP premium ($)' : 'enter SL premium ($)');
+      const dis      = isDimmed ? ' disabled' : '';
+      // SELL NOW slot — only on the TP leg when a bracket is resting (edit mode).
+      // Uses the same _sellSlotContent / 600ms hold mechanic as the strip chip.
+      const sellSlot = (leg === 'tp' && isEdit)
+        ? '<div class="rs-sell-slot t2-sell-slot">' + _sellSlotContent(pos.position_id, pos) + '</div>'
+        : '';
+      return '<div class="' + cls + '" data-leg="' + leg + '">' +
+        '<div class="t2-leg-label">' + label + dimNote + '</div>' +
+        '<div class="t2-leg-price-row">' +
+          '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="-1"' + dis + '>&#8722;</button>' +
+          '<input type="number" class="t2-leg-inp" data-leg-inp="' + leg + '" step="0.01" min="0.01" placeholder="0.00"' + dis + '>' +
+          '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="1"' + dis + '>+</button>' +
+          stagedEl +
+        '</div>' +
+        '<div class="t2-leg-meta" data-leg-meta="' + leg + '">' +
+          '<span style="color:var(--text-muted);font-size:0.62rem">' + metaInit + '</span>' +
+        '</div>' +
+        sellSlot +
+      '</div>';
+    }
 
-${isAdmin ? `
-  <div class="pos-console-section pos-ticket-section">
-    <div class="pos-console-label">Order Ticket</div>
-    <div class="pos-ticket-modes">
-      <button class="pos-ticket-mode active" data-mode="profit">PROFIT-ONLY</button>
-      <button class="pos-ticket-mode" data-mode="bracket">MANUAL+STOP</button>
-    </div>
+    const nakedWarning = proposeMode
+      ? '<div class="t2-naked-warning">Nothing rests at Tradier &mdash; bot manages exits</div>'
+      : '';
 
-    <div class="pos-ticket-form" data-form="profit">
-      <div class="pos-ticket-row">
-        <span class="pos-ticket-lbl">TP limit</span>
-        <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketTp" type="number" step="0.01" min="0.01" placeholder="0.00">
-        <span class="pos-ticket-lbl" style="margin-left:0.35rem">Qty</span>
-        <input class="pos-ticket-inp pos-ticket-qty" id="ticketQty" type="number" min="1" max="${cts}" value="${cts}">
-        <select class="pos-ticket-select" id="ticketTif"><option value="gtc">GTC</option><option value="day">DAY</option></select>
-      </div>
-      <button class="pos-ticket-review-btn">Review</button>
-      <div class="pos-ticket-status" id="ticketStatus"></div>
-      <div class="pos-ticket-review" id="ticketReview" style="display:none">
-        <div class="pos-ticket-review-body" id="ticketReviewBody"></div>
-        <button class="pos-ticket-confirm-btn">Confirm order</button>
-      </div>
-    </div>
+    const armRow = proposeMode
+      ? '<div class="t2-arm-row" data-live="t2-arm-row">' +
+          '<div class="t2-arm-preview" data-live="t2-arm-preview">Enter prices above, then arm</div>' +
+          '<button class="t2-arm-btn" disabled>Arm bracket</button>' +
+          '<div class="t2-arm-status" data-live="t2-arm-status"></div>' +
+        '</div>'
+      : '';
 
-    <div class="pos-ticket-form" data-form="bracket" style="display:none">
-      <div class="pos-preview-tag" style="margin-bottom:0.4rem">OCO · both legs GTC · enter option premiums ($)</div>
-      <div class="pos-ticket-row">
-        <span class="pos-ticket-lbl">TP limit</span>
-        <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketTpBkt" type="number" step="0.01" min="0.01" placeholder="0.00">
-        <span class="pos-ticket-lbl" style="margin-left:0.35rem">Qty</span>
-        <input class="pos-ticket-inp pos-ticket-qty" id="ticketQtyBkt" type="number" min="1" max="${cts}" value="${cts}">
-      </div>
-      <div class="pos-ticket-sep">— protection —</div>
-      <div class="pos-ticket-row">
-        <span class="pos-ticket-lbl">Stop</span>
-        <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketStop" type="number" step="0.01" min="0.01" placeholder="0.00">
-      </div>
-      <button class="pos-ticket-review-btn">Review</button>
-      <div class="pos-ticket-status" id="ticketStatusBkt"></div>
-      <div class="pos-ticket-review" id="ticketReviewBkt" style="display:none">
-        <div class="pos-ticket-review-body" id="ticketReviewBodyBkt"></div>
-        <button class="pos-ticket-confirm-btn">Confirm order</button>
-      </div>
-    </div>
-  </div>
+    // Strategy dropdown — 3 standard options; disabled transitions include the reason.
+    // stop_only is an inherited state (TP filled), not a user-selectable strategy —
+    // shown as a 4th read-only option only when that is the current layer.
+    let stratOpts = '<option value="default"' + (layer === 'default' ? ' selected' : '') + '>Bot managed</option>';
+    {
+      let ocoDis = '', ocoSuffix = '';
+      if (layer === 'tp_only')   { ocoDis = ' disabled'; ocoSuffix = ' — cancel TP first'; }
+      if (layer === 'stop_only') { ocoDis = ' disabled'; ocoSuffix = ' — cancel stop first'; }
+      stratOpts += '<option value="oco_bracket"' +
+        (layer === 'oco_bracket' ? ' selected' : '') + ocoDis +
+        '>OCO bracket' + ocoSuffix + '</option>';
+    }
+    {
+      let tpDis = '', tpSuffix = '';
+      if (layer === 'oco_bracket') { tpDis = ' disabled'; tpSuffix = ' — cancel bracket first'; }
+      if (layer === 'stop_only')   { tpDis = ' disabled'; tpSuffix = ' — cancel stop first'; }
+      if (layer === 'default')     { tpDis = ' disabled'; tpSuffix = ' — use profit ticket'; }
+      stratOpts += '<option value="tp_only"' +
+        (layer === 'tp_only' ? ' selected' : '') + tpDis +
+        '>TP only' + tpSuffix + '</option>';
+    }
+    if (layer === 'stop_only') {
+      stratOpts += '<option value="stop_only" selected disabled>Stop only (TP filled)</option>';
+    }
+    const stratSel = '<select class="t2-strategy-sel">' + stratOpts + '</select>';
 
-  <div class="pos-console-section pos-ticket-section">
-    <div class="pos-console-label">Set / move stop</div>
-    <div class="pos-ticket-row">
-      <span class="pos-ticket-lbl">Stop $</span>
-      <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp" id="ticketStopUpd" type="number" step="0.01" min="0.01" placeholder="0.00">
-      <button class="pos-ticket-stop-btn">Update</button>
-    </div>
-    <div class="pos-ticket-status" id="ticketStopStatus"></div>
-    <div class="pos-ticket-review" id="ticketStopReview" style="display:none">
-      <div class="pos-ticket-review-body" id="ticketStopReviewBody"></div>
-      <button class="pos-ticket-confirm-stop-btn">Confirm stop update</button>
-    </div>
-    <div class="pos-preview-tag">cancel existing → place new · never two stops resting</div>
-  </div>
+    const profitSection = isAdmin
+      ? '<div class="t2-profit-section">' +
+          '<div class="t2-section-hd">Profit-only order</div>' +
+          '<div class="pos-preview-tag" style="margin-bottom:0.4rem">Limit SELL &middot; does not cancel the stop</div>' +
+          '<div class="t2-profit-row">' +
+            '<span class="t2-profit-lbl">TP limit</span>' +
+            '<span class="t2-profit-dollar">$</span>' +
+            '<input class="t2-profit-tp-inp" type="number" step="0.01" min="0.01" placeholder="0.00">' +
+            '<span class="t2-profit-lbl" style="margin-left:0.3rem">Qty</span>' +
+            '<input class="t2-profit-qty-inp" type="number" min="1" max="' + cts + '" value="' + cts + '" style="width:2.8rem">' +
+            '<select class="t2-profit-tif-sel"><option value="gtc">GTC</option><option value="day">DAY</option></select>' +
+          '</div>' +
+          '<button class="t2-profit-review-btn">Review</button>' +
+          '<div class="t2-profit-status"></div>' +
+          '<div class="t2-profit-review" style="display:none">' +
+            '<div class="t2-profit-review-body"></div>' +
+            '<button class="t2-profit-confirm-btn">Confirm order</button>' +
+          '</div>' +
+        '</div>'
+      : '';
 
-${pos.exit_layer === 'oco_bracket' ? `
-  <div class="pos-console-section pos-ticket-section">
-    <div class="pos-console-label">Move OCO stop <span style="font-weight:400;color:var(--text-muted);font-size:0.7rem">in-place PUT · no cancel</span></div>
-    <div class="pos-target-row" style="margin-bottom:0.25rem">
-      <span class="pos-target-type">From (configured)</span>
-      <span class="pos-target-price">${pos.sl_price ? fmtPrice(pos.sl_price) : '—'}</span>
-      <span class="pos-target-badge system" style="font-size:0.6rem">broker truth in Resting above</span>
-    </div>
-    <div class="pos-ticket-row">
-      <span class="pos-ticket-lbl">New stop $</span>
-      <span class="pos-ticket-dollar">$</span><input class="pos-ticket-inp pos-oco-stop-inp" type="number" step="0.01" min="0.01" placeholder="${pos.sl_price ? pos.sl_price.toFixed(2) : '0.00'}" value="${pos.sl_price ? pos.sl_price.toFixed(2) : ''}">
-    </div>
-    <button class="pos-ticket-oco-stop-btn" style="margin-top:0.4rem">Move stop →</button>
-    <div class="pos-ticket-status pos-oco-stop-status"></div>
-  </div>` : ''}
+    return '<div class="pos-console t2-console">' +
 
-  <div class="pos-console-actions">
-    <button class="pos-console-btn" data-stub="partial_close" data-contracts="${halfCts}" data-pos-id="${pos.position_id}">
-      Scale ${halfCts}x
-      <span class="pos-preview-tag">stub · not wired</span>
-    </button>
-    <button class="pos-console-btn" data-stub="rebase_trail" data-pos-id="${pos.position_id}">
-      Rebase Trail
-      <span class="pos-preview-tag">stub · not wired</span>
-    </button>
-    <button class="pos-console-btn danger pos-console-close-btn"
-            data-pos-id="${pos.position_id}"
-            data-contracts="${cts}"
-            data-symbol="${sym}"
-            data-entry="${entry}"${isClose ? ' disabled title="Close already pending — double-close blocked"' : ''}>
-      Exit ${cts}x
-      <span class="pos-preview-tag">${isClose ? 'close pending — blocked' : 'market · kill-switch gated'}</span>
-    </button>
-  </div>` : ''}
-</div>`;
+      '<div class="t2-header">' +
+        '<div class="t2-hd-sym">' + sym + '</div>' +
+        '<div class="t2-hd-meta">' + cts + '&times; @ $' + entry.toFixed(2) + ' &rarr; <span data-live="t2-mark">' + markHtml + '</span></div>' +
+        '<div class="' + pnlCls + '" data-live="t2-pnl">' + pnlTxt + '</div>' +
+      '</div>' +
+
+      '<div class="t2-strategy-row">' +
+        '<span class="t2-strategy-lbl">Exit strategy</span>' +
+        stratSel +
+        '<span class="t2-strategy-status" data-live="t2-strategy-status"></span>' +
+      '</div>' +
+
+      '<div class="t2-columns">' +
+        '<div class="t2-legs-col">' +
+          '<div class="t2-col-hd">Rests at broker</div>' +
+          nakedWarning +
+          legHtml('tp', tpEdit, tpDimmed) +
+          legHtml('sl', slEdit, slDimmed) +
+        '</div>' +
+        '<div class="t2-watch-col">' +
+          '<div class="t2-col-hd">Bot watches</div>' +
+          '<div class="t2-watch-row"><span class="t2-watch-lbl">Trail arm</span>' +
+            '<span class="t2-watch-val" data-live="t2-trail-arm">' + (pos.trail_armed ? '&#11014; armed' : '&#11093; waiting') + '</span></div>' +
+          '<div class="t2-watch-row"><span class="t2-watch-lbl">Width</span>' +
+            '<span class="t2-watch-val" data-live="t2-trail-width">' + tw + '</span></div>' +
+          '<div class="t2-watch-row"><span class="t2-watch-lbl">Stop opt</span>' +
+            '<span class="t2-watch-val" data-live="t2-trail-stop">' + (pos.trail_stop_price ? fmtPrice(pos.trail_stop_price) : '&mdash;') + '</span></div>' +
+        '</div>' +
+      '</div>' +
+
+      armRow +
+
+      '<div class="t2-staged-bar" data-live="t2-staged-bar" style="display:none">' +
+        '<span class="t2-staged-desc" data-live="t2-staged-desc"></span>' +
+        '<div class="t2-staged-actions">' +
+          '<button class="t2-apply-btn">Apply</button>' +
+          '<button class="t2-discard-btn">Discard</button>' +
+        '</div>' +
+        '<div class="t2-apply-status" data-live="t2-apply-status"></div>' +
+      '</div>' +
+
+      profitSection +
+
+      '<div class="t2-changelog-section">' +
+        '<div class="t2-section-hd">Recent actions</div>' +
+        '<div class="t2-changelog" data-live="t2-changelog">' +
+          '<span style="color:var(--text-muted);font-size:0.62rem">&mdash; none yet &mdash;</span>' +
+        '</div>' +
+      '</div>' +
+
+      '<div class="pos-console-actions">' +
+        '<button class="pos-console-btn danger pos-console-close-btn"' +
+          ' data-pos-id="' + pos.position_id + '"' +
+          ' data-contracts="' + cts + '"' +
+          ' data-symbol="' + (sym + '').replace(/"/g, '&quot;') + '"' +
+          ' data-entry="' + entry + '"' +
+          (isClose ? ' disabled title="Close already pending — double-close blocked"' : '') + '>' +
+          'Exit ' + cts + '&times;' +
+          '<span class="pos-preview-tag">' + (isClose ? 'close pending — blocked' : 'market &middot; kill-switch gated') + '</span>' +
+        '</button>' +
+      '</div>' +
+
+    '</div>';
   }
 
   // ── History tab ───────────────────────────────────────────────────────────
