@@ -38,6 +38,8 @@
   let _restingOpenSym    = null; // option_symbol whose resting orders are being polled
   let _workingInterval   = null; // setInterval handle for the account-level working-orders poll
   let _lastOrdersData    = { ok: null, orders: null, fetchedAt: null }; // last /api/orders/working result
+  let _stripExpanded   = false;
+  let _stripPnlToday   = { state: 'empty', value: null };
 
   // ── SELL NOW state ──────────────────────────────────────────────────────────
   const _sellNowInFlight = new Set();   // position_ids with a modify in flight
@@ -380,6 +382,8 @@
     _pollOrders();
     _workingInterval = setInterval(_pollOrders, 30_000);
     _wireStripSellNow();
+    _wireStripToggle();
+    _wireStripSelection();
     _wireSellAllBtn();
     _injectUniverseView();
     _injectUniverseToggle();
@@ -591,28 +595,62 @@
   }
 
   // ── Risk strip — always-visible, survives COCKPIT/UNIVERSE tab switch ────────
-  // Driven by the same positions array as renderPositions. Aggregate data-quality
-  // badge appears only when at least one position is non-live so it's never noise.
-  // SELL NOW slot reserved per-chip (Stage 3). closing_pending distinguished by
-  // amber left-border + CLOSING chip.
+  // Two modes: collapsed (header only) and expanded (header + per-position rows).
+  // Toggle via #riskStripToggle. Clicking a row selects that position in tier 2.
+
+  // Layers that have orders resting at the broker.
+  const _BROKER_LAYERS = new Set(['oco_bracket', 'tp_only', 'stop_only']);
+
+  // Updates the today-P&L span from the cached _stripPnlToday value.
+  function _updateStripPnl() {
+    const el = document.getElementById('riskStripPnl');
+    if (!el) return;
+    const { state, value } = _stripPnlToday;
+    el.className = 'risk-strip-stat risk-strip-stat--pnl';
+    if (state === 'error' || state === 'empty' || value == null) {
+      el.textContent = '—';
+      el.removeAttribute('data-state');
+      return;
+    }
+    el.textContent = fmtPnl$(value);
+    if (state === 'stale') {
+      el.setAttribute('data-state', 'stale');
+    } else if (value > 0) {
+      el.setAttribute('data-state', 'pos');
+    } else if (value < 0) {
+      el.setAttribute('data-state', 'neg');
+    } else {
+      el.setAttribute('data-state', 'flat');
+    }
+  }
 
   function renderRiskStrip(positions) {
     const body      = document.getElementById('riskStripBody');
     const countEl   = document.getElementById('riskStripCount');
     const qualityEl = document.getElementById('riskStripQuality');
+    const costEl    = document.getElementById('riskStripCost');
+    const nakedEl   = document.getElementById('riskStripNaked');
     if (!body || !countEl || !qualityEl) return;
 
     const open = positions.filter(p => p.state === 'open' || p.state === 'closing_pending');
 
     countEl.textContent = open.length || '0';
 
+    // ── Total cost ─────────────────────────────────────────────────────────────
+    if (costEl) {
+      const tc = open.reduce((s, p) => s + (p.total_cost || 0), 0);
+      costEl.textContent = tc > 0 ? fmtPrice(tc) : '—';
+    }
+
     if (open.length === 0) {
-      body.innerHTML = '<span class="risk-strip-empty">No open positions</span>';
+      body.style.display = 'none';
+      body.innerHTML     = '<span class="risk-strip-empty">No open positions</span>';
       qualityEl.style.display = 'none';
+      if (nakedEl) nakedEl.style.display = 'none';
       return;
     }
 
-    // Aggregate data-quality: count degraded positions for header badge
+    // ── Data-quality badge ─────────────────────────────────────────────────────
     let staleCnt = 0, noPriceCnt = 0;
     open.forEach(p => {
       const s = priceState(p.current_price, p.price_age_secs).state;
@@ -625,9 +663,27 @@
       const parts = [];
       if (staleCnt)   parts.push(staleCnt + ' STALE');
       if (noPriceCnt) parts.push(noPriceCnt + ' NO PRICE');
-      qualityEl.textContent  = '· ' + parts.join(' · ');
+      qualityEl.textContent   = '· ' + parts.join(' · ');
       qualityEl.style.display = '';
     }
+
+    // ── Naked-position warning pill ────────────────────────────────────────────
+    if (nakedEl) {
+      const nakedCount = open.filter(p => !_BROKER_LAYERS.has(p.exit_layer || 'default')).length;
+      if (nakedCount > 0) {
+        nakedEl.textContent   = nakedCount + ' bot-held only';
+        nakedEl.style.display = '';
+      } else {
+        nakedEl.style.display = 'none';
+      }
+    }
+
+    // ── Body — hidden in collapsed mode ────────────────────────────────────────
+    if (!_stripExpanded) {
+      body.style.display = 'none';
+      return;
+    }
+    body.style.display = '';
 
     body.innerHTML = open.map(p => {
       const ps      = priceState(p.current_price, p.price_age_secs);
@@ -635,7 +691,7 @@
       const closing = p.state === 'closing_pending';
 
       const strikeStr = p.strike ? '$' + parseFloat(p.strike).toFixed(0) : '—';
-      const expShort  = p.expiry ? p.expiry.slice(5).replace('-', '/') : '—'; // "MM/DD"
+      const expShort  = p.expiry ? p.expiry.slice(5).replace('-', '/') : '—';
       const qty       = (p.contracts_open != null ? p.contracts_open : '—') + 'c';
       const entryStr  = fmtPrice(p.entry_price);
 
@@ -652,15 +708,10 @@
         pnlHtml   = `<span class="rs-pnl neutral">—</span>`;
       }
 
-      const closingChip = closing
-        ? `<span class="rs-closing-chip">CLOSING</span> `
-        : '';
+      const closingChip = closing ? `<span class="rs-closing-chip">CLOSING</span> ` : '';
 
-      // Bracket marker — three states, omit only before first fetch (ok === null):
-      //   resting   → OCO  pnl-badge live
-      //   none      → —    muted text
-      //   unreadable → ?   pnl-badge stale
-      // Rendering nothing on failure would make "unreadable" look like "no bracket" on the strip.
+      // Bracket marker — three states, omit only before first fetch (ok === null).
+      // Rendering nothing on failure would make "unreadable" look like "no bracket".
       let bktHtml = '';
       if (_lastOrdersData.ok === false) {
         bktHtml = ' <span class="rs-bkt pnl-badge stale" title="Bracket status unreadable">?</span>';
@@ -673,17 +724,39 @@
           : ' <span class="rs-bkt rs-bkt--none">—</span>';
       }
 
-      return `<div class="rs-chip${closing ? ' rs-chip--closing' : ''}" data-pos-id="${p.position_id}">\
-${closingChip}<span class="rs-ticker">${p.ticker}</span> \
-<span class="rs-dir ${dir}">${dir === 'put' ? 'PUT' : 'CALL'}</span> \
-<span class="rs-meta">${strikeStr} ${expShort}</span> \
-<span class="rs-sep">·</span> \
-<span class="rs-meta">${qty}</span> \
-<span class="rs-sep">·</span> \
-${priceHtml} \
-<span class="rs-sep">·</span> \
-${pnlHtml}${bktHtml}\
-<span class="rs-sell-slot">${_sellSlotContent(p.position_id, p)}</span></div>`;
+      // ── TP / SL row ─────────────────────────────────────────────────────────
+      // TP: payload has no option-premium field for TP (tp1_price / tp2_price absent
+      // from positions API). Show stock target labeled "stk $X" to be honest.
+      // SL: sl_price is the configured option premium from exit_strategy — use it.
+      const exitLayer   = p.exit_layer || 'default';
+      const hasBroker   = _BROKER_LAYERS.has(exitLayer);
+
+      let tpDisplay;
+      if (p.trail_armed) {
+        const ts = p.trail_stop_price ? ' @ ' + fmtPrice(p.trail_stop_price) : '';
+        tpDisplay = `<span class="rs-exit-val">trail${ts}</span>`;
+      } else if (hasBroker && (p.tp2_stock_price || p.tp1_stock_price)) {
+        const stkTp = p.tp2_stock_price || p.tp1_stock_price;
+        tpDisplay = `<span class="rs-exit-val rs-exit-stk" title="System stock target — option premium not in payload">stk&nbsp;${fmtPrice(stkTp)}</span>`;
+      } else {
+        tpDisplay = `<span class="rs-exit-muted">bot</span>`;
+      }
+
+      let slDisplay;
+      if (hasBroker && p.sl_price) {
+        slDisplay = `<span class="rs-exit-val">${fmtPrice(p.sl_price)}</span>`;
+      } else {
+        slDisplay = `<span class="rs-exit-muted">bot only</span>`;
+      }
+
+      const diesHtml = !hasBroker
+        ? `<span class="rs-dies-flag" title="Nothing rests at broker — exits die if droplet stops">dies w/ droplet</span>`
+        : '';
+
+      return `<div class="rs-chip rs-chip--row${closing ? ' rs-chip--closing' : ''}" data-pos-id="${p.position_id}">
+<div class="rs-chip-main">${closingChip}<span class="rs-ticker">${p.ticker}</span> <span class="rs-dir ${dir}">${dir === 'put' ? 'PUT' : 'CALL'}</span> <span class="rs-meta">${strikeStr} ${expShort}</span> <span class="rs-sep">·</span> <span class="rs-meta">${qty}</span> <span class="rs-sep">·</span> ${priceHtml} <span class="rs-sep">·</span> ${pnlHtml}${bktHtml}<span class="rs-sell-slot">${_sellSlotContent(p.position_id, p)}</span></div>
+<div class="rs-exit-row"><span class="rs-exit-lbl">TP</span>${tpDisplay}<span class="rs-sep">·</span><span class="rs-exit-lbl">SL</span>${slDisplay}${diesHtml}</div>
+</div>`;
     }).join('');
   }
 
@@ -791,6 +864,8 @@ ${pnlHtml}${bktHtml}\
                    : fmtPnl$(pl.value);
       const plColor = pl.value == null ? '' : pl.value >= 0 ? 'cmd-rc-calls' : 'cmd-rc-puts';
       _rcSetCell('rcCellPnl', 'rcPnl', pl.state, plHtml, plColor);
+      _stripPnlToday = { state: pl.state, value: pl.value ?? null };
+      _updateStripPnl();
 
       // ── Risk Left ────────────────────────────────────────────────
       const rl  = d.risk_left || {};
@@ -5904,6 +5979,45 @@ ${pnlHtml}${bktHtml}\
       _setSellNowState(positionId, { status: 'error', msg: 'Unexpected error — check console' });
       throw err;
     }
+  }
+
+  // One-time wiring for the expand/collapse toggle button.
+  function _wireStripToggle() {
+    const btn = document.getElementById('riskStripToggle');
+    if (!btn) return;
+    btn.addEventListener('click', () => {
+      _stripExpanded = !_stripExpanded;
+      btn.textContent = _stripExpanded ? '▲' : '▼';
+      btn.title       = _stripExpanded ? 'Collapse positions' : 'Expand positions';
+      document.getElementById('riskStrip')
+        ?.classList.toggle('risk-strip--expanded', _stripExpanded);
+      renderRiskStrip(currentPositions);
+    });
+  }
+
+  // Delegated click handler — selects a position for tier 2.
+  // The body is innerHTML-replaced on every render; delegation survives re-renders.
+  // Guards skip SELL NOW so a short press that doesn't complete the 600ms hold
+  // cannot accidentally trigger selection.
+  function _wireStripSelection() {
+    const body = document.getElementById('riskStripBody');
+    if (!body) return;
+    body.addEventListener('click', e => {
+      if (e.target.closest('[data-sell-pid]')) return;
+      if (e.target.closest('.rs-sell-slot'))   return;
+      const chip = e.target.closest('.rs-chip');
+      if (!chip) return;
+      const posId = chip.dataset.posId;
+      if (!posId) return;
+      const tabPos = document.getElementById('tabPositions');
+      if (tabPos && !tabPos.classList.contains('active')) tabPos.click();
+      const card = document.querySelector(`.pos-card[data-pos-id="${CSS.escape(posId)}"]`);
+      const pos  = currentPositions.find(p => p.position_id === posId);
+      if (card && pos) {
+        if (openConsoleId !== posId) toggleConsole(card, pos);
+        card.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+      }
+    });
   }
 
   // One-time delegated listener for the strip SELL NOW buttons.

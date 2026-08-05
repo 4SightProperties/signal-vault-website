@@ -2477,6 +2477,115 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .rs-bkt { flex: none; }
 .rs-bkt--none { color: var(--text-muted); font-size: 0.72rem; }
 
+/* ── Tier 1: strip header stats and naked pill ──────────────────────────── */
+.rs-hd-sep {
+  color: var(--text-muted);
+  font-size: 0.6rem;
+  flex-shrink: 0;
+}
+.risk-strip-stat {
+  font-size: 0.62rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+.risk-strip-stat--pnl[data-state="pos"] { color: var(--accent); }
+.risk-strip-stat--pnl[data-state="neg"] { color: var(--danger); }
+.risk-strip-stat--pnl[data-state="flat"]  { color: var(--text-muted); }
+.risk-strip-stat--pnl[data-state="stale"] { color: var(--text-muted); opacity: 0.6; }
+.risk-strip-naked {
+  background: rgba(239,68,68,0.15);
+  border: 1px solid rgba(239,68,68,0.35);
+  border-radius: 3px;
+  color: var(--danger);
+  font-size: 0.54rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  padding: 0.05rem 0.3rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+/* ── Tier 1: expand/collapse toggle ─────────────────────────────────────── */
+.rs-toggle-btn {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  cursor: pointer;
+  font-size: 0.58rem;
+  line-height: 1;
+  padding: 0.1rem 0.2rem;
+  flex-shrink: 0;
+  transition: color 0.15s;
+  user-select: none;
+  -webkit-user-select: none;
+}
+.rs-toggle-btn:hover { color: var(--text-secondary); }
+
+/* ── Tier 1: expanded strip body ─────────────────────────────────────────── */
+.risk-strip--expanded .risk-strip-body {
+  max-height: 200px;
+  overflow-y: auto;
+  scrollbar-width: none;
+}
+.risk-strip--expanded .risk-strip-body::-webkit-scrollbar { display: none; }
+
+/* ── Tier 1: row-mode chips ─────────────────────────────────────────────── */
+.rs-chip--row {
+  flex-direction: column;
+  align-items: stretch;
+  gap: 0;
+  padding-bottom: 0.3rem;
+}
+.rs-chip-main {
+  display: flex;
+  align-items: center;
+  gap: 0.28rem;
+  flex-wrap: nowrap;
+  min-width: 0;
+}
+/* In non-expanded chips, main takes full layout role — no change needed */
+
+/* ── Tier 1: exit-row under each expanded chip ───────────────────────────── */
+.rs-exit-row {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+  padding: 0.18rem 0.35rem 0;
+  flex-wrap: wrap;
+  font-size: 0.6rem;
+}
+.rs-exit-lbl {
+  color: var(--text-muted);
+  font-weight: 600;
+  letter-spacing: 0.03em;
+  flex-shrink: 0;
+}
+.rs-exit-val {
+  color: var(--text-secondary);
+  font-family: var(--font-mono, monospace);
+  flex-shrink: 0;
+}
+.rs-exit-stk {
+  color: var(--text-muted);
+  font-size: 0.56rem;
+  font-style: italic;
+}
+.rs-exit-muted {
+  color: var(--text-muted);
+  font-style: italic;
+}
+.rs-dies-flag {
+  background: rgba(239,68,68,0.12);
+  border-radius: 2px;
+  color: var(--danger);
+  font-size: 0.54rem;
+  font-weight: 600;
+  margin-left: auto;
+  padding: 0.02rem 0.25rem;
+  white-space: nowrap;
+}
+
 /* ── Stage 3b: SELL ALL button in strip header ───────────────────────────── */
 .rs-sell-all-btn {
   background: rgba(239,68,68,0.12);
