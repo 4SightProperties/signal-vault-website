@@ -2290,7 +2290,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 /* ── Command Center 3-column grid ────────────────────────────── */
 .cmd-main {
   display: grid;
-  grid-template-columns: 220px 1fr 310px;
+  grid-template-columns: 220px 1fr 440px;
   gap: 0;
   flex: 1;
   overflow: hidden;
