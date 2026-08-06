@@ -6333,19 +6333,24 @@
     const tw = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
 
     function legHtml(leg, isEdit, isDimmed) {
-      const label   = leg === 'tp' ? 'Take profit' : 'Stop loss';
+      const isProposeMode = !isEdit && !isDimmed;
+      const label   = isProposeMode ? (leg === 'tp' ? 'TP' : 'SL') : (leg === 'tp' ? 'Take profit' : 'Stop loss');
       const dimNote = isDimmed ? ' <span class="t2-leg-dim-note">not resting</span>' : '';
-      const cls     = 't2-leg' + (isDimmed ? ' t2-leg--dimmed' : '') + (!isEdit && !isDimmed ? ' t2-leg--propose' : '');
+      const cls     = 't2-leg' + (isDimmed ? ' t2-leg--dimmed' : '') + (isProposeMode ? ' t2-leg--propose' : '');
       const stagedEl = isEdit
         ? '<span class="t2-leg-staged" data-staged="' + leg + '" style="display:none"></span>'
         : '';
-      const metaInit = isEdit ? 'fetching…' : (leg === 'tp' ? 'enter TP premium ($)' : 'enter SL premium ($)');
       const dis      = isDimmed ? ' disabled' : '';
       // SELL NOW slot — only on the TP leg when a bracket is resting (edit mode).
       // Uses the same _sellSlotContent / 600ms hold mechanic as the strip chip.
       const sellSlot = (leg === 'tp' && isEdit)
         ? '<div class="rs-sell-slot t2-sell-slot">' + _sellSlotContent(pos.position_id, pos) + '</div>'
         : '';
+      // In propose mode: meta row omitted — a shared hint sits outside both legs.
+      const metaRow = isProposeMode ? '' :
+        '<div class="t2-leg-meta" data-leg-meta="' + leg + '">' +
+          '<span style="color:var(--text-muted);font-size:0.62rem">fetching…</span>' +
+        '</div>';
       return '<div class="' + cls + '" data-leg="' + leg + '">' +
         '<div class="t2-leg-label">' + label + dimNote + '</div>' +
         '<div class="t2-leg-price-row">' +
@@ -6354,9 +6359,7 @@
           '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="1"' + dis + '>+</button>' +
           stagedEl +
         '</div>' +
-        '<div class="t2-leg-meta" data-leg-meta="' + leg + '">' +
-          '<span style="color:var(--text-muted);font-size:0.62rem">' + metaInit + '</span>' +
-        '</div>' +
+        metaRow +
         sellSlot +
       '</div>';
     }
@@ -6381,9 +6384,10 @@
           '<div class="t2-watch-row"><span class="t2-watch-lbl">Stop opt</span>' +
             '<span class="t2-watch-val" data-live="t2-trail-stop">' + trailStop + '</span></div>' +
         '</div>' +
-        '<div class="t2-legs">' +
+        '<div class="t2-legs t2-legs--inline">' +
           legHtml('tp', false, false) +
           legHtml('sl', false, false) +
+          '<div class="t2-legs-hint">enter option premiums ($)</div>' +
         '</div>' +
         armRow
       : '<div class="t2-legs">' +

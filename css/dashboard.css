@@ -4208,6 +4208,29 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin-top: 0.3rem;
 }
 
+/* Propose mode: TP and SL side-by-side on one row */
+.t2-legs--inline {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem 0.75rem;
+}
+.t2-legs--inline .t2-leg--propose {
+  display: flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-bottom: 0;
+}
+.t2-legs--inline .t2-leg--propose .t2-leg-label {
+  margin-bottom: 0;
+}
+.t2-legs-hint {
+  width: 100%;
+  color: var(--text-muted);
+  font-size: 0.62rem;
+  margin-top: -0.1rem;
+}
+
 /* Bot-watches column */
 .t2-watch-row {
   display: flex;
