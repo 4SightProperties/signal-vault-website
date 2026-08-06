@@ -44,6 +44,12 @@
   // ── SELL NOW state ──────────────────────────────────────────────────────────
   const _sellNowInFlight = new Set();   // position_ids with a modify in flight
   const _sellNowState    = new Map();   // position_id → {status, mid?, msg?} — persists across re-renders
+
+  // ── Close (limit) resting state ──────────────────────────────────────────────
+  // Tracks the broker-confirmed resting price after a limit close is placed so the
+  // button can show "Resting $X.XX · reprice" without a round-trip to /api/orders/resting.
+  // Keyed by position_id. Entries are harmless for closed positions (GC'd naturally).
+  const _closeRestingState = new Map(); // position_id → { price: number }
   let   _sellNowHoldTimer    = null;
   let   _sellNowHoldInterval = null;
   let   _sellNowHoldBtn      = null;
@@ -521,14 +527,6 @@
     ${pos.trail_stop_price ? '<span>stop ' + fmtPrice(pos.trail_stop_price) + '</span>' : ''}
   </div>
   <div class="pos-levels">
-    <div class="pos-level-item">
-      <span class="pos-level-label">TP1 stock</span>
-      <span class="pos-level-value">${pos.tp1_stock_price ? fmtPrice(pos.tp1_stock_price) : '—'}</span>
-    </div>
-    <div class="pos-level-item">
-      <span class="pos-level-label">SL stock</span>
-      <span class="pos-level-value">${pos.sl_stock_price ? fmtPrice(pos.sl_stock_price) : '—'}</span>
-    </div>
     <div class="pos-level-item">
       <span class="pos-level-label">Peak opt</span>
       <span class="pos-level-value">${fmtPrice(pos.peak_price)}</span>
@@ -5124,7 +5122,15 @@
         continue;
       }
 
-      if (updateInputs && inp) inp.value = price.toFixed(2);
+      if (updateInputs && inp) {
+        if (_t2State && _t2State.pctMode && _t2State.entry) {
+          const pct = (_t2State.entry > 0) ? ((price / _t2State.entry - 1) * 100) : null;
+          inp.value = pct != null ? pct.toFixed(1) : price.toFixed(2);
+        } else {
+          inp.value = price.toFixed(2);
+        }
+        inp.dispatchEvent(new Event('input'));
+      }
 
       let pctStr = '';
       if (mark && mark > 0) {
@@ -5162,6 +5168,8 @@
       staged:           { tp: null, sl: null },
       broker:           { tp: null, sl: null, tpId: null, slId: null, confirmedAt: null },
       mark:             pos.current_price || null,
+      entry:            entry,
+      pctMode:          false,
       changelog:        [],
       initialFetchDone: false,
     };
@@ -5189,33 +5197,146 @@
       el.style.display = msg ? '' : 'none';
     }
 
-    // ── Exit button — market close ────────────────────────────────────────────
+    // ── Pre-populate resting close price on first open ───────────────────────
+    // If the console opens while the position is closing_pending and we have no
+    // cached price (e.g. after a page reload), fetch from /api/orders/resting so
+    // the tag shows the actual resting price rather than the fallback text.
+    if (pos.state === 'closing_pending' && sym && !_closeRestingState.has(pid)) {
+      (async () => {
+        try {
+          const orders = await apiFetch('/api/orders/resting?option_symbol=' + encodeURIComponent(sym));
+          if (!Array.isArray(orders)) return;
+          const limitClose = orders.find(o => o.price != null && !o.stop_price);
+          if (!limitClose) return;
+          _closeRestingState.set(pid, { price: Number(limitClose.price) });
+          const btn = card.querySelector('.pos-console-close-btn');
+          if (btn && !btn.disabled) {
+            const tag = btn.querySelector('.pos-preview-tag');
+            if (tag) tag.textContent = 'resting $' + Number(limitClose.price).toFixed(2) + ' · press to reprice';
+          }
+        } catch (_) {
+          // Fetch failed — show a distinct state so it is not confused with
+          // "not yet fetched". Price stays absent; user should check broker.
+          const btn = card.querySelector('.pos-console-close-btn');
+          if (btn && !btn.disabled) {
+            const tag = btn.querySelector('.pos-preview-tag');
+            if (tag && tag.textContent.includes('resting limit')) {
+              tag.textContent = 'resting · price unavailable · press to reprice';
+            }
+          }
+        }
+      })();
+    }
+
+    // ── Exit button — limit close at mid, re-pressable to reprice ────────────
     const closeBtn = card.querySelector('.pos-console-close-btn');
     if (closeBtn) {
-      closeBtn.addEventListener('click', e => {
+      closeBtn.addEventListener('click', async e => {
         e.stopPropagation();
-        showConfirmModal({
-          title:   'Close ' + ticker + ' position',
-          body:    '<strong>' + sym + '</strong><br>' +
-                   'Qty: <strong>' + cts + ' contract' + (cts !== 1 ? 's' : '') + '</strong> · entry $' + entry.toFixed(2) + '<br><br>' +
-                   '<span style="color:var(--text-muted);font-size:0.68rem">Market order. Fill may differ from mid. Gated by kill-switch.</span>',
-          okLabel: 'Close ' + cts + '× at market',
-          okClass: 'danger',
-          onOk: async (setStatus) => {
+        const livePos = currentPositions.find(p => p.position_id === pid) || pos;
+
+        // ── Reprice path — position already has a resting limit close ──────
+        if (livePos.state === 'closing_pending') {
+          const resting = _closeRestingState.get(pid);
+          const restingStr = resting ? '$' + resting.price.toFixed(2) : 'limit';
+
+          const doReprice = async (setStatus) => {
+            setStatus('Fetching live mid and repricing…');
+            try {
+              const result = await apiPost('/api/v1/orders/close/reprice', {
+                position_id: pid,
+              });
+              if (result.ok) {
+                if (result.confirmed_price != null) {
+                  _closeRestingState.set(pid, { price: result.confirmed_price });
+                  setStatus('Resting $' + result.confirmed_price.toFixed(2) + ' GTC.', 'ok');
+                } else {
+                  // Modify accepted but re-read failed — do not display any price as confirmed
+                  _closeRestingState.delete(pid);
+                  setStatus('Repriced — price unverified, check broker.', 'warn');
+                }
+              } else {
+                setStatus('Reprice failed: ' + (result.error || 'unknown').slice(0, 60), 'error');
+              }
+            } catch(err) {
+              const detail = (err.data && err.data.detail) || err.message || 'unknown';
+              if (err.status === 503)      setStatus('Kill-switch OFF — ' + detail.slice(0, 50), 'error');
+              else if (err.status === 403) setStatus('Admin access required', 'error');
+              else                         setStatus('Error: ' + detail.slice(0, 50), 'error');
+            }
+          };
+
+          const doMarket = async (setStatus) => {
             setStatus('Placing market close…');
             try {
               const result = await apiPost('/api/v1/orders/close', { position_id: pid, order_type: 'market' });
               if (result.status === 'closed') {
-                setStatus('Closed @ $' + result.fill_price.toFixed(2), 'ok');
+                setStatus('Closed @ $' + (result.fill_price || '?'), 'ok');
               } else if (result.status === 'closing_pending') {
-                setStatus('Close pending — fill unconfirmed, GTC intact. Reconciling.', 'warn');
+                setStatus('Fill unconfirmed — GTC limit remains; reconciling.', 'warn');
               } else if (result.status === 'pdt_protected') {
                 setStatus('PDT protected — close manually in broker.', 'error');
               } else {
-                setStatus('Close failed — position still open. (' + (result.status || 'unknown') + ')', 'error');
+                setStatus('Unexpected status: ' + (result.status || 'unknown'), 'error');
               }
             } catch(err) {
-              const detail = err.data && err.data.detail ? err.data.detail : err.message;
+              const detail = (err.data && err.data.detail) || err.message || 'unknown';
+              if (err.status === 503)      setStatus('Kill-switch OFF', 'error');
+              else if (err.status === 403) setStatus('Admin access required', 'error');
+              else                         setStatus('Error: ' + detail.slice(0, 50), 'error');
+            }
+          };
+
+          showConfirmModal({
+            title:    'Resting close · ' + ticker,
+            body:     '<strong>' + sym + '</strong><br>' +
+                      'Currently resting: <strong>' + restingStr + '</strong> GTC<br>' +
+                      'New price: <strong>live mid fetched at request time</strong><br><br>' +
+                      '<span style="color:var(--text-muted);font-size:0.68rem">Reprice moves the limit to current mid — passive, may not fill.<br>' +
+                      'Exit at market fills immediately but may slip on wide spreads.</span>',
+            okLabel:  'Reprice to live mid',
+            okClass:  '',
+            onOk:     doReprice,
+            altLabel: 'Exit at market instead',
+            altClass: 'danger',
+            onAlt:    doMarket,
+          });
+          return;
+        }
+
+        // ── First-press path — place limit at current mid ──────────────────
+        const mid = (_t2State && _t2State.mark) || livePos.current_price;
+        showConfirmModal({
+          title:   'Close ' + ticker + ' · limit at mid',
+          body:    '<strong>' + sym + '</strong><br>' +
+                   'Qty: <strong>' + cts + ' contract' + (cts !== 1 ? 's' : '') + '</strong> · entry $' + entry.toFixed(2) + '<br>' +
+                   'Limit: <strong>' + (mid ? '$' + mid.toFixed(2) : '— (no live price)') + '</strong> (current mid, GTC)<br><br>' +
+                   '<span style="color:var(--text-muted);font-size:0.68rem">Passive limit — may not fill. Press the button again to reprice or exit at market.</span>',
+          okLabel: 'Place limit at ' + (mid ? '$' + mid.toFixed(2) : 'mid'),
+          okClass: 'danger',
+          onOk: async (setStatus) => {
+            if (!mid || mid <= 0) { setStatus('No live price — wait for a quote.', 'error'); return; }
+            setStatus('Placing limit close…');
+            try {
+              const result = await apiPost('/api/v1/orders/close', {
+                position_id: pid,
+                order_type:  'limit',
+                limit_price: Math.round(mid * 100) / 100,
+                tif:         'gtc',
+              });
+              if (result.status === 'closing_pending') {
+                const rPrice = result.limit_price || mid;
+                _closeRestingState.set(pid, { price: rPrice });
+                setStatus('Resting $' + rPrice.toFixed(2) + ' GTC · press button again to reprice or exit at market.', 'ok');
+              } else if (result.status === 'pdt_protected') {
+                setStatus('PDT protected — exit manually in broker.', 'error');
+              } else if (result.status === 'dry_run') {
+                setStatus('Dry-run (EXIT_ORDERS_ENABLED=False) — no order placed.', 'warn');
+              } else {
+                setStatus('Unexpected status: ' + (result.status || 'unknown'), 'error');
+              }
+            } catch(err) {
+              const detail = (err.data && err.data.detail) || err.message;
               if (err.status === 503)      setStatus('Kill-switch OFF — web trading disabled', 'error');
               else if (err.status === 403) setStatus('Admin access required', 'error');
               else                         setStatus('Error: ' + detail, 'error');
@@ -5295,11 +5416,71 @@
         const dir = Number(btn.dataset.dir);
         const inp = consoleEl.querySelector('[data-leg-inp="' + leg + '"]');
         if (!inp) return;
-        const cur = parseFloat(inp.value) || (_t2State && _t2State.broker && _t2State.broker[leg]) || 0;
-        inp.value = Math.max(0.01, cur + dir * 0.01).toFixed(2);
+        const isPct = _t2State && _t2State.pctMode;
+        const step  = isPct ? 0.1 : 0.01;
+        const cur   = parseFloat(inp.value) || (isPct
+          ? (_t2State.broker[leg] != null ? _toPct(_t2State.broker[leg]) : 0)
+          : ((_t2State && _t2State.broker && _t2State.broker[leg]) || 0));
+        const next  = Math.max(isPct ? -99.9 : 0.01, cur + dir * step);
+        inp.value   = next.toFixed(isPct ? 1 : 2);
         inp.dispatchEvent(new Event('input', { bubbles: true }));
       });
     });
+
+    // ── % / $ mode toggle and annotation helpers ──────────────────────────────
+    function _toDollar(pct)  { return entry > 0 ? entry * (1 + pct / 100)       : null; }
+    function _toPct(dollar)  { return entry > 0 ? (dollar / entry - 1) * 100    : null; }
+    function _fmtAnnot(dollar) {
+      if (!dollar || !entry) return '';
+      const pct  = _toPct(dollar);
+      const sign = pct >= 0 ? '+' : '';
+      return _t2State && _t2State.pctMode
+        ? (sign + pct.toFixed(1) + '% · $' + dollar.toFixed(2))
+        : ('$' + dollar.toFixed(2) + ' · ' + sign + pct.toFixed(1) + '%');
+    }
+    function _updateAnnot(leg, dollar) {
+      const el = consoleEl && consoleEl.querySelector('[data-leg-annot="' + leg + '"]');
+      if (el) el.textContent = dollar ? _fmtAnnot(dollar) : '';
+    }
+    function _inputDollar(leg) {
+      const inp = consoleEl && consoleEl.querySelector('[data-leg-inp="' + leg + '"]');
+      if (!inp || !inp.value) return null;
+      const v = parseFloat(inp.value);
+      if (isNaN(v)) return null;
+      return (_t2State && _t2State.pctMode) ? _toDollar(v) : v;
+    }
+
+    const modeToggle = consoleEl && consoleEl.querySelector('[data-live="t2-mode-toggle"]');
+    if (modeToggle) {
+      modeToggle.addEventListener('click', e => {
+        e.stopPropagation();
+        if (!_t2State) return;
+        const wasPct = _t2State.pctMode;
+        _t2State.pctMode = !wasPct;
+        modeToggle.textContent = _t2State.pctMode ? '%' : '$';
+        modeToggle.classList.toggle('t2-mode-toggle--active', _t2State.pctMode);
+        // Update hints
+        const hintEl = consoleEl.querySelector('[data-live="t2-legs-hint"]');
+        if (hintEl) hintEl.textContent = _t2State.pctMode ? '% of entry $' + entry.toFixed(2) : 'enter option premiums ($)';
+        // Re-render each input in the new mode
+        ['tp', 'sl'].forEach(leg => {
+          const inp = consoleEl.querySelector('[data-leg-inp="' + leg + '"]');
+          if (!inp) return;
+          const rawV = parseFloat(inp.value);
+          if (isNaN(rawV) || rawV === 0) { inp.step = _t2State.pctMode ? '0.1' : '0.01'; inp.placeholder = _t2State.pctMode ? '0.0' : '0.00'; return; }
+          const dollar = wasPct ? _toDollar(rawV) : rawV;
+          if (_t2State.pctMode) {
+            const pct = _toPct(dollar);
+            inp.value = pct != null ? pct.toFixed(1) : '';
+          } else {
+            inp.value = dollar != null ? dollar.toFixed(2) : '';
+          }
+          inp.step        = _t2State.pctMode ? '0.1' : '0.01';
+          inp.placeholder = _t2State.pctMode ? '0.0' : '0.00';
+          _updateAnnot(leg, dollar);
+        });
+      });
+    }
 
     // ── Leg inputs (edit mode) — staged state ─────────────────────────────────
     ['tp', 'sl'].forEach(leg => {
@@ -5311,22 +5492,31 @@
       inp.addEventListener('input', e => {
         e.stopPropagation();
         if (!_t2State) return;
-        const val    = parseFloat(inp.value);
+        const raw    = parseFloat(inp.value);
+        const dollar = (!isNaN(raw) && raw > 0) ? ((_t2State.pctMode) ? _toDollar(raw) : raw) : null;
         const broker = _t2State.broker[leg];
-        if (!isNaN(val) && val > 0 && (broker == null || Math.abs(val - broker) >= 0.005)) {
-          _t2State.staged[leg] = val;
-          if (staged) { staged.textContent = '→ $' + val.toFixed(2); staged.style.display = ''; }
+        if (dollar && (broker == null || Math.abs(dollar - broker) >= 0.005)) {
+          _t2State.staged[leg] = dollar;
+          if (staged) { staged.textContent = '→ $' + dollar.toFixed(2); staged.style.display = ''; }
         } else {
           _t2State.staged[leg] = null;
           if (staged) staged.style.display = 'none';
         }
+        _updateAnnot(leg, dollar);
         _t2UpdateStagedBar(consoleEl);
       });
     });
 
-    // ── Propose-mode inputs — update arm button on each keystroke ─────────────
+    // ── Propose-mode inputs — update arm button + annotation on each keystroke ─
     consoleEl && consoleEl.querySelectorAll('.t2-leg--propose [data-leg-inp]').forEach(inp => {
-      inp.addEventListener('input', e => { e.stopPropagation(); _t2UpdateArmButton(consoleEl, entry); });
+      inp.addEventListener('input', e => {
+        e.stopPropagation();
+        _t2UpdateArmButton(consoleEl, entry);
+        const leg    = inp.dataset.legInp;
+        const raw    = parseFloat(inp.value);
+        const dollar = (!isNaN(raw) && raw > 0) ? ((_t2State && _t2State.pctMode) ? _toDollar(raw) : raw) : null;
+        _updateAnnot(leg, dollar);
+      });
     });
 
     // ── Arm bracket ───────────────────────────────────────────────────────────
@@ -5337,8 +5527,10 @@
         e.stopPropagation();
         const tpInp = consoleEl.querySelector('[data-leg-inp="tp"]');
         const slInp = consoleEl.querySelector('[data-leg-inp="sl"]');
-        const tp = parseFloat(tpInp && tpInp.value || '0');
-        const sl = parseFloat(slInp && slInp.value || '0');
+        const tpRaw = parseFloat(tpInp && tpInp.value || '0');
+        const slRaw = parseFloat(slInp && slInp.value || '0');
+        const tp = (_t2State && _t2State.pctMode) ? (_toDollar(tpRaw) || 0) : tpRaw;
+        const sl = (_t2State && _t2State.pctMode) ? (_toDollar(slRaw) || 0) : slRaw;
 
         if (!(tp > 0) || !(sl > 0)) {
           if (armStatus) { armStatus.textContent = 'Enter both TP and SL prices.'; armStatus.className = 't2-arm-status t2-arm-status--error'; }
@@ -5403,7 +5595,15 @@
           const inp    = consoleEl.querySelector('.t2-leg:not(.t2-leg--propose) [data-leg-inp="' + leg + '"]');
           const staged = consoleEl.querySelector('[data-staged="' + leg + '"]');
           const price  = _t2State.broker[leg];
-          if (inp && price != null) inp.value = price.toFixed(2);
+          if (inp && price != null) {
+            if (_t2State.pctMode) {
+              const pct = _toPct(price);
+              inp.value = pct != null ? pct.toFixed(1) : price.toFixed(2);
+            } else {
+              inp.value = price.toFixed(2);
+            }
+            inp.dispatchEvent(new Event('input'));
+          }
           if (staged) staged.style.display = 'none';
         });
         _t2UpdateStagedBar(consoleEl);
@@ -5629,14 +5829,20 @@
       }
     }
 
-    // Exit button — sync with closing_pending transitions
+    // Exit button — sync with closing_pending transitions.
+    // In closing_pending the button stays enabled; click fires reprice path.
     const closeBtn = consoleEl.querySelector('.pos-console-close-btn');
-    if (closeBtn) {
+    if (closeBtn && !closeBtn.disabled) {  // skip if temporarily disabled by reprice in-flight
       const isPending = pos.state === 'closing_pending';
-      closeBtn.disabled = isPending;
-      closeBtn.title    = isPending ? 'Close already pending — double-close blocked' : '';
       const tag = closeBtn.querySelector('.pos-preview-tag');
-      if (tag) tag.textContent = isPending ? 'close pending — blocked' : 'market · kill-switch gated';
+      if (isPending) {
+        const resting = _closeRestingState.get(pos.position_id);
+        if (tag) tag.textContent = resting
+          ? 'resting $' + resting.price.toFixed(2) + ' · press to reprice'
+          : 'resting limit · press to reprice · gated';
+      } else {
+        if (tag) tag.textContent = 'limit · may not fill · gated';
+      }
     }
   }
 
@@ -6351,15 +6557,26 @@
         '<div class="t2-leg-meta" data-leg-meta="' + leg + '">' +
           '<span style="color:var(--text-muted);font-size:0.62rem">fetching…</span>' +
         '</div>';
+      const priceRowInner =
+        '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="-1"' + dis + '>&#8722;</button>' +
+        '<input type="number" class="t2-leg-inp" data-leg-inp="' + leg + '" step="0.01" min="0.01" placeholder="0.00"' + dis + '>' +
+        '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="1"' + dis + '>+</button>' +
+        stagedEl;
+      const annotEl = '<div class="t2-leg-annot" data-leg-annot="' + leg + '"></div>';
+      if (isProposeMode) {
+        return '<div class="' + cls + '" data-leg="' + leg + '">' +
+          '<div class="t2-leg-inline-row">' +
+            '<div class="t2-leg-label">' + label + '</div>' +
+            '<div class="t2-leg-price-row">' + priceRowInner + '</div>' +
+          '</div>' +
+          annotEl +
+        '</div>';
+      }
       return '<div class="' + cls + '" data-leg="' + leg + '">' +
         '<div class="t2-leg-label">' + label + dimNote + '</div>' +
-        '<div class="t2-leg-price-row">' +
-          '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="-1"' + dis + '>&#8722;</button>' +
-          '<input type="number" class="t2-leg-inp" data-leg-inp="' + leg + '" step="0.01" min="0.01" placeholder="0.00"' + dis + '>' +
-          '<button class="t2-nudge" data-nudge="' + leg + '" data-dir="1"' + dis + '>+</button>' +
-          stagedEl +
-        '</div>' +
+        '<div class="t2-leg-price-row">' + priceRowInner + '</div>' +
         metaRow +
+        annotEl +
         sellSlot +
       '</div>';
     }
@@ -6385,12 +6602,20 @@
             '<span class="t2-watch-val" data-live="t2-trail-stop">' + trailStop + '</span></div>' +
         '</div>' +
         '<div class="t2-legs t2-legs--inline">' +
+          '<div class="t2-legs-toggle-bar">' +
+            '<button class="t2-mode-toggle" data-live="t2-mode-toggle">$</button>' +
+            '<span class="t2-mode-hint">% relative to entry</span>' +
+          '</div>' +
           legHtml('tp', false, false) +
           legHtml('sl', false, false) +
-          '<div class="t2-legs-hint">enter option premiums ($)</div>' +
+          '<div class="t2-legs-hint" data-live="t2-legs-hint">enter option premiums ($)</div>' +
         '</div>' +
         armRow
       : '<div class="t2-legs">' +
+          '<div class="t2-legs-toggle-bar">' +
+            '<button class="t2-mode-toggle" data-live="t2-mode-toggle">$</button>' +
+            '<span class="t2-mode-hint">% relative to entry</span>' +
+          '</div>' +
           legHtml('tp', tpEdit, tpDimmed) +
           legHtml('sl', slEdit, slDimmed) +
         '</div>' +
@@ -6451,10 +6676,9 @@
 
     return '<div class="pos-console t2-console">' +
 
-      '<div class="t2-sym-line">' + sym + '</div>' +
-
       '<div class="t2-strategy-row">' +
         '<span class="t2-strategy-lbl">Exit strategy</span>' +
+        '<code class="t2-sym-chip">' + sym + '</code>' +
         stratSel +
         '<span class="t2-strategy-status" data-live="t2-strategy-status"></span>' +
       '</div>' +
@@ -6484,10 +6708,9 @@
           ' data-pos-id="' + pos.position_id + '"' +
           ' data-contracts="' + cts + '"' +
           ' data-symbol="' + (sym + '').replace(/"/g, '&quot;') + '"' +
-          ' data-entry="' + entry + '"' +
-          (isClose ? ' disabled title="Close already pending — double-close blocked"' : '') + '>' +
-          'Exit ' + cts + '&times;' +
-          '<span class="pos-preview-tag">' + (isClose ? 'close pending — blocked' : 'market &middot; kill-switch gated') + '</span>' +
+          ' data-entry="' + entry + '">' +
+          'Close ' + cts + '&times; at mid' +
+          '<span class="pos-preview-tag">' + (isClose ? 'resting limit &middot; press to reprice &middot; gated' : 'limit &middot; may not fill &middot; gated') + '</span>' +
         '</button>' +
       '</div>' +
 
@@ -6696,7 +6919,7 @@
     document.getElementById('confirmCancel').addEventListener('click', closeModal);
   }
 
-  function showConfirmModal({ title, body, okLabel, okClass, onOk }) {
+  function showConfirmModal({ title, body, okLabel, okClass, onOk, altLabel, altClass, onAlt }) {
     document.getElementById('confirmTitle').textContent  = title;
     document.getElementById('confirmBody').innerHTML     = body;
     document.getElementById('confirmStatus').textContent = '';
@@ -6729,6 +6952,38 @@
         newOk.disabled = false;
       }
     });
+
+    // Optional secondary action (e.g. "Exit at market instead")
+    const altBtn = document.getElementById('confirmAlt');
+    if (altBtn) {
+      const newAlt = altBtn.cloneNode(true);
+      altBtn.parentNode.replaceChild(newAlt, altBtn);
+      if (altLabel && onAlt) {
+        newAlt.textContent   = altLabel;
+        newAlt.className     = 'dash-modal-btn' + (altClass ? ' ' + altClass : '');
+        newAlt.style.display = '';
+        newAlt.addEventListener('click', async () => {
+          newAlt.disabled = true;
+          const setStatus = (msg, cls) => {
+            const el = document.getElementById('confirmStatus');
+            el.textContent = msg;
+            el.className   = 'dash-modal-status' + (cls ? ' ' + cls : '');
+            if (cls === 'ok') setTimeout(closeModal, 2500);
+          };
+          try {
+            await onAlt(setStatus);
+          } catch (err) {
+            const el = document.getElementById('confirmStatus');
+            el.textContent = 'Unexpected error: ' + err.message;
+            el.className   = 'dash-modal-status error';
+          } finally {
+            newAlt.disabled = false;
+          }
+        });
+      } else {
+        newAlt.style.display = 'none';
+      }
+    }
 
     document.getElementById('confirmModal').style.display = 'flex';
   }
