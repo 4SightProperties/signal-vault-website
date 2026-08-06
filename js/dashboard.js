@@ -5232,9 +5232,9 @@
       stratSel.addEventListener('change', e => {
         e.stopPropagation();
         const newVal = stratSel.value;
-        stratSel.value = curLayer; // always revert; modal is the real action trigger
 
         if ((curLayer === 'oco_bracket' || curLayer === 'stop_only' || curLayer === 'tp_only') && newVal === 'default') {
+          stratSel.value = curLayer; // revert until cancel modal confirms
           const isOco  = curLayer === 'oco_bracket';
           const isTp   = curLayer === 'tp_only';
           const title  = isOco ? 'Cancel OCO Bracket' : isTp ? 'Cancel TP Order' : 'Cancel Stop';
@@ -5589,11 +5589,27 @@
       if (el) el.textContent = text;
     }
 
-    // Bot-watches column
+    // Trail state
     const tw = pos.trail_width != null ? (pos.trail_width * 100).toFixed(0) + '%' : '—';
-    set('t2-trail-arm',   pos.trail_armed ? '⬆ armed' : '⭕ waiting');
+    const trailArmEl = consoleEl.querySelector('[data-live="t2-trail-arm"]');
+    if (trailArmEl) {
+      trailArmEl.textContent = pos.trail_armed ? '⬆ armed' : '⭕ waiting';
+      trailArmEl.classList.toggle('t2-val--armed', !!pos.trail_armed);
+    }
     set('t2-trail-width', tw);
     set('t2-trail-stop',  pos.trail_stop_price ? fmtPrice(pos.trail_stop_price) : '—');
+    const botSummaryEl = consoleEl.querySelector('.t2-bot-summary');
+    if (botSummaryEl) botSummaryEl.classList.toggle('t2-bot-summary--armed', !!pos.trail_armed);
+
+    // Truth-sync strategy select. Skip while a pending-intent selection is active
+    // (user chose OCO but hasn't armed yet; truth still 'default'). Sync fires as
+    // soon as truth moves (arm confirmed, bracket cancelled, position state changes)
+    // or when the console is closed and rebuilt from scratch.
+    const stratSelEl = consoleEl.querySelector('.t2-strategy-sel');
+    if (stratSelEl) {
+      const truth = pos.exit_layer || 'default';
+      if (!(stratSelEl.value !== truth && truth === 'default')) stratSelEl.value = truth;
+    }
 
     // Refresh leg metadata % from mark on every WS tick
     if (_t2State && _t2State.broker && pos.current_price != null) {
@@ -6345,16 +6361,42 @@
       '</div>';
     }
 
-    const nakedWarning = proposeMode
-      ? '<div class="t2-naked-warning">Nothing rests at Tradier &mdash; bot manages exits</div>'
-      : '';
-
     const armRow = proposeMode
       ? '<div class="t2-arm-row" data-live="t2-arm-row">' +
           '<button class="t2-arm-btn" disabled>Arm bracket</button>' +
           '<div class="t2-arm-status" data-live="t2-arm-status"></div>' +
         '</div>'
       : '';
+
+    const armedCls  = pos.trail_armed ? ' t2-val--armed' : '';
+    const armedText = pos.trail_armed ? '&#11014; armed' : '&#11093; waiting';
+    const trailStop = pos.trail_stop_price ? fmtPrice(pos.trail_stop_price) : '&mdash;';
+
+    const mainSection = proposeMode
+      ? '<div class="t2-bot-watch">' +
+          '<div class="t2-watch-row"><span class="t2-watch-lbl">Trail arm</span>' +
+            '<span class="t2-watch-val' + armedCls + '" data-live="t2-trail-arm">' + armedText + '</span></div>' +
+          '<div class="t2-watch-row"><span class="t2-watch-lbl">Width</span>' +
+            '<span class="t2-watch-val" data-live="t2-trail-width">' + tw + '</span></div>' +
+          '<div class="t2-watch-row"><span class="t2-watch-lbl">Stop opt</span>' +
+            '<span class="t2-watch-val" data-live="t2-trail-stop">' + trailStop + '</span></div>' +
+        '</div>' +
+        '<div class="t2-legs">' +
+          legHtml('tp', false, false) +
+          legHtml('sl', false, false) +
+        '</div>' +
+        armRow
+      : '<div class="t2-legs">' +
+          legHtml('tp', tpEdit, tpDimmed) +
+          legHtml('sl', slEdit, slDimmed) +
+        '</div>' +
+        '<div class="t2-bot-summary' + (pos.trail_armed ? ' t2-bot-summary--armed' : '') + '">' +
+          '<span' + (pos.trail_armed ? ' class="t2-val--armed"' : '') + ' data-live="t2-trail-arm">' + armedText + '</span>' +
+          '<span class="t2-bot-sep">&nbsp;&middot;&nbsp;</span>' +
+          '<span data-live="t2-trail-width">' + tw + '</span>' +
+          '<span class="t2-bot-sep">&nbsp;&middot;&nbsp;stop&nbsp;</span>' +
+          '<span data-live="t2-trail-stop">' + trailStop + '</span>' +
+        '</div>';
 
     // Strategy dropdown — 3 standard options; disabled transitions include the reason.
     // stop_only is an inherited state (TP filled), not a user-selectable strategy —
@@ -6413,25 +6455,7 @@
         '<span class="t2-strategy-status" data-live="t2-strategy-status"></span>' +
       '</div>' +
 
-      '<div class="t2-columns">' +
-        '<div class="t2-legs-col">' +
-          '<div class="t2-col-hd">Rests at broker</div>' +
-          nakedWarning +
-          legHtml('tp', tpEdit, tpDimmed) +
-          legHtml('sl', slEdit, slDimmed) +
-        '</div>' +
-        '<div class="t2-watch-col">' +
-          '<div class="t2-col-hd">Bot watches</div>' +
-          '<div class="t2-watch-row"><span class="t2-watch-lbl">Trail arm</span>' +
-            '<span class="t2-watch-val" data-live="t2-trail-arm">' + (pos.trail_armed ? '&#11014; armed' : '&#11093; waiting') + '</span></div>' +
-          '<div class="t2-watch-row"><span class="t2-watch-lbl">Width</span>' +
-            '<span class="t2-watch-val" data-live="t2-trail-width">' + tw + '</span></div>' +
-          '<div class="t2-watch-row"><span class="t2-watch-lbl">Stop opt</span>' +
-            '<span class="t2-watch-val" data-live="t2-trail-stop">' + (pos.trail_stop_price ? fmtPrice(pos.trail_stop_price) : '&mdash;') + '</span></div>' +
-        '</div>' +
-      '</div>' +
-
-      armRow +
+      mainSection +
 
       '<div class="t2-staged-bar" data-live="t2-staged-bar" style="display:none">' +
         '<span class="t2-staged-desc" data-live="t2-staged-desc"></span>' +

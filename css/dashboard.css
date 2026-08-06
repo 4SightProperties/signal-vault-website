@@ -4117,32 +4117,34 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .t2-strategy-status.t2-strategy-status--error { color: var(--danger); }
 
 /* Two-column layout */
-.t2-columns {
-  display: grid;
-  grid-template-columns: 1fr 1fr;
-  gap: 0;
+/* Bot-watch section (default mode — stacked full width) */
+.t2-bot-watch {
+  padding: 0.5rem 0.8rem;
   border-bottom: 1px solid var(--border);
 }
-.t2-legs-col, .t2-watch-col {
+
+/* Leg rows wrapper (both modes — full width, no column split) */
+.t2-legs {
   padding: 0.5rem 0.8rem;
-}
-.t2-legs-col { border-right: 1px solid var(--border); }
-.t2-col-hd {
-  font-size: 0.6rem;
-  font-weight: 600;
-  letter-spacing: 0.05em;
-  text-transform: uppercase;
-  color: var(--text-muted);
-  margin-bottom: 0.4rem;
+  border-bottom: 1px solid var(--border);
 }
 
-/* Naked warning */
-.t2-naked-warning {
-  font-size: 0.62rem;
-  color: var(--warning, #fb923c);
-  margin-bottom: 0.35rem;
-  line-height: 1.35;
+/* Bot trail summary (bracket mode — one liner below legs) */
+.t2-bot-summary {
+  display: flex;
+  align-items: center;
+  padding: 0.3rem 0.8rem;
+  font-size: 0.65rem;
+  color: var(--text-secondary);
+  border-bottom: 1px solid var(--border);
 }
+.t2-bot-summary--armed {
+  background: rgba(74, 222, 128, 0.05);
+  border-left: 2px solid var(--accent);
+  padding-left: calc(0.8rem - 2px);
+}
+.t2-bot-sep { color: var(--text-muted); }
+.t2-val--armed { color: var(--accent); font-weight: 600; }
 
 /* Leg rows */
 .t2-leg { margin-bottom: 0.5rem; }
