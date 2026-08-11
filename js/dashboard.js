@@ -59,6 +59,10 @@
 
   // Universe screener state (authenticated members)
   let universeMode      = false;
+  let journalMode       = false;
+  let journalMonth      = null;  // 'YYYY-MM' currently displayed
+  let journalSelDate    = null;  // 'YYYY-MM-DD' currently selected cell
+  let journalCalCache   = null;  // last calendar API response
   let universeDataCache = null;  // last /api/scan-universe payload
   let universeTimer     = null;
   let univSortCol       = 'ticker';
@@ -392,6 +396,10 @@
     _injectUniverseToggle();
     loadUniverse();
     universeTimer = setInterval(loadUniverse, 65_000);
+    if (isAdmin) {
+      _injectJournalView();
+      _injectJournalToggle();
+    }
   }
 
   // ── WebSocket ─────────────────────────────────────────────────────────────
@@ -7903,13 +7911,16 @@
 
   function _enterUniverseMode() {
     universeMode = true;
-    const main = document.querySelector('.cmd-main');
-    const wrap = document.getElementById('universeWrap');
-    if (main) main.style.display = 'none';
-    if (wrap) wrap.style.display = 'flex';
+    journalMode  = false;
+    const main  = document.querySelector('.cmd-main');
+    const uWrap = document.getElementById('universeWrap');
+    const jWrap = document.getElementById('journalWrap');
+    if (main)  main.style.display  = 'none';
+    if (uWrap) uWrap.style.display = 'flex';
+    if (jWrap) jWrap.style.display = 'none';
     document.getElementById('univViewBtn')?.classList.add('active');
     document.getElementById('cockpitViewBtn')?.classList.remove('active');
-    // Render immediately with cached data if available; otherwise fetch
+    document.getElementById('journalViewBtn')?.classList.remove('active');
     if (universeDataCache) {
       _renderUniverseFreshness(universeDataCache);
       renderUniverseTable(universeDataCache.rows || []);
@@ -7920,12 +7931,16 @@
 
   function _enterCockpitMode() {
     universeMode = false;
-    const main = document.querySelector('.cmd-main');
-    const wrap = document.getElementById('universeWrap');
-    if (main) main.style.display = '';
-    if (wrap) wrap.style.display = 'none';
+    journalMode  = false;
+    const main  = document.querySelector('.cmd-main');
+    const uWrap = document.getElementById('universeWrap');
+    const jWrap = document.getElementById('journalWrap');
+    if (main)  main.style.display  = '';
+    if (uWrap) uWrap.style.display = 'none';
+    if (jWrap) jWrap.style.display = 'none';
     document.getElementById('cockpitViewBtn')?.classList.add('active');
     document.getElementById('univViewBtn')?.classList.remove('active');
+    document.getElementById('journalViewBtn')?.classList.remove('active');
   }
 
   async function loadUniverse() {
@@ -8128,6 +8143,474 @@
         if (t) { _enterCockpitMode(); focusOn(t); }
       });
     });
+  }
+
+  // ── Journal tab ───────────────────────────────────────────────────────────
+
+  function _jEsc(s) {
+    if (s == null) return '';
+    return String(s)
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+
+  function _jFmtHold(secs) {
+    if (secs == null) return '—';
+    const h = Math.floor(secs / 3600);
+    const m = Math.floor((secs % 3600) / 60);
+    return h > 0 ? h + 'h ' + m + 'm' : m + 'm';
+  }
+
+  function _jFmtTidePrem(val) {
+    if (val == null) return '—';
+    const abs  = Math.abs(val);
+    const sign = val >= 0 ? '+' : '−';
+    if (abs >= 1e6) return sign + '$' + (abs / 1e6).toFixed(1) + 'M';
+    if (abs >= 1e3) return sign + '$' + (abs / 1e3).toFixed(0) + 'K';
+    return sign + '$' + abs.toFixed(0);
+  }
+
+  function _jShortReason(reason) {
+    if (!reason) return '—';
+    const map = {
+      TAKE_PROFIT_1:           'TP1',
+      TAKE_PROFIT_2:           'TP2',
+      STOP_HIT:                'SL',
+      TRAIL_STOP:              'Trail',
+      MANUAL_CLOSE:            'Manual',
+      RECONCILED_PHANTOM:      'Phantom',
+      RECONCILED_UNKNOWN_EXIT: 'Rcncl',
+      RECONCILED_UNKNOWN:      'Rcncl',
+      TIME_STOP:               'TimeStop',
+      BIAS_FLIP:               'BiasFlip',
+    };
+    return map[reason] || reason.replace(/_/g, ' ').toLowerCase();
+  }
+
+  function _jFillBadge(trade) {
+    if (trade.exit_tracking_absent)
+      return '<span class="jt-badge jt-badge-absent" title="Predates pnl_log — exit never recorded">absent</span>';
+    switch (trade.fill_source) {
+      case 'tradier_confirmed':
+        return '<span class="jt-badge jt-badge-conf" title="Broker-confirmed">conf</span>';
+      case 'estimated':
+        return '<span class="jt-badge jt-badge-est" title="Estimated fill">est</span>';
+      case 'unavailable':
+        return '<span class="jt-badge jt-badge-unav" title="Fill unavailable">unav</span>';
+      default:
+        return _jEsc(trade.fill_source || '—');
+    }
+  }
+
+  function _injectJournalToggle() {
+    const toggle = document.querySelector('.univ-view-toggle');
+    if (!toggle || document.getElementById('journalViewBtn')) return;
+    const btn = document.createElement('button');
+    btn.className   = 'univ-view-btn';
+    btn.id          = 'journalViewBtn';
+    btn.textContent = 'Journal';
+    toggle.appendChild(btn);
+    btn.addEventListener('click', _enterJournalMode);
+  }
+
+  function _injectJournalView() {
+    if (document.getElementById('journalWrap')) return;
+    const uWrap = document.getElementById('universeWrap');
+    const wrap  = document.createElement('div');
+    wrap.id        = 'journalWrap';
+    wrap.className = 'journal-wrap';
+    wrap.style.display = 'none';
+    wrap.innerHTML =
+      '<div class="journal-nav">' +
+        '<button class="journal-nav-btn" id="journalPrev">&#9664;</button>' +
+        '<span class="journal-nav-month" id="journalMonthLabel">—</span>' +
+        '<button class="journal-nav-btn" id="journalNext">&#9654;</button>' +
+        '<span class="journal-nav-loading" id="journalLoading" style="display:none">Loading…</span>' +
+      '</div>' +
+      '<div class="journal-cal-wrap">' +
+        '<div class="journal-cal-dow-row">' +
+          ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d =>
+            '<div class="journal-cal-dow">' + d + '</div>'
+          ).join('') +
+        '</div>' +
+        '<div id="journalCalGrid" class="journal-cal-grid"></div>' +
+      '</div>' +
+      '<div id="journalDetail" class="journal-detail">' +
+        '<div class="dash-placeholder" style="padding:1.5rem">Click a day to see details</div>' +
+      '</div>';
+    if (uWrap && uWrap.parentNode) {
+      uWrap.parentNode.insertBefore(wrap, uWrap.nextSibling);
+    } else {
+      const main = document.querySelector('.cmd-main');
+      if (main && main.parentNode) main.parentNode.insertBefore(wrap, main.nextSibling);
+    }
+    document.getElementById('journalPrev').addEventListener('click', () => {
+      if (!journalMonth) return;
+      const [y, m] = journalMonth.split('-').map(Number);
+      const prev   = m === 1 ? (y - 1) + '-12' : y + '-' + String(m - 1).padStart(2, '0');
+      loadJournalCalendar(prev);
+    });
+    document.getElementById('journalNext').addEventListener('click', () => {
+      if (!journalMonth) return;
+      const [y, m] = journalMonth.split('-').map(Number);
+      const next   = m === 12 ? (y + 1) + '-01' : y + '-' + String(m + 1).padStart(2, '0');
+      loadJournalCalendar(next);
+    });
+  }
+
+  function _enterJournalMode() {
+    journalMode  = true;
+    universeMode = false;
+    const main  = document.querySelector('.cmd-main');
+    const uWrap = document.getElementById('universeWrap');
+    const jWrap = document.getElementById('journalWrap');
+    if (main)  main.style.display  = 'none';
+    if (uWrap) uWrap.style.display = 'none';
+    if (jWrap) jWrap.style.display = 'flex';
+    document.getElementById('journalViewBtn')?.classList.add('active');
+    document.getElementById('cockpitViewBtn')?.classList.remove('active');
+    document.getElementById('univViewBtn')?.classList.remove('active');
+    if (!journalMonth) {
+      const now = new Date();
+      journalMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
+    }
+    if (journalCalCache && journalCalCache.month === journalMonth) {
+      _renderJournalCalendar(journalCalCache);
+    } else {
+      loadJournalCalendar(journalMonth);
+    }
+  }
+
+  async function loadJournalCalendar(month) {
+    journalMonth = month;
+    const label   = document.getElementById('journalMonthLabel');
+    const loading = document.getElementById('journalLoading');
+    if (label) {
+      const [y, m] = month.split('-').map(Number);
+      label.textContent = new Date(y, m - 1, 1).toLocaleDateString('en-US', { month: 'long', year: 'numeric' });
+    }
+    if (loading) loading.style.display = '';
+    const grid = document.getElementById('journalCalGrid');
+    if (grid) grid.innerHTML = '<div class="dash-placeholder" style="padding:1rem">Loading…</div>';
+    try {
+      const data = await apiFetch('/api/journal/calendar?month=' + encodeURIComponent(month));
+      journalCalCache = data;
+      _renderJournalCalendar(data);
+    } catch (err) {
+      if (grid) grid.innerHTML = '<div class="dash-placeholder" style="padding:1rem">Could not load calendar</div>';
+    } finally {
+      if (loading) loading.style.display = 'none';
+    }
+  }
+
+  function _renderJournalCalendar(data) {
+    const grid = document.getElementById('journalCalGrid');
+    if (!grid) return;
+
+    const byDate = {};
+    (data.days || []).forEach(d => { byDate[d.date] = d; });
+
+    const [y, m]   = (data.month || journalMonth).split('-').map(Number);
+    const firstDow = new Date(y, m - 1, 1).getDay();  // 0=Sun
+    const lastDay  = new Date(y, m, 0).getDate();
+
+    // Today's ET date approximated as UTC date (close enough for cell highlight)
+    const todayStr = new Date().toISOString().slice(0, 10);
+
+    let html = '';
+
+    // Empty cells before day 1
+    for (let i = 0; i < firstDow; i++) {
+      html += '<div class="journal-cal-cell journal-cal-empty"></div>';
+    }
+
+    for (let day = 1; day <= lastDay; day++) {
+      const dateStr  = y + '-' + String(m).padStart(2, '0') + '-' + String(day).padStart(2, '0');
+      const dow      = (firstDow + day - 1) % 7;
+      const isWeekend = dow === 0 || dow === 6;
+      const cell     = byDate[dateStr];
+      const isToday  = dateStr === todayStr;
+      const isSel    = dateStr === journalSelDate;
+
+      let cls = 'journal-cal-cell';
+      if (isWeekend)          cls += ' journal-cal-weekend';
+      if (!cell)              cls += ' journal-cal-nodata';
+      if (cell && cell.trade_count > 0) cls += ' journal-cal-has-trades';
+      if (isToday)            cls += ' journal-cal-today';
+      if (isSel)              cls += ' journal-cal-selected';
+
+      let inner = '<div class="journal-cal-date">' + day + '</div>';
+
+      if (cell) {
+        // Confirmed P&L
+        if (cell.confirmed_count > 0) {
+          const v   = cell.confirmed_pnl;
+          const cls2 = v >= 0 ? 'pos' : 'neg';
+          inner += '<div class="journal-cal-pnl ' + cls2 + '">' +
+            (v >= 0 ? '+' : '') + '$' + Math.abs(v).toLocaleString('en-US', {maximumFractionDigits: 0}) +
+            '<span class="journal-pnl-tag"> ✓</span></div>';
+        }
+        // Estimated / unverified P&L (estimated + unavailable rows with estimated_pnl)
+        const hasEst = (cell.estimated_count || 0) + (cell.unavailable_count || 0) > 0;
+        if (hasEst && cell.estimated_pnl != null) {
+          const v    = cell.estimated_pnl;
+          const cls2 = v >= 0 ? 'pos' : 'neg';
+          inner += '<div class="journal-cal-pnl journal-cal-pnl-est ' + cls2 + '">' +
+            (v >= 0 ? '+' : '') + '$' + Math.abs(v).toLocaleString('en-US', {maximumFractionDigits: 0}) +
+            '<span class="journal-pnl-tag"> ~</span></div>';
+        }
+        // Trade count
+        if (cell.trade_count > 0) {
+          inner += '<div class="journal-cal-count">' + cell.trade_count + 't</div>';
+        }
+        // Context-only day (daily_market exists, no trades)
+        if (cell.trade_count === 0 && cell.has_market_context && cell.directive) {
+          inner += '<div class="journal-cal-regime">' + _jEsc(cell.directive) + '</div>';
+        }
+        // Markers
+        let markers = '';
+        if (cell.has_macro_event)     markers += '<span class="jcal-marker jcal-macro" title="Macro event scheduled">M</span>';
+        if (cell.has_unresolved_fill) markers += '<span class="jcal-marker jcal-unresolved" title="Unresolved fill — tracking present but unconfirmed">⚠</span>';
+        if (cell.has_tracking_absent) markers += '<span class="jcal-marker jcal-absent" title="Exit tracking absent — predates pnl_log">◦</span>';
+        if (markers) inner += '<div class="journal-cal-markers">' + markers + '</div>';
+      }
+
+      html += '<div class="' + cls + '" data-date="' + dateStr + '">' + inner + '</div>';
+    }
+
+    // Pad final row
+    const totalCells = firstDow + lastDay;
+    const remainder  = totalCells % 7;
+    if (remainder > 0) {
+      for (let i = remainder; i < 7; i++) {
+        html += '<div class="journal-cal-cell journal-cal-empty"></div>';
+      }
+    }
+
+    grid.innerHTML = html;
+
+    grid.querySelectorAll('.journal-cal-cell[data-date]').forEach(cellEl => {
+      cellEl.addEventListener('click', () => {
+        grid.querySelectorAll('.journal-cal-cell').forEach(c => c.classList.remove('journal-cal-selected'));
+        cellEl.classList.add('journal-cal-selected');
+        journalSelDate = cellEl.dataset.date;
+        loadJournalDay(cellEl.dataset.date);
+      });
+    });
+  }
+
+  async function loadJournalDay(dateStr) {
+    const detail = document.getElementById('journalDetail');
+    if (!detail) return;
+    detail.innerHTML = '<div class="dash-placeholder" style="padding:1.5rem">Loading…</div>';
+    try {
+      const data = await apiFetch('/api/journal/day?date=' + encodeURIComponent(dateStr));
+      _renderJournalDay(data);
+    } catch (err) {
+      detail.innerHTML = '<div class="dash-placeholder" style="padding:1.5rem">Could not load day detail</div>';
+    }
+  }
+
+  function _renderJournalDay(data) {
+    const detail = document.getElementById('journalDetail');
+    if (!detail) return;
+
+    const mk = data.market;
+    const s  = data.pnl_summary || {};
+    const trades = data.trades || [];
+
+    // ── Left column: market state, index vs walls, tide, macro, catalysts ────
+
+    let leftHtml = '';
+
+    if (!mk) {
+      leftHtml += '<div class="journal-section"><div class="journal-section-hd">Market Context</div><div class="journal-no-data">No market context recorded for this date</div></div>';
+    } else {
+      // Market state
+      const vix  = mk.vix_close      != null ? mk.vix_close.toFixed(1)                      : (mk.market_state_ok ? '—' : 'not fetched');
+      const adv  = mk.breadth_pct_adv != null ? mk.breadth_pct_adv.toFixed(1) + '%'          : (mk.market_state_ok ? '—' : 'not fetched');
+      const dir  = mk.directive       || (mk.system_state_ok ? '—' : 'not fetched');
+      const reg  = mk.regime_label    || (mk.system_state_ok ? '—' : 'not fetched');
+      leftHtml +=
+        '<div class="journal-section">' +
+          '<div class="journal-section-hd">Market State</div>' +
+          '<div class="journal-kv"><span class="journal-kv-lbl">Directive</span><span class="journal-kv-val">' + _jEsc(dir) + '</span></div>' +
+          '<div class="journal-kv"><span class="journal-kv-lbl">Regime</span><span class="journal-kv-val">' + _jEsc(reg) + '</span></div>' +
+          '<div class="journal-kv"><span class="journal-kv-lbl">VIX</span><span class="journal-kv-val">' + vix + '</span></div>' +
+          '<div class="journal-kv"><span class="journal-kv-lbl">Advancing</span><span class="journal-kv-val">' + adv + '</span></div>' +
+        '</div>';
+
+      // Index vs walls — flag-aware nulls
+      const idxs = [
+        { sym: 'SPY', close: mk.spy_close, chg: mk.spy_chg_pct, pw: mk.spy_put_wall, cw: mk.spy_call_wall, band: mk.spy_closed_in_band },
+        { sym: 'QQQ', close: mk.qqq_close, chg: mk.qqq_chg_pct, pw: mk.qqq_put_wall, cw: mk.qqq_call_wall, band: mk.qqq_closed_in_band },
+        { sym: 'IWM', close: mk.iwm_close, chg: mk.iwm_chg_pct, pw: mk.iwm_put_wall, cw: mk.iwm_call_wall, band: mk.iwm_closed_in_band },
+      ];
+      let idxRows = '';
+      idxs.forEach(ix => {
+        const close = mk.index_prices_ok
+          ? (ix.close != null ? ix.close.toFixed(2) : '—')
+          : 'not fetched';
+        const chgStr = mk.index_prices_ok && ix.chg != null
+          ? (ix.chg >= 0 ? '+' : '') + ix.chg.toFixed(2) + '%' : '';
+        const chgCls = ix.chg != null ? (ix.chg >= 0 ? 'positive' : 'negative') : '';
+        const pw = mk.index_gex_ok ? (ix.pw != null ? ix.pw.toFixed(0) : '—') : 'not fetched';
+        const cw = mk.index_gex_ok ? (ix.cw != null ? ix.cw.toFixed(0) : '—') : 'not fetched';
+        const bandMark = ix.band === 1 ? ' <span class="journal-band-in" title="Closed inside band">✓</span>'
+                       : ix.band === 0 ? ' <span class="journal-band-out" title="Closed outside band">✗</span>' : '';
+        idxRows +=
+          '<div class="journal-idx-row">' +
+            '<span class="journal-idx-sym">' + ix.sym + '</span>' +
+            '<span class="journal-idx-close">' + close + '</span>' +
+            '<span class="journal-idx-chg ' + chgCls + '">' + chgStr + '</span>' +
+            '<span class="journal-idx-walls">PW ' + pw + ' · CW ' + cw + bandMark + '</span>' +
+          '</div>';
+      });
+      leftHtml +=
+        '<div class="journal-section">' +
+          '<div class="journal-section-hd">Index vs Walls</div>' +
+          idxRows +
+        '</div>';
+
+      // Market tide
+      if (mk.tide_ok) {
+        const bias = mk.tide_bias || '—';
+        leftHtml +=
+          '<div class="journal-section">' +
+            '<div class="journal-section-hd">Market Tide</div>' +
+            '<div class="journal-kv"><span class="journal-kv-lbl">Bias</span><span class="journal-kv-val">' + _jEsc(bias) + '</span></div>' +
+            '<div class="journal-kv"><span class="journal-kv-lbl">Net calls</span><span class="journal-kv-val">' + _jFmtTidePrem(mk.tide_call_premium) + '</span></div>' +
+            '<div class="journal-kv"><span class="journal-kv-lbl">Net puts</span><span class="journal-kv-val">' + _jFmtTidePrem(mk.tide_put_premium) + '</span></div>' +
+          '</div>';
+      }
+    }
+
+    // Macro events
+    if (data.macro_events && data.macro_events.length > 0) {
+      let mrows = '';
+      data.macro_events.forEach(e => {
+        const time = e.scheduled_time ? '<span class="journal-macro-time">' + _jEsc(e.scheduled_time) + '</span> ' : '';
+        const est  = e.estimate ? ' · est ' + _jEsc(e.estimate) : '';
+        const pri  = e.prior    ? ' · prior ' + _jEsc(e.prior)  : '';
+        mrows += '<div class="journal-macro-row">' + time + '<span class="journal-macro-name">' + _jEsc(e.event_name) + '</span><span class="journal-macro-vals">' + est + pri + '</span></div>';
+      });
+      leftHtml += '<div class="journal-section"><div class="journal-section-hd">Macro Events</div>' + mrows + '</div>';
+    }
+
+    // Catalysts — published headlines only, no linking to trades
+    if (data.catalysts && data.catalysts.length > 0) {
+      let crows = '';
+      data.catalysts.forEach(c => {
+        let pub = '';
+        if (c.published_at) {
+          try {
+            const dt = new Date(c.published_at);
+            pub = dt.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' }) + ' ET';
+          } catch (_) {}
+        }
+        const src  = c.source ? '<span class="journal-cat-src">' + _jEsc(c.source) + '</span>' : '';
+        const meta = (pub || src) ? '<div class="journal-cat-meta">' + (pub ? '<span class="journal-cat-time">' + pub + '</span>' : '') + src + '</div>' : '';
+        crows += '<div class="journal-cat-row">' + meta + '<div class="journal-cat-title">' + _jEsc(c.title) + '</div></div>';
+      });
+      leftHtml += '<div class="journal-section journal-section-cats"><div class="journal-section-hd">Market Catalysts <span class="journal-section-note">' + data.catalysts.length + ' published</span></div>' + crows + '</div>';
+    }
+
+    // ── Right column: P&L summary cards + trade rows ──────────────────────
+
+    // P&L cards — confirmed and estimated are strictly separate
+    let pnlCards = '<div class="journal-pnl-cards">';
+
+    if (s.confirmed_count > 0) {
+      const v   = s.confirmed_pnl;
+      const cls = v >= 0 ? 'positive' : 'negative';
+      pnlCards +=
+        '<div class="journal-pnl-card journal-pnl-conf">' +
+          '<div class="journal-pnl-label">Confirmed</div>' +
+          '<div class="journal-pnl-value ' + cls + '">' + (v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2) + '</div>' +
+          '<div class="journal-pnl-sub">' + s.confirmed_count + ' trade' + (s.confirmed_count !== 1 ? 's' : '') + ' · broker-verified</div>' +
+        '</div>';
+    }
+
+    const estTotal = (s.estimated_count || 0) + (s.unavailable_count || 0);
+    if (estTotal > 0) {
+      const v    = s.estimated_pnl;
+      const cls  = v != null ? (v >= 0 ? 'positive' : 'negative') : '';
+      const vStr = v != null ? ((v >= 0 ? '+' : '') + '$' + Math.abs(v).toFixed(2)) : 'no figure';
+      const parts = [];
+      if (s.estimated_count)   parts.push(s.estimated_count + ' estimated');
+      if (s.unavailable_count) parts.push(s.unavailable_count + ' unavailable');
+      pnlCards +=
+        '<div class="journal-pnl-card journal-pnl-est">' +
+          '<div class="journal-pnl-label">Estimated / unverified</div>' +
+          '<div class="journal-pnl-value ' + cls + '">' + vStr + '</div>' +
+          '<div class="journal-pnl-sub">' + parts.join(' · ') + ' · not broker-confirmed</div>' +
+        '</div>';
+    }
+
+    if (s.tracking_absent_count > 0) {
+      const n = s.tracking_absent_count;
+      pnlCards +=
+        '<div class="journal-pnl-card journal-pnl-absent">' +
+          '<div class="journal-pnl-label">Tracking absent</div>' +
+          '<div class="journal-pnl-value">—</div>' +
+          '<div class="journal-pnl-sub">' + n + ' trade' + (n !== 1 ? 's' : '') + ' · predates pnl_log</div>' +
+        '</div>';
+    }
+    pnlCards += '</div>';
+
+    // Trade rows
+    let tradeRows = '';
+    if (!trades.length) {
+      tradeRows = '<div class="dash-placeholder" style="padding:0.75rem 0">No trades this session</div>';
+    } else {
+      tradeRows =
+        '<div class="journal-trade-hdr">' +
+          '<span class="jt-col jt-ticker">Ticker</span>' +
+          '<span class="jt-col jt-dir">Dir</span>' +
+          '<span class="jt-col jt-strike">Strike</span>' +
+          '<span class="jt-col jt-dte">DTE</span>' +
+          '<span class="jt-col jt-tier">Tier</span>' +
+          '<span class="jt-col jt-pnl">P&amp;L</span>' +
+          '<span class="jt-col jt-fill">Fill</span>' +
+          '<span class="jt-col jt-reason">Exit</span>' +
+          '<span class="jt-col jt-hold">Hold</span>' +
+          '<span class="jt-col jt-mfe">MFE%</span>' +
+        '</div>';
+      trades.forEach(t => {
+        const pnlVal = t.realized_pnl != null ? t.realized_pnl : t.estimated_pnl;
+        const pnlStr = pnlVal != null ? ((pnlVal >= 0 ? '+' : '') + '$' + Math.abs(pnlVal).toFixed(2)) : '—';
+        const pnlCls = pnlVal != null ? (pnlVal >= 0 ? 'positive' : 'negative') : '';
+        const dir    = (t.direction || '').toLowerCase().includes('put') ? 'put' : 'call';
+        const mfe    = t.mfe_pct != null
+          ? t.mfe_pct.toFixed(1) + '%'
+          : (t.peak_untracked ? 'untracked' : '—');
+        const bfTag  = t.backfilled ? ' <span class="jt-bf" title="Backfilled">bf</span>' : '';
+        tradeRows +=
+          '<div class="journal-trade-row">' +
+            '<span class="jt-col jt-ticker">' + _jEsc(t.ticker || '?') + bfTag + '</span>' +
+            '<span class="jt-col jt-dir"><span class="hist-dir ' + dir + '">' + (dir === 'put' ? 'P' : 'C') + '</span></span>' +
+            '<span class="jt-col jt-strike">' + (t.strike || '—') + '</span>' +
+            '<span class="jt-col jt-dte">' + (t.dte != null ? t.dte : '—') + '</span>' +
+            '<span class="jt-col jt-tier">' + _jEsc(t.tier || '—') + '</span>' +
+            '<span class="jt-col jt-pnl ' + pnlCls + '">' + pnlStr + '</span>' +
+            '<span class="jt-col jt-fill">' + _jFillBadge(t) + '</span>' +
+            '<span class="jt-col jt-reason">' + _jEsc(_jShortReason(t.exit_reason)) + '</span>' +
+            '<span class="jt-col jt-hold">' + _jFmtHold(t.hold_seconds) + '</span>' +
+            '<span class="jt-col jt-mfe">' + mfe + '</span>' +
+          '</div>';
+      });
+    }
+
+    detail.innerHTML =
+      '<div class="journal-detail-inner">' +
+        '<div class="journal-detail-left">' + leftHtml + '</div>' +
+        '<div class="journal-detail-right">' +
+          '<div class="journal-section">' + pnlCards + '</div>' +
+          '<div class="journal-section journal-section-trades">' + tradeRows + '</div>' +
+        '</div>' +
+      '</div>';
   }
 
   // ── Boot ──────────────────────────────────────────────────────────────────
