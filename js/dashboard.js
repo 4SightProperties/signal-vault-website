@@ -3124,6 +3124,10 @@
     let _ocoTpStash   = null;
     let _ocoLvlStash  = null;
     let _ocoStopStash = null;  // custom stop price string; null → server uses sl_pct=30
+    // Set to true on any user interaction with the OCO panel; suppresses the 30s timer
+    // re-render so an active form is never silently rebuilt under the user's hands.
+    // Resets to false after placement, and naturally on next armContract call.
+    let _ocoPanelDirty = false;
     function _updateBrokerBotCols(layer) {
       const brokerEl     = document.getElementById('cockpitBrokerContent');
       const botEl        = document.getElementById('cockpitBotContent');
@@ -3239,6 +3243,7 @@
         brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(btn => {
           if (btn.disabled) return;   // bind-time gate — no handler on unpriced levels
           btn.addEventListener('click', () => {
+            _ocoPanelDirty = true;
             const lbl   = btn.dataset.lvlLabel;
             const price = lbl === '×1.50' ? null : parseFloat(btn.dataset.lvlPrice);
             _ocoLvlStash = lbl;
@@ -3253,6 +3258,7 @@
         // Direct TP field edit — clears button selection; ≤0 or blank reverts to ×1.50.
         if (tpInpEl) {
           tpInpEl.addEventListener('input', () => {
+            _ocoPanelDirty = true;
             const val = parseFloat(tpInpEl.value);
             if (val > 0) {
               _ocoLvlStash = 'custom';
@@ -3276,6 +3282,7 @@
         const stopPctInpEl = document.getElementById('cockpitOcoStopPct');
         if (stopValInpEl) {
           stopValInpEl.addEventListener('input', () => {
+            _ocoPanelDirty = true;
             const price = parseFloat(stopValInpEl.value);
             const { displayPrice } = _resolveEntryPrice();
             const base = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
@@ -3291,6 +3298,7 @@
         }
         if (stopPctInpEl) {
           stopPctInpEl.addEventListener('input', () => {
+            _ocoPanelDirty = true;
             const pct = parseFloat(stopPctInpEl.value);
             const { displayPrice } = _resolveEntryPrice();
             const base = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
@@ -3336,15 +3344,17 @@
         const _syncOpenBtn = () => {
           if (_openBtn) _openBtn.disabled = !_slChk.checked && !_tpChk.checked;
         };
-        if (_slChk) _slChk.addEventListener('change', _syncOpenBtn);
-        if (_tpChk) _tpChk.addEventListener('change', _syncOpenBtn);
+        if (_slChk) _slChk.addEventListener('change', () => { _ocoPanelDirty = true; _syncOpenBtn(); });
+        if (_tpChk) _tpChk.addEventListener('change', () => { _ocoPanelDirty = true; _syncOpenBtn(); });
         _syncOpenBtn();
       }
     }
     // Let renderRrLine trigger an OCO button re-render when _rrProfitSide refreshes (30s cycle).
     // Captures this arm's _updateBrokerBotCols closure; cleared at next armContract call.
     _ocoButtonRefreshFn = () => {
-      if (cockpitExitLayer === 'oco_bracket') _updateBrokerBotCols('oco_bracket');
+      // Skip re-render if the user has touched any OCO control — a background timer must
+      // not rebuild a form that is actively being filled in.
+      if (cockpitExitLayer === 'oco_bracket' && !_ocoPanelDirty) _updateBrokerBotCols('oco_bracket');
     };
 
     // Target override apply
@@ -3425,6 +3435,10 @@
       if (cockpitExitLayer === 'oco_bracket') {
         const _slChk = document.getElementById('cockpitOcoSlCheck');
         const _tpChk = document.getElementById('cockpitOcoTpCheck');
+        // Missing elements default to true (full OCO) — conservative: prefer an unwanted stop
+        // over silently dropping one. Log so a DOM regression is not invisible.
+        if (!_slChk) console.warn('cockpitOcoSlCheck missing at OCO placement — defaulting slOn=true');
+        if (!_tpChk) console.warn('cockpitOcoTpCheck missing at OCO placement — defaulting tpOn=true');
         const slOn = _slChk ? _slChk.checked : true;
         const tpOn = _tpChk ? _tpChk.checked : true;
         if      (slOn && tpOn) effectiveExitLayer = 'oco_bracket';
@@ -3525,6 +3539,7 @@
               const priceStr = result.resolved_limit_price != null
                 ? `$${result.resolved_limit_price.toFixed(2)}`
                 : result.fill_price != null ? `$${result.fill_price.toFixed(2)}` : '';
+              _ocoPanelDirty = false;
               setStatus(
                 `Filled${priceStr ? ` @ ${priceStr}` : ''} · position_id ${result.position_id}`,
                 'ok',
