@@ -2024,6 +2024,12 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin-top: 0.18rem;
   letter-spacing: 0.01em;
 }
+.cockpit-oco-price-stale {
+  font-size: 0.60rem;
+  color: var(--text-muted);
+  font-style: italic;
+  margin-top: 0.22rem;
+}
 /* Inline % next to TP field */
 .cockpit-oco-tp-pct {
   font-size: 0.58rem;

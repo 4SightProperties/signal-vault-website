@@ -2937,6 +2937,7 @@
         <div class="cockpit-col-hd">Rests at broker</div>
         <div class="cockpit-col-sub">survives the bot dying</div>
         <div class="cockpit-col-items" id="cockpitBrokerContent"></div>
+        <div id="cockpitOcoPriceStale" class="cockpit-oco-price-stale" style="display:none"></div>
       </div>
       <div class="cockpit-bot-col">
         <div class="cockpit-col-hd">Bot watches</div>
@@ -3128,6 +3129,24 @@
     // re-render so an active form is never silently rebuilt under the user's hands.
     // Resets to false after placement, and naturally on next armContract call.
     let _ocoPanelDirty = false;
+    let _ocoDirtyAt    = 0;    // epoch ms when panel first went dirty; 0 = not dirty
+    function _setOcoDirty() {
+      if (!_ocoPanelDirty) { _ocoPanelDirty = true; _ocoDirtyAt = Date.now(); }
+      const el = document.getElementById('cockpitOcoPriceStale');
+      if (el) {
+        const mins = _ocoDirtyAt ? Math.floor((Date.now() - _ocoDirtyAt) / 60000) : 0;
+        el.textContent = mins > 0
+          ? `prices held · ${mins}m · re-arm to refresh`
+          : 'prices held · re-arm to refresh';
+        el.style.display = '';
+      }
+    }
+    function _clearOcoDirty() {
+      _ocoPanelDirty = false;
+      _ocoDirtyAt    = 0;
+      const el = document.getElementById('cockpitOcoPriceStale');
+      if (el) el.style.display = 'none';
+    }
     function _updateBrokerBotCols(layer) {
       const brokerEl     = document.getElementById('cockpitBrokerContent');
       const botEl        = document.getElementById('cockpitBotContent');
@@ -3243,7 +3262,7 @@
         brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(btn => {
           if (btn.disabled) return;   // bind-time gate — no handler on unpriced levels
           btn.addEventListener('click', () => {
-            _ocoPanelDirty = true;
+            _setOcoDirty();
             const lbl   = btn.dataset.lvlLabel;
             const price = lbl === '×1.50' ? null : parseFloat(btn.dataset.lvlPrice);
             _ocoLvlStash = lbl;
@@ -3258,7 +3277,7 @@
         // Direct TP field edit — clears button selection; ≤0 or blank reverts to ×1.50.
         if (tpInpEl) {
           tpInpEl.addEventListener('input', () => {
-            _ocoPanelDirty = true;
+            _setOcoDirty();
             const val = parseFloat(tpInpEl.value);
             if (val > 0) {
               _ocoLvlStash = 'custom';
@@ -3282,7 +3301,7 @@
         const stopPctInpEl = document.getElementById('cockpitOcoStopPct');
         if (stopValInpEl) {
           stopValInpEl.addEventListener('input', () => {
-            _ocoPanelDirty = true;
+            _setOcoDirty();
             const price = parseFloat(stopValInpEl.value);
             const { displayPrice } = _resolveEntryPrice();
             const base = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
@@ -3298,7 +3317,7 @@
         }
         if (stopPctInpEl) {
           stopPctInpEl.addEventListener('input', () => {
-            _ocoPanelDirty = true;
+            _setOcoDirty();
             const pct = parseFloat(stopPctInpEl.value);
             const { displayPrice } = _resolveEntryPrice();
             const base = displayPrice != null ? displayPrice : (armedContract ? armedContract.ask : 0);
@@ -3344,17 +3363,19 @@
         const _syncOpenBtn = () => {
           if (_openBtn) _openBtn.disabled = !_slChk.checked && !_tpChk.checked;
         };
-        if (_slChk) _slChk.addEventListener('change', () => { _ocoPanelDirty = true; _syncOpenBtn(); });
-        if (_tpChk) _tpChk.addEventListener('change', () => { _ocoPanelDirty = true; _syncOpenBtn(); });
+        if (_slChk) _slChk.addEventListener('change', () => { _setOcoDirty(); _syncOpenBtn(); });
+        if (_tpChk) _tpChk.addEventListener('change', () => { _setOcoDirty(); _syncOpenBtn(); });
         _syncOpenBtn();
       }
     }
     // Let renderRrLine trigger an OCO button re-render when _rrProfitSide refreshes (30s cycle).
     // Captures this arm's _updateBrokerBotCols closure; cleared at next armContract call.
     _ocoButtonRefreshFn = () => {
-      // Skip re-render if the user has touched any OCO control — a background timer must
-      // not rebuild a form that is actively being filled in.
-      if (cockpitExitLayer === 'oco_bracket' && !_ocoPanelDirty) _updateBrokerBotCols('oco_bracket');
+      if (cockpitExitLayer !== 'oco_bracket') return;
+      // Panel dirty: user is mid-form. Tick the stale-price age display but do not rebuild
+      // the DOM — a background timer must not reset controls the user has touched.
+      if (_ocoPanelDirty) { _setOcoDirty(); return; }
+      _updateBrokerBotCols('oco_bracket');
     };
 
     // Target override apply
@@ -3539,7 +3560,7 @@
               const priceStr = result.resolved_limit_price != null
                 ? `$${result.resolved_limit_price.toFixed(2)}`
                 : result.fill_price != null ? `$${result.fill_price.toFixed(2)}` : '';
-              _ocoPanelDirty = false;
+              _clearOcoDirty();
               setStatus(
                 `Filled${priceStr ? ` @ ${priceStr}` : ''} · position_id ${result.position_id}`,
                 'ok',
