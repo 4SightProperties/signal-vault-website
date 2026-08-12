@@ -4519,9 +4519,9 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .journal-wrap {
   flex: 1;
   display: grid;
-  grid-template-areas: "nav nav" "cal detail";
+  grid-template-areas: "nav detail" "cal detail";
   grid-template-rows: auto 1fr;
-  grid-template-columns: 340px 1fr;
+  grid-template-columns: 380px 1fr;
   min-height: 0;
   overflow: hidden;
   background: var(--bg-base);
@@ -4536,6 +4536,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   padding: 0.4rem 0.75rem;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
+  border-right: 1px solid var(--border);
 }
 .journal-nav-btn {
   background: transparent;
@@ -4567,18 +4568,18 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--bg-surface);
-  overflow-y: auto;
+  overflow: hidden;
   padding: 0.5rem;
 }
 .journal-cal-dow-row {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
-  margin-bottom: 2px;
+  gap: 3px;
+  margin-bottom: 3px;
 }
 .journal-cal-dow {
   text-align: center;
-  font-size: 0.6rem;
+  font-size: 0.65rem;
   font-weight: 600;
   color: var(--text-muted);
   text-transform: uppercase;
@@ -4588,19 +4589,23 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .journal-cal-grid {
   display: grid;
   grid-template-columns: repeat(7, 1fr);
-  gap: 2px;
+  gap: 3px;
+  flex: 1;
+  min-height: 0;
+  grid-auto-rows: 1fr;
 }
 .journal-cal-cell {
-  min-height: 56px;
   border-radius: 4px;
   background: var(--bg-elevated);
   border: 1px solid var(--border);
   cursor: pointer;
-  padding: 0.2rem 0.25rem;
+  padding: 0.3rem 0.35rem;
   display: flex;
   flex-direction: column;
-  gap: 1px;
+  gap: 2px;
   transition: border-color 0.12s, background 0.12s;
+  min-height: 0;
+  overflow: hidden;
 }
 .journal-cal-cell:hover:not(.journal-cal-empty) {
   border-color: var(--border-bright);
@@ -4624,13 +4629,13 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 }
 
 .journal-cal-date {
-  font-size: 0.62rem;
+  font-size: 0.7rem;
   font-weight: 600;
   color: var(--text-secondary);
   line-height: 1;
 }
 .journal-cal-pnl {
-  font-size: 0.6rem;
+  font-size: 0.67rem;
   font-weight: 700;
   font-family: var(--font-display);
   line-height: 1.2;
@@ -4638,13 +4643,13 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .journal-cal-pnl.pos { color: var(--accent); }
 .journal-cal-pnl.neg { color: var(--danger); }
 .journal-cal-pnl-est { opacity: 0.65; font-style: italic; }
-.journal-pnl-tag { font-size: 0.5rem; opacity: 0.7; }
+.journal-pnl-tag { font-size: 0.55rem; opacity: 0.7; }
 .journal-cal-count {
-  font-size: 0.56rem;
+  font-size: 0.62rem;
   color: var(--text-muted);
 }
 .journal-cal-regime {
-  font-size: 0.54rem;
+  font-size: 0.6rem;
   color: var(--text-muted);
   white-space: nowrap;
   overflow: hidden;
@@ -4659,7 +4664,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   margin-top: 1px;
 }
 .jcal-marker {
-  font-size: 0.5rem;
+  font-size: 0.55rem;
   font-weight: 700;
   padding: 0 2px;
   border-radius: 2px;
