@@ -4519,8 +4519,8 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .journal-wrap {
   flex: 1;
   display: grid;
-  grid-template-areas: "nav detail" "cal detail";
-  grid-template-rows: auto 1fr;
+  grid-template-areas: "cal detail";
+  grid-template-rows: 1fr;
   grid-template-columns: 380px 1fr;
   min-height: 0;
   overflow: hidden;
@@ -4529,14 +4529,14 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 
 /* ── Navigation bar ───────────────────────────────────────────── */
 .journal-nav {
-  grid-area: nav;
   display: flex;
   align-items: center;
   gap: 0.75rem;
   padding: 0.4rem 0.75rem;
   background: var(--bg-surface);
   border-bottom: 1px solid var(--border);
-  border-right: 1px solid var(--border);
+  /* break out of cal-wrap's 0.5rem padding so the nav spans edge-to-edge */
+  margin: -0.5rem -0.5rem 0;
 }
 .journal-nav-btn {
   background: transparent;

@@ -8259,13 +8259,13 @@
     wrap.className = 'journal-wrap';
     wrap.style.display = 'none';
     wrap.innerHTML =
-      '<div class="journal-nav">' +
-        '<button class="journal-nav-btn" id="journalPrev">&#9664;</button>' +
-        '<span class="journal-nav-month" id="journalMonthLabel">—</span>' +
-        '<button class="journal-nav-btn" id="journalNext">&#9654;</button>' +
-        '<span class="journal-nav-loading" id="journalLoading" style="display:none">Loading…</span>' +
-      '</div>' +
       '<div class="journal-cal-wrap">' +
+        '<div class="journal-nav">' +
+          '<button class="journal-nav-btn" id="journalPrev">&#9664;</button>' +
+          '<span class="journal-nav-month" id="journalMonthLabel">—</span>' +
+          '<button class="journal-nav-btn" id="journalNext">&#9654;</button>' +
+          '<span class="journal-nav-loading" id="journalLoading" style="display:none">Loading…</span>' +
+        '</div>' +
         '<div class="journal-cal-dow-row">' +
           ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'].map(d =>
             '<div class="journal-cal-dow">' + d + '</div>'
