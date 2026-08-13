@@ -8043,10 +8043,19 @@
         else                              pmBreak = 'chop';
       }
 
+      // PM range as % of daily ATR: (pm_high − pm_low) / daily_atr.
+      // null when daily_atr is zero/absent or pm levels are missing.
+      let pmRangeAtr = null;
+      const _atr = row.daily_atr;
+      if (_atr > 0 && row.pm_high != null && row.pm_low != null) {
+        pmRangeAtr = (row.pm_high - row.pm_low) / _atr;
+      }
+
       return {
         ...row,
         live_price:     livePrice,
         pm_break_state: pmBreak,
+        pm_ext_atr:     pmRangeAtr,
         _tier_ord:      TIER_ORD[row.tier] ?? 9,
         // Watchlist overlay
         trigger:    wl && wl.trigger    != null ? parseFloat(wl.trigger)    : null,
@@ -8073,15 +8082,16 @@
     });
 
     const COLS = [
-      { key: 'ticker',         label: 'Ticker',   right: false,                width: '13%' },
-      { key: 'live_price',     label: 'Price',    right: true,                 width: '9%'  },
-      { key: 'cloud_10m',      label: '10m',      right: false, center: true,  width: '6%'  },
-      { key: 'cloud_1h',       label: '1h',       right: false, center: true,  width: '6%'  },
-      { key: 'cloud_1d',       label: '1d',       right: false, center: true,  width: '6%'  },
-      { key: 'pm_break_state', label: 'PM Break', right: false,                width: '13%' },
-      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '9%'  },
-      { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '9%'  },
-      { key: 'gex_state',      label: 'GAMMA',    right: false,                width: '12%' },
+      { key: 'ticker',         label: 'Ticker',   right: false,                width: '12%' },
+      { key: 'live_price',     label: 'Price',    right: true,                 width: '8%'  },
+      { key: 'cloud_10m',      label: '10m',      right: false, center: true,  width: '5%'  },
+      { key: 'cloud_1h',       label: '1h',       right: false, center: true,  width: '5%'  },
+      { key: 'cloud_1d',       label: '1d',       right: false, center: true,  width: '5%'  },
+      { key: 'pm_break_state', label: 'PM Break', right: false,                width: '12%' },
+      { key: 'pm_ext_atr',     label: 'PM/ATR',   right: true,                 width: '9%'  },
+      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '8%'  },
+      { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '8%'  },
+      { key: 'gex_state',      label: 'GAMMA',    right: false,                width: '11%' },
       { key: 'gex_put_wall',   label: 'WALLS',    right: false,                width: '17%' },
     ];
 
@@ -8125,6 +8135,12 @@
 
           case 'daily_atr':
             return `<td class="univ-td univ-r">${v > 0 ? v.toFixed(2) : '—'}</td>`;
+
+          case 'pm_ext_atr': {
+            if (r.pm_ext_atr == null) return `<td class="univ-td univ-r">—</td>`;
+            const pct = Math.round(r.pm_ext_atr * 100);
+            return `<td class="univ-td univ-r">${pct}%</td>`;
+          }
 
           case 'atr_consumed': {
             // consumed_pct stored as 0-1 decimal; display as integer percent
