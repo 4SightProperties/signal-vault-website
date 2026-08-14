@@ -1089,7 +1089,8 @@
 
       const rows         = data.rows || [];
       watchlistDataCache = rows;
-      meta.textContent   = rows.length + ' tickers · ' + (data.date || '');
+      const dateShort    = data.date ? data.date.slice(5) : '';
+      meta.textContent   = rows.length + ' · ' + dateShort;
 
       // Fired summary line — above the list, shows fired count and tickers
       const firedMetaEl = document.getElementById('watchlistFiredMeta');
@@ -1098,7 +1099,7 @@
                               .sort((a, b) => (b.fire_time || '').localeCompare(a.fire_time || ''));
       if (firedMetaEl) {
         if (firedRows.length) {
-          firedMetaEl.textContent = firedRows.length + ' fired · ' + firedRows.map(r => r.ticker).join(' ');
+          firedMetaEl.textContent = firedRows.length + ' of ' + rows.length + ' fired';
           firedMetaEl.hidden = false;
         } else {
           firedMetaEl.hidden = true;
