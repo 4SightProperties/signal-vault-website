@@ -468,6 +468,39 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .sig-saty.below-put  { color: var(--danger); }
 .sig-saty.neutral    { color: var(--text-muted); }
 
+/* ── Hover / long-press tooltip ─────────────────────────────── */
+.ttp {
+  position: fixed;
+  z-index: 9999;
+  display: none;
+  background: var(--bg-elevated);
+  border: 1px solid var(--border-bright);
+  border-radius: var(--radius-sm);
+  padding: 0.5rem 0.7rem;
+  font-size: 0.69rem;
+  color: var(--text-secondary);
+  max-width: 240px;
+  pointer-events: none;
+  box-shadow: 0 4px 20px rgba(0,0,0,0.55);
+  line-height: 1.4;
+}
+.ttp.ttp-visible { display: block; }
+.ttp-row {
+  display: flex;
+  justify-content: space-between;
+  gap: 0.6rem;
+  margin-bottom: 0.18rem;
+}
+.ttp-row:last-child { margin-bottom: 0; }
+.ttp-val { color: var(--text-primary); font-weight: 600; white-space: nowrap; }
+.ttp-setup {
+  margin-top: 0.3rem;
+  padding-top: 0.3rem;
+  border-top: 1px solid var(--border);
+}
+.ttp-setup-line { display: block; margin-bottom: 0.1rem; line-height: 1.35; }
+.ttp-gex { margin-top: 0.25rem; color: var(--text-muted); font-size: 0.64rem; }
+
 /* ── Utility ─────────────────────────────────────────────────── */
 .dash-placeholder {
   font-size: 0.75rem;

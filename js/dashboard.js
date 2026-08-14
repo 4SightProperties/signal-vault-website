@@ -382,6 +382,7 @@
     panelHealthTimer = setInterval(loadPanelHealth, 90_000);
     positionsTimer   = setInterval(loadPositions,    5_000);
     setupCenterPanel();
+    _initTooltip();
     setupConsoleHandlers();
     setupHistoryTab();
     setupModal();
@@ -1038,8 +1039,12 @@
           // Watched tag — ticker was on today's watchlist board
           const watchedHtml = watchlistDataCache.some(r => r.ticker === s.ticker)
             ? ' <span class="sig-watched">👁 WL</span>' : '';
+          // Tooltip data — win_probability, confidence, atr_label, setup_lines, gex_line
+          const _tipObj = { wp: s.win_probability, conf: s.confidence, atr: s.atr_label,
+                            lines: s.setup_lines || [], gex: s.gex_line || null };
+          const tipAttr = `data-tip='${JSON.stringify(_tipObj).replace(/'/g, "&#39;")}'`;
           return `
-<div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}"${satyCall ? ` data-saty-call="${satyCall}" data-saty-put="${satyPut}"` : ''}>
+<div class="sig-card ${s.actionable ? '' : 'stale'}" data-ticker="${s.ticker || ''}" ${tipAttr}${satyCall ? ` data-saty-call="${satyCall}" data-saty-put="${satyPut}"` : ''}>
   <div class="sig-card-top">
     <span class="sig-ticker">${dirStr} ${s.ticker || '?'}${starHtml}${satyHtml}${watchedHtml}</span>
     <span class="sig-tier ${tier}">${tier || '—'}</span>
@@ -1145,8 +1150,13 @@
   </div>`;
         }
 
+        // Watchlist row tooltip — trigger/vs, daily_atr, remaining_atr, next_res/sup, gex_line
+        const _wlTip = { trigger: r.trigger, vs: r.vs, daily_atr: r.daily_atr,
+                         rem_atr: r.remaining_atr, res: r.next_res_level,
+                         sup: r.next_sup_level, gex: r.gex_line || null };
+        const wlTipAttr = `data-tip='${JSON.stringify(_wlTip).replace(/'/g, "&#39;")}'`;
         return `
-<div class="wl-row" data-ticker="${r.ticker || ''}">
+<div class="wl-row" data-ticker="${r.ticker || ''}" ${wlTipAttr}>
   <div class="wl-row-header">
     <span class="wl-ticker">${r.ticker || '?'}</span>
     <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
@@ -1199,6 +1209,172 @@
       badge.textContent = txt;
       badge.title = lbl;
     });
+  }
+
+  // ── Hover / long-press tooltip ────────────────────────────────────────────
+  // One global singleton <div class="ttp"> appended to <body> at init.
+  // Signal cards and watchlist rows carry data-tip (JSON) set at render time.
+  // Hover: show immediately on mouseenter. Touch: 400ms long-press; touchend
+  // before timer fires = normal tap, click propagates. After timer fires,
+  // touchend calls preventDefault() to block the synthetic click.
+
+  let _tipTimer   = null;   // long-press timer
+  let _tipByTouch = false;  // tooltip was opened by a long-press
+
+  function _esc(s) {
+    return String(s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  }
+
+  function _buildSigTipHtml(d) {
+    let h = '';
+    if (d.wp  != null) h += `<div class="ttp-row"><span>Win prob</span><span class="ttp-val">${(d.wp * 100).toFixed(0)}%</span></div>`;
+    if (d.conf != null) h += `<div class="ttp-row"><span>Confidence</span><span class="ttp-val">${(d.conf * 100).toFixed(0)}%</span></div>`;
+    if (d.atr)          h += `<div class="ttp-row"><span>ATR state</span><span class="ttp-val">${_esc(d.atr)}</span></div>`;
+    if (d.lines && d.lines.length) {
+      h += `<div class="ttp-setup">${d.lines.map(l => `<span class="ttp-setup-line">${_esc(l)}</span>`).join('')}</div>`;
+    }
+    if (d.gex) h += `<div class="ttp-gex">${_esc(d.gex)}</div>`;
+    return h;
+  }
+
+  function _buildWlTipHtml(d) {
+    let h = '';
+    if (d.trigger)           h += `<div class="ttp-row"><span>Trigger</span><span class="ttp-val">${fmtPrice(d.trigger)}</span></div>`;
+    if (d.vs)                h += `<div class="ttp-row"><span>vs</span><span class="ttp-val">${fmtPrice(d.vs)}</span></div>`;
+    if (d.daily_atr)         h += `<div class="ttp-row"><span>Daily ATR</span><span class="ttp-val">${fmtPrice(d.daily_atr)}</span></div>`;
+    if (d.rem_atr != null)   h += `<div class="ttp-row"><span>Remaining ATR</span><span class="ttp-val">${fmtPrice(d.rem_atr)}</span></div>`;
+    if (d.res)               h += `<div class="ttp-row"><span>Next res</span><span class="ttp-val">${fmtPrice(d.res)}</span></div>`;
+    if (d.sup)               h += `<div class="ttp-row"><span>Next sup</span><span class="ttp-val">${fmtPrice(d.sup)}</span></div>`;
+    if (d.gex)               h += `<div class="ttp-gex">${_esc(d.gex)}</div>`;
+    return h;
+  }
+
+  function _tipEl() { return document.getElementById('hoverTip'); }
+
+  function _showTip(anchorEl, html) {
+    const tip = _tipEl();
+    if (!tip || !html) return;
+    tip.innerHTML = html;
+    tip.classList.add('ttp-visible');
+    _positionTip(anchorEl);
+  }
+
+  function _hideTip() {
+    const tip = _tipEl();
+    if (tip) tip.classList.remove('ttp-visible');
+    _tipByTouch = false;
+    clearTimeout(_tipTimer);
+    _tipTimer = null;
+  }
+
+  function _positionTip(anchorEl) {
+    const tip  = _tipEl();
+    if (!tip) return;
+    const rect = anchorEl.getBoundingClientRect();
+    const tw   = tip.offsetWidth  || 240;
+    const th   = tip.offsetHeight || 80;
+    let left = rect.right + 8;
+    let top  = rect.top;
+    if (left + tw > window.innerWidth - 8) left = rect.left - tw - 8;
+    if (top  + th > window.innerHeight - 8) top  = window.innerHeight - th - 8;
+    tip.style.left = Math.max(8, left) + 'px';
+    tip.style.top  = Math.max(8, top)  + 'px';
+  }
+
+  function _initTooltip() {
+    const tip = document.createElement('div');
+    tip.id = 'hoverTip';
+    tip.className = 'ttp';
+    document.body.appendChild(tip);
+
+    // Dismiss on mousedown outside the tooltip
+    document.addEventListener('mousedown', e => {
+      if (_tipEl() && !_tipEl().contains(e.target)) _hideTip();
+    });
+
+    // Dismiss on tap outside the tooltip
+    document.addEventListener('touchstart', e => {
+      if (_tipEl() && _tipEl().classList.contains('ttp-visible') && !_tipEl().contains(e.target)) {
+        _hideTip();
+        e.preventDefault();  // prevent the dismissal tap from also triggering the element below
+      }
+    }, { passive: false });
+
+    // ── Signal card hover ──────────────────────────────────────────────
+    const sigBody = document.getElementById('signalsBody');
+    if (sigBody) {
+      sigBody.addEventListener('mouseover', e => {
+        const card = e.target.closest('.sig-card[data-tip]');
+        if (!card) return;
+        try { _showTip(card, _buildSigTipHtml(JSON.parse(card.dataset.tip))); } catch (_) {}
+      });
+      sigBody.addEventListener('mouseout', e => {
+        if (!e.target.closest('.sig-card[data-tip]')) return;
+        const to = e.relatedTarget;
+        if (to && to.closest('.sig-card[data-tip]') === e.target.closest('.sig-card[data-tip]')) return;
+        _hideTip();
+      });
+
+      // Touch long-press
+      sigBody.addEventListener('touchstart', e => {
+        const card = e.target.closest('.sig-card[data-tip]');
+        if (!card) return;
+        clearTimeout(_tipTimer);
+        _tipByTouch = false;
+        _tipTimer = setTimeout(() => {
+          try { _showTip(card, _buildSigTipHtml(JSON.parse(card.dataset.tip))); } catch (_) {}
+          _tipByTouch = true;
+        }, 400);
+      }, { passive: true });
+      sigBody.addEventListener('touchmove',  () => { clearTimeout(_tipTimer); _tipTimer = null; }, { passive: true });
+      sigBody.addEventListener('touchend', e => {
+        clearTimeout(_tipTimer);
+        _tipTimer = null;
+        if (_tipByTouch) {
+          e.preventDefault();  // block the synthetic click that would fire focusOn
+          _tipByTouch = false;
+        }
+      }, { passive: false });
+    }
+
+    // ── Watchlist row hover ────────────────────────────────────────────
+    const wlBody = document.getElementById('watchlistBody');
+    if (wlBody) {
+      wlBody.addEventListener('mouseover', e => {
+        const row = e.target.closest('.wl-row[data-tip]');
+        if (!row) return;
+        try { _showTip(row, _buildWlTipHtml(JSON.parse(row.dataset.tip))); } catch (_) {}
+      });
+      wlBody.addEventListener('mouseout', e => {
+        if (!e.target.closest('.wl-row[data-tip]')) return;
+        const to = e.relatedTarget;
+        if (to && to.closest('.wl-row[data-tip]') === e.target.closest('.wl-row[data-tip]')) return;
+        _hideTip();
+      });
+
+      // Touch long-press
+      wlBody.addEventListener('touchstart', e => {
+        const row = e.target.closest('.wl-row[data-tip]');
+        if (!row) return;
+        clearTimeout(_tipTimer);
+        _tipByTouch = false;
+        _tipTimer = setTimeout(() => {
+          try { _showTip(row, _buildWlTipHtml(JSON.parse(row.dataset.tip))); } catch (_) {}
+          _tipByTouch = true;
+        }, 400);
+      }, { passive: true });
+      wlBody.addEventListener('touchmove',  () => { clearTimeout(_tipTimer); _tipTimer = null; }, { passive: true });
+      wlBody.addEventListener('touchend', e => {
+        clearTimeout(_tipTimer);
+        _tipTimer = null;
+        if (_tipByTouch) {
+          e.preventDefault();
+          _tipByTouch = false;
+        }
+      }, { passive: false });
+    }
   }
 
   // ── Center panel — chart, levels, chain ───────────────────────────────────
