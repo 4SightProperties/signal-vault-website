@@ -1091,12 +1091,29 @@
       watchlistDataCache = rows;
       meta.textContent   = rows.length + ' tickers · ' + (data.date || '');
 
+      // Fired summary line — above the list, shows fired count and tickers
+      const firedMetaEl = document.getElementById('watchlistFiredMeta');
+      const firedRows   = rows.filter(r => r.arm_state === 'fired')
+                              // fire_time is "HH:MM" (zero-padded); string sort is valid within one session
+                              .sort((a, b) => (b.fire_time || '').localeCompare(a.fire_time || ''));
+      if (firedMetaEl) {
+        if (firedRows.length) {
+          firedMetaEl.textContent = firedRows.length + ' fired · ' + firedRows.map(r => r.ticker).join(' ');
+          firedMetaEl.hidden = false;
+        } else {
+          firedMetaEl.hidden = true;
+        }
+      }
+
+      // Display order: fired rows first (most-recent fire first), then remaining rows in rank order
+      const sortedRows  = [...firedRows, ...rows.filter(r => r.arm_state !== 'fired')];
+
       if (!rows.length) {
         body.innerHTML = '<div class="dash-empty">No watchlist entries</div>';
         return;
       }
 
-      body.innerHTML = rows.map(r => {
+      body.innerHTML = sortedRows.map(r => {
         const isLong   = !_isShortSetup(r.direction);
         const dirClass = isLong ? 'bull' : 'bear';
         const dirArrow = isLong ? '▲' : '▼';

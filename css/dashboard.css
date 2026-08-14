@@ -99,6 +99,19 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-bottom: 1px solid var(--border);
   flex-shrink: 0;
 }
+.dash-panel-header--stacked {
+  flex-wrap: wrap;
+  gap: 0;
+}
+.dash-panel-header-row {
+  display: flex;
+  justify-content: space-between;
+  width: 100%;
+}
+.wl-fired-meta {
+  width: 100%;
+  color: var(--accent);
+}
 .dash-panel-title {
   font-size: 0.72rem;
   font-weight: 600;
