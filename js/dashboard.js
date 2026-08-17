@@ -8205,15 +8205,25 @@
     if (!authToken) return;
     try {
       const data = await apiFetch('/api/rvol-live');
-      if (data && data.available && data.data) {
-        rvolLiveCache = data.data;
-        // Re-render to update tooltips with fresh current-bar RVOL
-        if (universeMode && universeDataCache && universeDataCache.rows) {
-          renderUniverseTable(universeDataCache.rows);
+      if (!data || !data.available || !data.data) return;
+      rvolLiveCache = data.data;
+      // Patch only title attributes — no table rebuild, no scroll reset
+      const wrap = document.getElementById('univTableWrap');
+      if (!wrap) return;
+      wrap.querySelectorAll('.univ-row').forEach(row => {
+        const cell = row.querySelector('[data-col="rvol"]');
+        if (!cell || !cell.dataset.prev) return;
+        const live = rvolLiveCache[row.dataset.ticker];
+        let tip = `prev bar ${cell.dataset.prev}× (50-bar avg)`;
+        if (live) {
+          tip += live.cur_rvol != null
+            ? ` · forming ${live.cur_rvol.toFixed(2)}×`
+            : ` · forming (< 1 min old)`;
         }
-      }
-    } catch (_) {
-      // Non-critical — tooltip just won't show current-bar value
+        cell.title = tip;
+      });
+    } catch (e) {
+      if (e.status && e.status !== 403) console.warn('[rvol-live]', e.message || e);
     }
   }
 
@@ -8374,16 +8384,10 @@
           }
 
           case 'rvol': {
-            if (v == null) return `<td class="univ-td univ-r">—</td>`;
+            if (v == null) return `<td class="univ-td univ-r" data-col="rvol">—</td>`;
             const cls  = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
-            const live = rvolLiveCache[r.ticker];
-            let tip    = `prev bar ${v.toFixed(2)}× (50-bar avg)`;
-            if (live) {
-              tip += live.cur_rvol != null
-                ? ` · forming ${live.cur_rvol.toFixed(2)}×`
-                : ` · forming (< 1 min old)`;
-            }
-            return `<td class="univ-td univ-r${cls}" title="${tip}">${v.toFixed(2)}×</td>`;
+            const prev = v.toFixed(2);
+            return `<td class="univ-td univ-r${cls}" data-col="rvol" data-prev="${prev}" title="prev bar ${prev}× (50-bar avg)">${prev}×</td>`;
           }
 
           default:
