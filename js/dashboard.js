@@ -64,6 +64,7 @@
   let journalSelDate    = null;  // 'YYYY-MM-DD' currently selected cell
   let journalCalCache   = null;  // last calendar API response
   let universeDataCache = null;  // last /api/scan-universe payload
+  let rvolLiveCache     = {};    // last /api/rvol-live data keyed by ticker
   let universeTimer     = null;
   let univSortCol       = 'ticker';
   let univSortDir       = 1;
@@ -397,6 +398,8 @@
     _injectUniverseToggle();
     loadUniverse();
     universeTimer = setInterval(loadUniverse, 65_000);
+    loadRvolLive();
+    setInterval(loadRvolLive, 30_000);
     if (isAdmin) {
       _injectJournalView();
       _injectJournalToggle();
@@ -8198,6 +8201,22 @@
     }
   }
 
+  async function loadRvolLive() {
+    if (!authToken) return;
+    try {
+      const data = await apiFetch('/api/rvol-live');
+      if (data && data.available && data.data) {
+        rvolLiveCache = data.data;
+        // Re-render to update tooltips with fresh current-bar RVOL
+        if (universeMode && universeDataCache && universeDataCache.rows) {
+          renderUniverseTable(universeDataCache.rows);
+        }
+      }
+    } catch (_) {
+      // Non-critical — tooltip just won't show current-bar value
+    }
+  }
+
   function _renderUniverseFreshness(data) {
     const el = document.getElementById('univFreshness');
     if (!el) return;
@@ -8356,8 +8375,15 @@
 
           case 'rvol': {
             if (v == null) return `<td class="univ-td univ-r">—</td>`;
-            const cls = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
-            return `<td class="univ-td univ-r${cls}" title="RVOL ${v.toFixed(2)}× (prev bar ÷ 50-bar avg)">${v.toFixed(2)}×</td>`;
+            const cls  = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
+            const live = rvolLiveCache[r.ticker];
+            let tip    = `prev bar ${v.toFixed(2)}× (50-bar avg)`;
+            if (live) {
+              tip += live.cur_rvol != null
+                ? ` · forming ${live.cur_rvol.toFixed(2)}×`
+                : ` · forming (< 1 min old)`;
+            }
+            return `<td class="univ-td univ-r${cls}" title="${tip}">${v.toFixed(2)}×</td>`;
           }
 
           default:
