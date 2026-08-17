@@ -8286,7 +8286,8 @@
       { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '8%'  },
       { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '8%'  },
       { key: 'gex_state',      label: 'GAMMA',    right: false,                width: '11%' },
-      { key: 'gex_put_wall',   label: 'WALLS',    right: false,                width: '17%' },
+      { key: 'gex_put_wall',   label: 'WALLS',    right: false,                width: '11%' },
+      { key: 'rvol',           label: 'RVOL',     right: true,                 width: '6%'  },
     ];
 
     const colgroup = '<colgroup>' +
@@ -8351,6 +8352,12 @@
           case 'gex_put_wall': {
             const fmtW = n => n == null ? '—' : (n % 1 === 0 ? Math.round(n).toString() : n.toFixed(2));
             return `<td class="univ-td">${fmtW(r.gex_put_wall)} · ${fmtW(r.gex_magnet)} · ${fmtW(r.gex_call_wall)}</td>`;
+          }
+
+          case 'rvol': {
+            if (v == null) return `<td class="univ-td univ-r">—</td>`;
+            const cls = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
+            return `<td class="univ-td univ-r${cls}" title="RVOL ${v.toFixed(2)}× (prev bar ÷ 50-bar avg)">${v.toFixed(2)}×</td>`;
           }
 
           default:

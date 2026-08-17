@@ -4090,6 +4090,11 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .univ-consumed-mid { color: var(--warning); }
 .univ-consumed-hi  { color: var(--danger); }
 
+/* RVOL heat — cyan/teal; red/amber are reserved for bearish/exhausted semantics */
+.univ-rvol-hi  { color: #22d3ee; }
+.univ-rvol-mid { color: #5eead4; }
+.univ-rvol-lo  { color: var(--text-muted); }
+
 /* Universe screener — filter chips */
 .univ-filters {
   display: flex;
