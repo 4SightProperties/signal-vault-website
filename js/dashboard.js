@@ -8215,17 +8215,15 @@
         const liveSpan = cell && cell.querySelector('.univ-rvol-live');
         const baseSpan = cell && cell.querySelector('.univ-rvol-base');
         if (!liveSpan || !baseSpan || !cell.dataset.prev) return;
-        const prev     = parseFloat(cell.dataset.prev);
-        const prevHeat = prev >= 2.0 ? ' univ-rvol-hi' : prev >= 1.2 ? ' univ-rvol-mid' : prev < 0.7 ? ' univ-rvol-lo' : '';
-        const live     = rvolLiveCache[row.dataset.ticker];
+        const prev = parseFloat(cell.dataset.prev);
+        const live = rvolLiveCache[row.dataset.ticker];
         if (!live || live.cur_rvol == null) {
           liveSpan.textContent = !live ? '—' : '···';
-          liveSpan.className   = 'univ-rvol-live univ-rvol-lo';
-          baseSpan.className   = 'univ-rvol-base' + prevHeat;
+          liveSpan.className   = 'univ-rvol-live';
+          baseSpan.className   = 'univ-rvol-base' + (prev >= 2.0 ? ' univ-rvol-hi' : '');
         } else {
-          const liveHeat     = live.cur_rvol >= 2.0 ? ' univ-rvol-hi' : live.cur_rvol >= 1.2 ? ' univ-rvol-mid' : live.cur_rvol < 0.7 ? ' univ-rvol-lo' : '';
-          liveSpan.textContent = live.cur_rvol.toFixed(2) + '×';
-          liveSpan.className   = 'univ-rvol-live' + liveHeat;
+          liveSpan.textContent = Math.round(live.cur_rvol * 100) + '%';
+          liveSpan.className   = 'univ-rvol-live' + (live.cur_rvol >= 2.0 ? ' univ-rvol-hi' : '');
           baseSpan.className   = 'univ-rvol-base';
         }
       });
@@ -8392,22 +8390,20 @@
 
           case 'rvol': {
             if (v == null) return `<td class="univ-td univ-r" data-col="rvol">—</td>`;
-            const prev     = v.toFixed(2);
-            const prevHeat = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
-            const live     = rvolLiveCache[r.ticker];
-            let liveSpan, baseSpan;
+            const prevPct = Math.round(v * 100) + '%';
+            const live    = rvolLiveCache[r.ticker];
+            let liveText, liveCls, baseCls;
             if (!live || live.cur_rvol == null) {
-              // Live suppressed or not yet loaded — heat transfers to prev line
-              const liveText = !live ? '—' : '···';
-              liveSpan = `<span class="univ-rvol-live univ-rvol-lo">${liveText}</span>`;
-              baseSpan = `<span class="univ-rvol-base${prevHeat}">prev ${prev}</span>`;
+              liveText = !live ? '—' : '···';
+              liveCls  = 'univ-rvol-live';
+              baseCls  = 'univ-rvol-base' + (v >= 2.0 ? ' univ-rvol-hi' : '');
             } else {
-              const liveHeat = live.cur_rvol >= 2.0 ? ' univ-rvol-hi' : live.cur_rvol >= 1.2 ? ' univ-rvol-mid' : live.cur_rvol < 0.7 ? ' univ-rvol-lo' : '';
-              liveSpan = `<span class="univ-rvol-live${liveHeat}">${live.cur_rvol.toFixed(2)}×</span>`;
-              baseSpan = `<span class="univ-rvol-base">prev ${prev}</span>`;
+              liveText = Math.round(live.cur_rvol * 100) + '%';
+              liveCls  = 'univ-rvol-live' + (live.cur_rvol >= 2.0 ? ' univ-rvol-hi' : '');
+              baseCls  = 'univ-rvol-base';
             }
-            return `<td class="univ-td univ-r" data-col="rvol" data-prev="${prev}">` +
-              `<div class="univ-rvol-stack">${liveSpan}${baseSpan}</div></td>`;
+            return `<td class="univ-td univ-r" data-col="rvol" data-prev="${v}">` +
+              `<span class="${liveCls}">${liveText}</span> · <span class="${baseCls}">${prevPct}</span></td>`;
           }
 
           default:
