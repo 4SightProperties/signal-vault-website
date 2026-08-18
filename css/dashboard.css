@@ -4090,7 +4090,13 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
 .univ-consumed-mid { color: var(--warning); }
 .univ-consumed-hi  { color: var(--danger); }
 
-/* RVOL heat — cyan/teal; red/amber are reserved for bearish/exhausted semantics */
+/* RVOL two-line layout */
+.univ-rvol-stack { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.2; }
+.univ-rvol-live  { font-size: 0.72rem; }
+.univ-rvol-base  { font-size: 0.58rem; color: var(--text-muted); }
+
+/* Heat — declared after .univ-rvol-base so equal-specificity cascade overrides muted default */
+/* Red/amber are reserved for bearish/exhausted semantics elsewhere in the table */
 .univ-rvol-hi  { color: #22d3ee; }
 .univ-rvol-mid { color: #5eead4; }
 .univ-rvol-lo  { color: var(--text-muted); }

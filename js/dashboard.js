@@ -8207,20 +8207,27 @@
       const data = await apiFetch('/api/rvol-live');
       if (!data || !data.available || !data.data) return;
       rvolLiveCache = data.data;
-      // Patch only title attributes — no table rebuild, no scroll reset
+      // Patch live and base spans in-place — no table rebuild, no scroll reset
       const wrap = document.getElementById('univTableWrap');
       if (!wrap) return;
       wrap.querySelectorAll('.univ-row').forEach(row => {
-        const cell = row.querySelector('[data-col="rvol"]');
-        if (!cell || !cell.dataset.prev) return;
-        const live = rvolLiveCache[row.dataset.ticker];
-        let tip = `prev bar ${cell.dataset.prev}× (50-bar avg)`;
-        if (live) {
-          tip += live.cur_rvol != null
-            ? ` · forming ${live.cur_rvol.toFixed(2)}×`
-            : ` · forming (< 1 min old)`;
+        const cell     = row.querySelector('[data-col="rvol"]');
+        const liveSpan = cell && cell.querySelector('.univ-rvol-live');
+        const baseSpan = cell && cell.querySelector('.univ-rvol-base');
+        if (!liveSpan || !baseSpan || !cell.dataset.prev) return;
+        const prev     = parseFloat(cell.dataset.prev);
+        const prevHeat = prev >= 2.0 ? ' univ-rvol-hi' : prev >= 1.2 ? ' univ-rvol-mid' : prev < 0.7 ? ' univ-rvol-lo' : '';
+        const live     = rvolLiveCache[row.dataset.ticker];
+        if (!live || live.cur_rvol == null) {
+          liveSpan.textContent = !live ? '—' : '···';
+          liveSpan.className   = 'univ-rvol-live univ-rvol-lo';
+          baseSpan.className   = 'univ-rvol-base' + prevHeat;
+        } else {
+          const liveHeat     = live.cur_rvol >= 2.0 ? ' univ-rvol-hi' : live.cur_rvol >= 1.2 ? ' univ-rvol-mid' : live.cur_rvol < 0.7 ? ' univ-rvol-lo' : '';
+          liveSpan.textContent = live.cur_rvol.toFixed(2) + '×';
+          liveSpan.className   = 'univ-rvol-live' + liveHeat;
+          baseSpan.className   = 'univ-rvol-base';
         }
-        cell.title = tip;
       });
     } catch (e) {
       if (e.status && e.status !== 403) console.warn('[rvol-live]', e.message || e);
@@ -8312,11 +8319,11 @@
       { key: 'cloud_1d',       label: '1d',       right: false, center: true,  width: '5%'  },
       { key: 'pm_break_state', label: 'PM Break', right: false,                width: '12%' },
       { key: 'pm_ext_atr',     label: 'PM/ATR',   right: true,                 width: '9%'  },
-      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '8%'  },
+      { key: 'daily_atr',      label: 'ATR',      right: true,                 width: '7%'  },
       { key: 'atr_consumed',   label: 'Consumed', right: true,                 width: '8%'  },
       { key: 'gex_state',      label: 'GAMMA',    right: false,                width: '11%' },
       { key: 'gex_put_wall',   label: 'WALLS',    right: false,                width: '11%' },
-      { key: 'rvol',           label: 'RVOL',     right: true,                 width: '6%'  },
+      { key: 'rvol',           label: 'RVOL',     right: true,                 width: '7%'  },
     ];
 
     const colgroup = '<colgroup>' +
@@ -8385,9 +8392,22 @@
 
           case 'rvol': {
             if (v == null) return `<td class="univ-td univ-r" data-col="rvol">—</td>`;
-            const cls  = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
-            const prev = v.toFixed(2);
-            return `<td class="univ-td univ-r${cls}" data-col="rvol" data-prev="${prev}" title="prev bar ${prev}× (50-bar avg)">${prev}×</td>`;
+            const prev     = v.toFixed(2);
+            const prevHeat = v >= 2.0 ? ' univ-rvol-hi' : v >= 1.2 ? ' univ-rvol-mid' : v < 0.7 ? ' univ-rvol-lo' : '';
+            const live     = rvolLiveCache[r.ticker];
+            let liveSpan, baseSpan;
+            if (!live || live.cur_rvol == null) {
+              // Live suppressed or not yet loaded — heat transfers to prev line
+              const liveText = !live ? '—' : '···';
+              liveSpan = `<span class="univ-rvol-live univ-rvol-lo">${liveText}</span>`;
+              baseSpan = `<span class="univ-rvol-base${prevHeat}">prev ${prev}</span>`;
+            } else {
+              const liveHeat = live.cur_rvol >= 2.0 ? ' univ-rvol-hi' : live.cur_rvol >= 1.2 ? ' univ-rvol-mid' : live.cur_rvol < 0.7 ? ' univ-rvol-lo' : '';
+              liveSpan = `<span class="univ-rvol-live${liveHeat}">${live.cur_rvol.toFixed(2)}×</span>`;
+              baseSpan = `<span class="univ-rvol-base">prev ${prev}</span>`;
+            }
+            return `<td class="univ-td univ-r" data-col="rvol" data-prev="${prev}">` +
+              `<div class="univ-rvol-stack">${liveSpan}${baseSpan}</div></td>`;
           }
 
           default:
