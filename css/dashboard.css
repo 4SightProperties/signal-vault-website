@@ -4,7 +4,7 @@
    ════════════════════════════════════════════════════════════════ */
 
 /* ── Layout ─────────────────────────────────────────────────── */
-body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
+body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-direction: column; }
 
 .dash-header {
   display: flex;
@@ -3216,6 +3216,7 @@ body { overflow: hidden; height: 100vh; display: flex; flex-direction: column; }
   border-radius: var(--radius);
   width: min(540px, 94vw);
   max-height: 88vh;
+  max-height: 88dvh;
   overflow-y: auto;
   padding: 1rem 1.1rem 1.25rem;
   scrollbar-width: thin;
