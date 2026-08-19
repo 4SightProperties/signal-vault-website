@@ -17,15 +17,15 @@ const DiscordAuth = (() => {
   // See DISCORD_DUPLICATE_INVESTIGATION.md
   function saveToken(accessToken, expiresIn) {
     const expires = Date.now() + expiresIn * 1000;
-    sessionStorage.setItem(STORAGE_KEY,  accessToken);
-    sessionStorage.setItem(EXPIRES_KEY,  expires.toString());
-    sessionStorage.removeItem(USER_KEY);
-    sessionStorage.removeItem(ROLES_KEY);
+    localStorage.setItem(STORAGE_KEY,  accessToken);
+    localStorage.setItem(EXPIRES_KEY,  expires.toString());
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(ROLES_KEY);
   }
 
   function getToken() {
-    const token   = sessionStorage.getItem(STORAGE_KEY);
-    const expires = parseInt(sessionStorage.getItem(EXPIRES_KEY) || '0');
+    const token   = localStorage.getItem(STORAGE_KEY);
+    const expires = parseInt(localStorage.getItem(EXPIRES_KEY) || '0');
     if (!token || Date.now() > expires) {
       clearSession();
       return null;
@@ -34,10 +34,10 @@ const DiscordAuth = (() => {
   }
 
   function clearSession() {
-    sessionStorage.removeItem(STORAGE_KEY);
-    sessionStorage.removeItem(USER_KEY);
-    sessionStorage.removeItem(ROLES_KEY);
-    sessionStorage.removeItem(EXPIRES_KEY);
+    localStorage.removeItem(STORAGE_KEY);
+    localStorage.removeItem(USER_KEY);
+    localStorage.removeItem(ROLES_KEY);
+    localStorage.removeItem(EXPIRES_KEY);
   }
 
   // ── OAuth redirect ────────────────────────────────────────────
@@ -79,17 +79,17 @@ const DiscordAuth = (() => {
   }
 
   async function fetchUser(token) {
-    const cached = sessionStorage.getItem(USER_KEY);
+    const cached = localStorage.getItem(USER_KEY);
     if (cached) return JSON.parse(cached);
     const user = await apiGet('/users/@me', token);
-    sessionStorage.setItem(USER_KEY, JSON.stringify(user));
+    localStorage.setItem(USER_KEY, JSON.stringify(user));
     return user;
   }
 
   async function fetchMemberRoles(token) {
     // Bug 2C fix: TTL-gated cache — only serve entries younger than ROLES_CACHE_TTL.
     // Failed API calls (empty []) are never written to the cache.
-    const cached = sessionStorage.getItem(ROLES_KEY);
+    const cached = localStorage.getItem(ROLES_KEY);
     if (cached) {
       try {
         const parsed = JSON.parse(cached);
@@ -97,9 +97,9 @@ const DiscordAuth = (() => {
           console.log('[DiscordAuth] roles (cached):', parsed.roles);
           return parsed.roles;
         }
-        sessionStorage.removeItem(ROLES_KEY); // stale — refetch
+        localStorage.removeItem(ROLES_KEY); // stale — refetch
       } catch (e) {
-        sessionStorage.removeItem(ROLES_KEY); // corrupt — refetch
+        localStorage.removeItem(ROLES_KEY); // corrupt — refetch
       }
     }
     try {
@@ -110,7 +110,7 @@ const DiscordAuth = (() => {
       const roles = member.roles || [];
       console.log('[DiscordAuth] member roles from API:', roles);
       console.log('[DiscordAuth] config requiredRoles:', CONFIG.discord.requiredRoles);
-      sessionStorage.setItem(ROLES_KEY, JSON.stringify({ roles, cachedAt: Date.now() }));
+      localStorage.setItem(ROLES_KEY, JSON.stringify({ roles, cachedAt: Date.now() }));
       return roles;
     } catch (e) {
       // Distinguish between "not in guild" and other errors
@@ -198,7 +198,7 @@ const DiscordAuth = (() => {
   // Clears only the cached roles so the next init() re-fetches fresh role data
   // without invalidating the OAuth token (used after ToS role assignment).
   function clearRolesCache() {
-    sessionStorage.removeItem(ROLES_KEY);
+    localStorage.removeItem(ROLES_KEY);
   }
 
   return { init, startOAuth, logout, getToken, clearSession, clearRolesCache, getAvatarUrl, getDisplayName };
