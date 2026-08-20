@@ -3047,7 +3047,7 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 .flow-stat-label { color: var(--text-muted); min-width: 5rem; flex-shrink: 0; }
 .flow-sep        { color: var(--text-muted); }
 
-/* ── Sector baskets two-column panel ────────────────── */
+/* ── Sector baskets three-column panel ──────────────── */
 .basket-grid {
   display: flex;
   gap: 0.7rem;

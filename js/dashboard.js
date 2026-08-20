@@ -1737,12 +1737,14 @@
       </div>`;
     }
 
-    const leftCol  = sorted.slice(0, 5).map((b, i) => rowHtml(b, i)).join('');
-    const rightCol = sorted.slice(5).map((b, i) => rowHtml(b, i + 5)).join('');
+    const col1 = sorted.slice(0, 5).map((b, i) => rowHtml(b, i)).join('');
+    const col2 = sorted.slice(5, 10).map((b, i) => rowHtml(b, i + 5)).join('');
+    const col3 = sorted.slice(10).map((b, i) => rowHtml(b, i + 10)).join('');
 
     bodyEl.innerHTML = `<div class="basket-grid">
-      <div class="basket-col">${leftCol}</div>
-      <div class="basket-col">${rightCol}</div>
+      <div class="basket-col">${col1}</div>
+      <div class="basket-col">${col2}</div>
+      <div class="basket-col">${col3}</div>
     </div>`;
 
     if (metaEl) metaEl.textContent = cell.state === 'stale' ? 'stale' : `clouds ${timeframe}`;
