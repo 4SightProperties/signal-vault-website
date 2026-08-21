@@ -2569,6 +2569,7 @@
       const url = `/api/sr_levels?ticker=${encodeURIComponent(ticker)}${px ? '&price=' + px : ''}`;
       apiFetch(url).then(d => {
         srLevelsCache = (d && d.available) ? d : null;
+        if (document.getElementById('cockpit5_12Grid')) _render5_12Cloud();
         // Immediately render the off-watchlist ATR bar from sr_levels data if the live
         // chain hasn't loaded yet (chainAtr still null). Guards: focusedTicker must still
         // match — avoids writing stale data when a second ticker was focused mid-flight.
@@ -3025,22 +3026,40 @@
     if (structEl) structEl.style.display = 'none';
 
     // ── Centre column (Blocks A, C, D, E, F) — stays in #chainCockpit ──────
+    const _qlMid = bid > 0 ? optionMid(bid, ask) : null;
+    const _qlSp  = _qlMid != null ? (ask - bid) / _qlMid : null;
+    const _qlSpHtml = _qlSp == null
+      ? '<span id="cqlSpread" class="cql-spread-muted">—</span>'
+      : _qlSp > 0.40
+        ? `<span id="cqlSpread" class="cql-spread-warn"><i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${(_qlSp * 100).toFixed(0)}%</span>`
+        : `<span id="cqlSpread" class="cql-spread-muted">${(_qlSp * 100).toFixed(0)}%</span>`;
+    const _initQuoteLine =
+      `bid $<span id="cqlBid">${bid > 0 ? bid.toFixed(2) : '—'}</span>` +
+      ` · mid $<span id="cqlMid">${_qlMid != null ? _qlMid.toFixed(2) : '—'}</span>` +
+      ` · ask $<span id="cqlAsk">${ask.toFixed(2)}</span>` +
+      ` · ${_qlSpHtml}`;
+
     const centreHtml = `
 <div class="chain-armed" id="chainArmed">
-  <div class="cockpit-header">
-    <div class="cockpit-header-left">
-      <span class="cockpit-symbol">${sym}</span>
-      <span class="cockpit-meta" id="cockpitMeta">${dir.toUpperCase()} · ask $${ask.toFixed(2)} · ${dte}DTE${iv > 0 ? ' · IV ' + (iv * 100).toFixed(0) + '%' : ''}<span class="cockpit-quote-age" id="cockpitQuoteAge"></span></span>
+  <div class="cockpit-top-row">
+    <div class="cockpit-top-left">
+      <div class="cockpit-header">
+        <div class="cockpit-header-left">
+          <span class="cockpit-symbol">${sym}</span>
+          <span class="cockpit-meta" id="cockpitMeta">${dir.toUpperCase()} · ask $${ask.toFixed(2)} · ${dte}DTE${iv > 0 ? ' · IV ' + (iv * 100).toFixed(0) + '%' : ''}<span class="cockpit-quote-age" id="cockpitQuoteAge"></span></span>
+        </div>
+        <button class="cockpit-refresh-btn" id="cockpitRefreshBtn" title="Re-fetch live quote + projection">↻</button>
+      </div>
+      <div class="cockpit-quote-line" id="cockpitQuoteLine">${_initQuoteLine}</div>
+      <!-- Projection target -->
+      <div class="cockpit-qty-target-row">
+        <span class="chain-cost-label">Target $</span>
+        <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
+        <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
+        <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
+      </div>
     </div>
-    <button class="cockpit-refresh-btn" id="cockpitRefreshBtn" title="Re-fetch live quote + projection">↻</button>
-  </div>
-
-  <!-- Projection target -->
-  <div class="cockpit-qty-target-row">
-    <span class="chain-cost-label">Target $</span>
-    <input class="cockpit-target-input" id="cockpitTarget" type="number" step="0.01" value="${defaultTarget}" placeholder="0.00">
-    <button class="cockpit-apply-btn" id="cockpitApplyTarget">→</button>
-    <span class="cockpit-target-src" id="cockpitTargetSrc">${targetSrc}</span>
+    <div class="cockpit-top-right" id="cockpit5_12Grid" style="display:none"></div>
   </div>
 
   <!-- ATR banner lives outside the scroll region — rendered separately from the table -->
@@ -3786,6 +3805,7 @@
 
     // Auto-refresh quote then load projection matrix + payout curve on arm
     await refreshArmedQuote();
+    _render5_12Cloud();
     loadProjectionMatrix();
     loadPayoutCurve();
   }
@@ -3898,6 +3918,86 @@
       : '$' + lastRiskLeft.toFixed(0);
   }
 
+  // Fetches /api/projection in range mode (lo=lower EMA, hi=upper EMA, n=3) and
+  // populates #cockpit5_12Grid with the three cloud-level premiums and VS MID %.
+  // Safe to call speculatively — hides the grid and returns silently on any missing data.
+  async function _render5_12Cloud() {
+    const grid = document.getElementById('cockpit5_12Grid');
+    if (!grid || !armedContract || !chainTicker) return;
+
+    const c512 = srLevelsCache?.cloud_levels?.find(c => c.label === '10m 5/12');
+    if (!c512) { grid.style.display = 'none'; return; }
+
+    const ema_s = c512.ema_short;
+    const ema_l = c512.ema_long;
+    const lo    = Math.min(ema_s, ema_l);
+    const hi    = Math.max(ema_s, ema_l);
+    if (hi <= lo) { grid.style.display = 'none'; return; }
+
+    const optionType = armedContract.option_type
+      || (armedContract.bias === 'bullish' ? 'call' : 'put');
+    const bid = armedContract.bid ?? 0;
+    const ask = armedContract.ask;
+    const mid = bid > 0 ? optionMid(bid, ask) : ask;
+
+    const params = new URLSearchParams({
+      ticker:      chainTicker,
+      strike:      armedContract.strike,
+      expiry:      armedContract.expiration,
+      option_type: optionType,
+      iv:          armedContract.iv,
+      premium:     ask,
+      dte:         armedContract.dte,
+      lo:          lo.toFixed(4),
+      hi:          hi.toFixed(4),
+      n:           3,
+    });
+    if (bid > 0)           params.set('bid',  bid);
+    if (chainCurrentPrice > 0) params.set('spot', chainCurrentPrice);
+
+    try {
+      const proj = await apiFetch(`/api/projection?${params}`);
+      if (!proj?.points || proj.points.length < 3) { grid.style.display = 'none'; return; }
+
+      // points[0]=lo (lower EMA), points[1]=midpoint, points[2]=hi (upper EMA)
+      const rows = [
+        { label: 'upper', stock: proj.points[2].stock, prem: proj.points[2].values[0] },
+        { label: 'mid',   stock: proj.points[1].stock, prem: proj.points[1].values[0] },
+        { label: 'lower', stock: proj.points[0].stock, prem: proj.points[0].values[0] },
+      ];
+
+      const existingRows = grid.querySelectorAll('.cpc-row');
+      if (existingRows.length === 3) {
+        rows.forEach((r, i) => {
+          const rowEl  = existingRows[i];
+          const vsFrac = mid > 0 ? (r.prem - mid) / mid : 0;
+          rowEl.querySelector('.cpc-stock').textContent = `$${r.stock.toFixed(2)}`;
+          rowEl.querySelector('.cpc-prem').textContent  = `$${r.prem.toFixed(2)}`;
+          const vsEl = rowEl.querySelector('.cpc-vs');
+          vsEl.textContent = `${vsFrac >= 0 ? '+' : ''}${(vsFrac * 100).toFixed(0)}%`;
+          vsEl.className   = `cpc-vs cpc-r ${vsFrac < 0 ? 'cpc-vs-neg' : 'cpc-vs-pos'}`;
+        });
+      } else {
+        grid.innerHTML =
+          `<div class="cpc-hdr"><span>10M 5/12 CLOUD</span><span>STOCK</span>` +
+          `<span class="cpc-r">PREMIUM</span><span class="cpc-r">VS MID</span></div>` +
+          rows.map(r => {
+            const vsFrac = mid > 0 ? (r.prem - mid) / mid : 0;
+            return `<div class="cpc-row">` +
+              `<span class="cpc-lbl">${r.label}</span>` +
+              `<span class="cpc-stock">$${r.stock.toFixed(2)}</span>` +
+              `<span class="cpc-prem cpc-r">$${r.prem.toFixed(2)}</span>` +
+              `<span class="cpc-vs ${vsFrac < 0 ? 'cpc-vs-neg' : 'cpc-vs-pos'} cpc-r">` +
+              `${vsFrac >= 0 ? '+' : ''}${(vsFrac * 100).toFixed(0)}%</span>` +
+              `</div>`;
+          }).join('');
+      }
+      grid.style.display = '';
+    } catch (_) {
+      grid.style.display = 'none';
+    }
+  }
+
   // Re-fetches the live quote for the armed contract from /api/chain/quote.
   // Updates armedContract.ask / .iv / .dte in place so subsequent projection
   // calls and the Open button use fresh data.
@@ -3944,6 +4044,28 @@
           (fresh.iv > 0 ? ` · IV ${(fresh.iv * 100).toFixed(0)}%` : '') +
           ` <span class="cockpit-quote-age" id="cockpitQuoteAge"> · live</span>`;
       }
+
+      // Patch bid/mid/ask/spread quote line in place
+      const _fBid = fresh.bid ?? 0;
+      const _fAsk = fresh.ask;
+      const _fMid = _fBid > 0 ? optionMid(_fBid, _fAsk) : null;
+      const bidEl = document.getElementById('cqlBid');
+      const midEl = document.getElementById('cqlMid');
+      const askEl = document.getElementById('cqlAsk');
+      const spEl  = document.getElementById('cqlSpread');
+      if (bidEl) bidEl.textContent = _fBid > 0 ? _fBid.toFixed(2) : '—';
+      if (midEl) midEl.textContent = _fMid != null ? _fMid.toFixed(2) : '—';
+      if (askEl) askEl.textContent = _fAsk.toFixed(2);
+      if (spEl && _fBid > 0 && _fAsk > 0 && _fMid != null) {
+        const _sp = (_fAsk - _fBid) / _fMid;
+        spEl.innerHTML  = _sp > 0.40
+          ? `<i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${(_sp * 100).toFixed(0)}%`
+          : `${(_sp * 100).toFixed(0)}%`;
+        spEl.className  = `cql-spread ${_sp > 0.40 ? 'cql-spread-warn' : 'cql-spread-muted'}`;
+      }
+
+      // Refresh cloud premium block with updated bid/ask
+      _render5_12Cloud();
 
       // Refresh all display fields (resolved price, bid/ask, cost, max loss, B/E, spend gate)
       _updateEntryDisplay();

@@ -1726,6 +1726,60 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   text-overflow: ellipsis;
 }
 
+/* ── 10m 5/12 cloud premium block ────────────────────────────────────────────── */
+.cockpit-top-row {
+  display: flex;
+  gap: 0;
+  align-items: stretch;
+}
+.cockpit-top-left {
+  flex: 1 1 0;
+  min-width: 0;
+}
+.cockpit-top-right {
+  width: 236px;
+  flex-shrink: 0;
+  padding-left: 0.55rem;
+  margin-left: 0.55rem;
+  border-left: 1px solid var(--border);
+}
+
+/* Bid / mid / ask / spread quote line */
+.cockpit-quote-line {
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  margin: 0.08rem 0 0.1rem;
+}
+.cql-spread-warn { color: var(--warning); }
+.cql-spread-muted { color: var(--text-muted); }
+
+/* 3-row cloud grid */
+.cpc-hdr {
+  display: grid;
+  grid-template-columns: 3rem 1fr 1fr 1fr;
+  gap: 0.15rem;
+  font-family: var(--font-display);
+  font-size: 0.52rem;
+  color: var(--text-muted);
+  margin-bottom: 0.2rem;
+}
+.cpc-row {
+  display: grid;
+  grid-template-columns: 3rem 1fr 1fr 1fr;
+  gap: 0.15rem;
+  font-family: var(--font-display);
+  font-size: 0.6rem;
+  color: var(--text-primary);
+  margin-bottom: 0.1rem;
+}
+.cpc-lbl { color: var(--text-muted); }
+.cpc-r { text-align: right; }
+.cpc-vs-neg { color: var(--accent); }
+.cpc-vs-pos { color: var(--danger); }
+
 /* ── R:R premium number line ─────────────────────────────────────────────────── */
 #cockpitRrLine {
   flex-shrink: 0;
