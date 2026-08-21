@@ -155,7 +155,22 @@
   function fmtPct(n) {
     if (n == null) return '—';
     const sign = n >= 0 ? '+' : '';
-    return sign + n.toFixed(1) + '%';
+    return Math.abs(n) >= 100
+      ? sign + Math.round(n) + '%'
+      : sign + n.toFixed(1) + '%';
+  }
+
+  function fmtPrem(n) {
+    if (n == null) return '—';
+    const v = +n;
+    if (v < 10)  return '$' + v.toFixed(2);
+    if (v < 100) return '$' + v.toFixed(1);
+    return '$' + Math.round(v);
+  }
+
+  function fmtDollars(n) {
+    if (n == null) return '—';
+    return '$' + Math.abs(Math.round(n)).toLocaleString('en-US');
   }
 
   function fmtPrice(n) {
@@ -3972,9 +3987,9 @@
           const rowEl  = existingRows[i];
           const vsFrac = mid > 0 ? (r.prem - mid) / mid : 0;
           rowEl.querySelector('.cpc-stock').textContent = `$${r.stock.toFixed(2)}`;
-          rowEl.querySelector('.cpc-prem').textContent  = `$${r.prem.toFixed(2)}`;
+          rowEl.querySelector('.cpc-prem').textContent  = fmtPrem(r.prem);
           const vsEl = rowEl.querySelector('.cpc-vs');
-          vsEl.textContent = `${vsFrac >= 0 ? '+' : ''}${(vsFrac * 100).toFixed(0)}%`;
+          vsEl.textContent = fmtPct(vsFrac * 100);
           vsEl.className   = `cpc-vs cpc-r ${vsFrac < 0 ? 'cpc-vs-neg' : 'cpc-vs-pos'}`;
         });
       } else {
@@ -3986,9 +4001,9 @@
             return `<div class="cpc-row">` +
               `<span class="cpc-lbl">${r.label}</span>` +
               `<span class="cpc-stock">$${r.stock.toFixed(2)}</span>` +
-              `<span class="cpc-prem cpc-r">$${r.prem.toFixed(2)}</span>` +
+              `<span class="cpc-prem cpc-r">${fmtPrem(r.prem)}</span>` +
               `<span class="cpc-vs ${vsFrac < 0 ? 'cpc-vs-neg' : 'cpc-vs-pos'} cpc-r">` +
-              `${vsFrac >= 0 ? '+' : ''}${(vsFrac * 100).toFixed(0)}%</span>` +
+              `${fmtPct(vsFrac * 100)}</span>` +
               `</div>`;
           }).join('');
       }
@@ -4521,13 +4536,13 @@
       const _v75  = _interpOptVal(_atr075Stk);
       const _r75  = _v75 != null ? fmtR(_v75) : '';
       const _pct75str = (_v75 != null && entry > 0)
-        ? ((_v75 >= entry ? '+' : '') + Math.round((_v75 - entry) / entry * 100) + '%') : '';
+        ? fmtPct((_v75 - entry) / entry * 100) : '';
       const _outcome75 = [_r75, _pct75str].filter(Boolean).join(' · ');
       svgParts.push(`<line x1="${_x75.toFixed(1)}" y1="0" x2="${_x75.toFixed(1)}" y2="${SVG_H}" stroke="#eda100" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
       const {lx: _lx75, anchor: _a75} = lblPos(_x75);
       svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}0.75 ATR $${_atr075Stk.toFixed(0)}</text>`);
       if (_v75 != null) {
-        svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.55">$${_v75.toFixed(2)}</text>`);
+        svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.55">${fmtPrem(_v75)}</text>`);
         if (_outcome75) svgParts.push(`<text x="${_lx75.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="${_a75}" fill="#eda100" font-size="9" font-family="monospace" opacity="0.55">${_outcome75}</text>`);
       }
     }
@@ -4536,13 +4551,13 @@
       const _v100 = _interpOptVal(_atr100Stk);
       const _r100 = _v100 != null ? fmtR(_v100) : '';
       const _pct100str = (_v100 != null && entry > 0)
-        ? ((_v100 >= entry ? '+' : '') + Math.round((_v100 - entry) / entry * 100) + '%') : '';
+        ? fmtPct((_v100 - entry) / entry * 100) : '';
       const _outcome100 = [_r100, _pct100str].filter(Boolean).join(' · ');
       svgParts.push(`<line x1="${_x100.toFixed(1)}" y1="0" x2="${_x100.toFixed(1)}" y2="${SVG_H}" stroke="#ef4444" stroke-width="1" stroke-dasharray="3 2" opacity="0.35"/>`);
       const {lx: _lx100, anchor: _a100} = lblPos(_x100);
       svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 20}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.7">${_spotAnchored ? '+' : ''}1 ATR $${_atr100Stk.toFixed(0)}</text>`);
       if (_v100 != null) {
-        svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.55">$${_v100.toFixed(2)}</text>`);
+        svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 10}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.55">${fmtPrem(_v100)}</text>`);
         if (_outcome100) svgParts.push(`<text x="${_lx100.toFixed(1)}" y="${AXIS_Y - 2}" text-anchor="${_a100}" fill="#ef4444" font-size="9" font-family="monospace" opacity="0.55">${_outcome100}</text>`);
       }
     }
@@ -4758,11 +4773,11 @@
         svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL2}" text-anchor="${anchor}" fill="#94a3b8" font-size="9" font-family="monospace">${stkTxt}</text>`);
 
         if (dot.isEntry) {
-          if (dot.optVal != null) svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL3}" text-anchor="${anchor}" fill="#94a3b8" font-size="9" font-family="monospace">$${dot.optVal.toFixed(2)}</text>`);
+          if (dot.optVal != null) svgParts.push(`<text x="${lx.toFixed(1)}" y="${yL3}" text-anchor="${anchor}" fill="#94a3b8" font-size="9" font-family="monospace">${fmtPrem(dot.optVal)}</text>`);
         } else if (dot.showPct && entry > 0) {
-          const optTxt    = dot.optVal != null ? `$${dot.optVal.toFixed(2)}` : '—';
+          const optTxt    = dot.optVal != null ? fmtPrem(dot.optVal) : '—';
           const rStr      = dot.optVal != null ? fmtR(dot.optVal) : '';
-          const pctStr    = dot.pctGain != null ? (dot.pctGain >= 0 ? '+' : '') + Math.round(dot.pctGain) + '%' : '';
+          const pctStr    = dot.pctGain != null ? fmtPct(dot.pctGain) : '';
           const outcomeStr = [rStr, pctStr].filter(Boolean).join(' · ');
           const outcomeCol = !outcomeStr ? '#64748b'
             : dot.pctGain != null ? (dot.pctGain < 0 ? '#ef4444' : '#22c55e')
@@ -4780,9 +4795,9 @@
       svgParts.push(`<line x1="${W}" y1="${AXIS_Y - 6}" x2="${W}" y2="${AXIS_Y}" stroke="${_col}" stroke-width="1" opacity="0.4"/>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 13}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${_lbl}</text>`);
       svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 25}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${(+_tp2.stockPrice).toFixed(0)} stk</text>`);
-      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">$${_tp2.price.toFixed(2)}</text>`);
+      svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 37}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${fmtPrem(_tp2.price)}</text>`);
       const _fmtRTp2   = fmtR(_tp2.price);
-      const _pctTp2str = entry > 0 ? ((_tp2.price >= entry ? '+' : '') + Math.round((_tp2.price - entry) / entry * 100) + '%') : '';
+      const _pctTp2str = entry > 0 ? fmtPct((_tp2.price - entry) / entry * 100) : '';
       const _outcomeTp2 = [_fmtRTp2, _pctTp2str].filter(Boolean).join(' · ');
       if (_outcomeTp2) svgParts.push(`<text x="${W - 2}" y="${AXIS_Y + 47}" text-anchor="end" fill="${_col}" font-size="9" font-family="monospace">${_outcomeTp2}</text>`);
     }
@@ -5227,20 +5242,19 @@
     if (!wrapEl) return;
 
     function fmtVal(row) {
-      return row ? `$${row.value.toFixed(2)}` : '<span class="mat-na">—</span>';
+      return row ? fmtPrem(row.value) : '<span class="mat-na">—</span>';
     }
-    function fmtPct(row) {
+    function _pctHtml(row) {
       if (!row) return '<span class="mat-na">—</span>';
-      const gc    = row.gain_pct >= 0 ? 'positive' : 'negative';
-      const gSign = row.gain_pct >= 0 ? '+' : '';
-      return `<span class="mat-pct ${gc}">${gSign}${row.gain_pct.toFixed(1)}%</span>`;
+      const gc = row.gain_pct >= 0 ? 'positive' : 'negative';
+      return `<span class="mat-pct ${gc}">${fmtPct(row.gain_pct)}</span>`;
     }
     function fmtDol(row) {
       if (!row || qty <= 1) return '';
       const total = Math.round(row.dollars * qty);
       const gc    = total >= 0 ? 'positive' : 'negative';
       const tSign = total >= 0 ? '+' : '';
-      return `<span class="mat-total ${gc}">${tSign}$${Math.abs(total)}</span>`;
+      return `<span class="mat-total ${gc}">${tSign}${fmtDollars(total)}</span>`;
     }
 
     const _ATR_CUTOFF = 200;  // demand % above which cell goes blank and row dims
@@ -5276,10 +5290,10 @@
   <td class="mat-stock">${priceStr}</td>
   <td class="mat-rematr">${fmtRemAtr(lvl.price)}</td>
   <td class="mat-val">${fmtVal(nowRow)}</td>
-  <td class="mat-pct-cell">${fmtPct(nowRow)}</td>
+  <td class="mat-pct-cell">${_pctHtml(nowRow)}</td>
   <td class="mat-dol-cell">${fmtDol(nowRow)}</td>
   <td class="mat-val mat-group-sep">${fmtVal(expRow)}</td>
-  <td class="mat-pct-cell">${fmtPct(expRow)}</td>
+  <td class="mat-pct-cell">${_pctHtml(expRow)}</td>
   <td class="mat-dol-cell">${fmtDol(expRow)}</td>
 </tr>`;
     }).join('');
