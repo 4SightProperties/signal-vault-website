@@ -45,7 +45,7 @@
   --gold:             #fbbf24;
   --discord:          #5865f2;
 
-  --font-display:     'Orbitron', 'Courier New', monospace;
+  --font-display:     'Inter', -apple-system, sans-serif;
   --font-body:        'Inter', -apple-system, sans-serif;
 
   --radius-sm:        8px;
@@ -153,7 +153,7 @@ ul   { list-style: none; }
   display:         flex;
   align-items:     center;
   justify-content: center;
-  font-family:     var(--font-display);
+  font-family:     'Orbitron', 'Courier New', monospace;
   font-size:       14px;
   font-weight:     700;
   color:           var(--text-primary);
@@ -177,7 +177,7 @@ ul   { list-style: none; }
 }
 
 .nav-logo-text {
-  font-family: var(--font-display);
+  font-family: 'Orbitron', 'Courier New', monospace;
   font-size:   16px;
   font-weight: 700;
   color:       var(--text-primary);

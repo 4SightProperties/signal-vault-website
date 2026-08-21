@@ -33,7 +33,7 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 
 /* ── Header elements ─────────────────────────────────────────── */
 .dash-logo {
-  font-family: var(--font-display);
+  font-family: 'Orbitron', 'Courier New', monospace;
   font-size: 0.85rem;
   font-weight: 700;
   color: var(--text-primary);
@@ -564,7 +564,7 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   box-shadow: var(--shadow-glow-card);
 }
 .dash-auth-logo {
-  font-family: var(--font-display);
+  font-family: 'Orbitron', 'Courier New', monospace;
   font-size: 1rem;
   font-weight: 700;
   color: var(--text-primary);
