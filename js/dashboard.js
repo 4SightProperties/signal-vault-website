@@ -3993,7 +3993,8 @@
           }).join('');
       }
       grid.style.display = '';
-    } catch (_) {
+    } catch (err) {
+      console.warn('[5/12 cloud] projection fetch failed:', err);
       grid.style.display = 'none';
     }
   }
