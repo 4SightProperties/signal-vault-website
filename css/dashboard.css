@@ -4149,6 +4149,50 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 .univ-rvol-base { color: var(--text-muted); }
 .univ-rvol-hi   { color: #22d3ee; }
 
+/* <7DTE flow glyph — three-segment bar.
+   Bar, not a dot: colored emoji dots are already GAMMA's vocabulary two columns
+   away (and Market Tide's), so a dot here would read as the same measure.
+   Segments lit by intensity (1/2/3), filled by lean. All colors from the :root
+   block in css/style.css — no raw hex. */
+.univ-f7 {
+  display: inline-flex;
+  gap: 2px;
+  align-items: center;
+  vertical-align: middle;
+  line-height: 1;
+  cursor: help;
+}
+.univ-f7-seg {
+  display: inline-block;
+  width: 3px;
+  height: 11px;
+  border-radius: 1px;
+  background: var(--text-muted);
+  opacity: 0.28;                       /* unlit — matches .univ-cloud-unknown weight */
+}
+.univ-f7-seg.lit { opacity: 1; }
+
+.univ-f7-bull .univ-f7-seg.lit { background: var(--accent); }
+.univ-f7-bear .univ-f7-seg.lit { background: var(--danger); }
+.univ-f7-flat .univ-f7-seg.lit { background: var(--text-secondary); }
+
+/* Thin — measured, but the OI base is too thin to rank. Hollow frames: present
+   and countable, deliberately not filled. */
+.univ-f7-thin .univ-f7-seg {
+  background: transparent;
+  border: 1px solid var(--text-muted);
+  height: 9px;                         /* 9 + 2px border = 11, aligns with filled */
+  opacity: 0.7;
+}
+
+/* Absent — nothing cleared the reporting floor. A single dim segment, so quiet
+   reads as LESS than thin rather than as an empty slot. */
+.univ-f7-absent .univ-f7-seg { opacity: 0.16; }
+
+/* Stale payload — dim the whole glyph. Stale flow beside a live price is the
+   misreading worth guarding against. */
+.univ-f7-stale { opacity: 0.45; }
+
 /* Universe screener — filter chips */
 .univ-filters {
   display: flex;

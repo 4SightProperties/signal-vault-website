@@ -65,7 +65,10 @@
   let journalCalCache   = null;  // last calendar API response
   let universeDataCache = null;  // last /api/scan-universe payload
   let rvolLiveCache     = {};    // last /api/rvol-live data keyed by ticker
+  let flow7dCache       = null;  // last /api/flow-7dte payload — whole envelope, not
+                                 // just rows: ts/stale/lean_caveat all feed the tooltip
   let universeTimer     = null;
+  let flow7dTimer       = null;
   let univSortCol       = 'ticker';
   let univSortDir       = 1;
   let univFilters       = { cloud_10m: null, cloud_1h: null, cloud_1d: null, pm_break_state: null };
@@ -415,6 +418,10 @@
     universeTimer = setInterval(loadUniverse, 65_000);
     loadRvolLive();
     setInterval(loadRvolLive, 30_000);
+    // Backend writes flow_7dte.json every 600 s; polling at 300 s guarantees a new
+    // write is picked up within one cycle without doubling the request rate again.
+    loadFlow7dte();
+    flow7dTimer = setInterval(loadFlow7dte, 300_000);
     if (isAdmin) {
       _injectJournalView();
       _injectJournalToggle();
@@ -1285,6 +1292,117 @@
     if (d.sup)               h += `<div class="ttp-row"><span>Next sup</span><span class="ttp-val">${fmtPrice(d.sup)}</span></div>`;
     if (d.gex)               h += `<div class="ttp-gex">${_esc(d.gex)}</div>`;
     return h;
+  }
+
+  function _buildFlowTipHtml(d) {
+    const fmtVol = n => n == null ? '—' : n.toLocaleString();
+    const fmtPrem = n => {
+      if (n == null) return '—';
+      if (n >= 1e9) return '$' + (n / 1e9).toFixed(2) + 'B';
+      if (n >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+      // Below $1M show exact dollars — rounding $1,965 to "$2K" throws away the very
+      // precision that makes a thin ticker legible as thin.
+      return '$' + Math.round(n).toLocaleString();
+    };
+    const row = (k, v) => `<div class="ttp-row"><span>${k}</span><span class="ttp-val">${v}</span></div>`;
+
+    // No title row: the column header already reads 7D FLOW.
+    let h = '';
+
+    // Absent is a measurement, not a gap: nothing traded above the vendor's
+    // reporting floor. Say that, rather than "no data".
+    if (d.s === 'absent') {
+      h += `<span class="ttp-setup-line">` +
+           `No &lt;7DTE contract above reporting threshold</span>`;
+      return h + _flowTipFooter(d, false);
+    }
+
+    h += row('Volume',  fmtVol(d.v));
+    h += row('Premium', fmtPrem(d.p));
+
+    if (d.s === 'thin') {
+      h += row('Vol/OI', d.vo != null ? d.vo.toFixed(2) : '—');
+    } else {
+      h += row('Vol/OI',    d.vo != null ? d.vo.toFixed(2) : '—');
+      h += row('Intensity', d.i + '/100');
+    }
+
+    // Lean as a labelled direction — a bare signed float reads as precision the
+    // measure does not have.
+    if (d.l != null) {
+      const lbl = d.l > 0.15 ? 'Bullish' : d.l < -0.15 ? 'Bearish' : 'Balanced';
+      const sgn = (d.l >= 0 ? '+' : '−') + Math.abs(d.l).toFixed(2);
+      h += row('Lean', `${lbl} (${sgn})`);
+    }
+
+    if (d.s === 'thin') {
+      h += `<div class="ttp-setup"><span class="ttp-setup-line">` +
+           `Open interest base too thin to rank</span></div>`;
+    }
+
+    return h + _flowTipFooter(d, d.l != null);
+  }
+
+  // Timestamp + method caveat. A glyph read nine minutes ago must not look live, so
+  // the age is always stated and an explicitly stale payload says so.
+  function _flowTipFooter(d, withCaveat) {
+    let h = '';
+    if (withCaveat && d.cav) {
+      h += `<div class="ttp-setup"><span class="ttp-setup-line">${_esc(d.cav)}</span></div>`;
+    }
+    let age = '';
+    if (d.age != null) {
+      age = d.age < 90 ? `${Math.round(d.age)}s ago`
+                       : `${Math.round(d.age / 60)}m ago`;
+    } else if (d.ts) {
+      age = String(d.ts).slice(11, 16) + ' ET';
+    }
+    if (age) h += `<div class="ttp-gex">Read ${age}${d.stale ? ' · STALE' : ''}</div>`;
+    return h;
+  }
+
+  // Bound from _injectUniverseView(), not from _initTooltip(): _initTooltip runs at
+  // line ~401 and #univTableWrap is not created until ~412, so binding here would
+  // silently no-op. Delegated off the wrap, which survives every table rebuild.
+  function _wireUniverseTooltip(wrap) {
+    if (!wrap) return;
+
+    wrap.addEventListener('mouseover', e => {
+      const cell = e.target.closest('[data-tip]');
+      if (!cell || !wrap.contains(cell)) return;
+      try { _showTip(cell, _buildFlowTipHtml(JSON.parse(cell.dataset.tip))); } catch (_) {}
+    });
+    wrap.addEventListener('mouseout', e => {
+      if (!e.target.closest('[data-tip]')) return;
+      const to = e.relatedTarget;
+      if (to && to.closest('[data-tip]') === e.target.closest('[data-tip]')) return;
+      _hideTip();
+    });
+
+    // Touch long-press — there is a PWA manifest, so hover-only would make the
+    // whole tooltip invisible on mobile.
+    wrap.addEventListener('touchstart', e => {
+      const cell = e.target.closest('[data-tip]');
+      if (!cell) return;
+      clearTimeout(_tipTimer);
+      _tipByTouch = false;
+      _tipTimer = setTimeout(() => {
+        try { _showTip(cell, _buildFlowTipHtml(JSON.parse(cell.dataset.tip))); } catch (_) {}
+        _tipByTouch = true;
+      }, 400);
+    }, { passive: true });
+    wrap.addEventListener('touchmove', () => { clearTimeout(_tipTimer); _tipTimer = null; }, { passive: true });
+    wrap.addEventListener('touchend', e => {
+      clearTimeout(_tipTimer);
+      _tipTimer = null;
+      if (_tipByTouch) {
+        // Swallow the synthetic click so a long-press does not also open the cockpit
+        // for that ticker via the .univ-row click handler.
+        e.preventDefault();
+        e.stopPropagation();
+        _tipByTouch = false;
+      }
+    }, { passive: false });
   }
 
   function _tipEl() { return document.getElementById('hoverTip'); }
@@ -8279,6 +8397,10 @@
         if (universeDataCache && universeDataCache.rows) renderUniverseTable(universeDataCache.rows);
       });
     });
+
+    // Delegated tooltip for the universe table. Bound here rather than in
+    // _initTooltip() because that runs before this element exists.
+    _wireUniverseTooltip(document.getElementById('univTableWrap'));
   }
 
   function _enterUniverseMode() {
@@ -8371,6 +8493,32 @@
     }
   }
 
+  async function loadFlow7dte() {
+    if (!authToken) return;
+    try {
+      const data = await apiFetch('/api/flow-7dte');
+      // A failed or unavailable poll is NOT evidence the market went quiet. Keep the
+      // last good glyphs on screen rather than blanking the column to "absent",
+      // which would be an affirmative — and wrong — claim about market activity.
+      if (!data || !data.available || !data.rows) return;
+      flow7dCache = data;
+
+      // Patch in place. renderUniverseTable() is a full innerHTML rebuild, so calling
+      // it here would reset the user's scroll position every poll.
+      const wrap = document.getElementById('univTableWrap');
+      if (!wrap) return;
+      wrap.querySelectorAll('.univ-row').forEach(row => {
+        const cell = row.querySelector('[data-col="flow7d"]');
+        if (!cell) return;
+        const g = _flow7dCell(row.dataset.ticker);
+        cell.innerHTML   = g.html;
+        cell.dataset.tip = g.tip;   // raw — setAttribute escapes
+      });
+    } catch (e) {
+      if (e.status && e.status !== 403) console.warn('[flow-7dte]', e.message || e);
+    }
+  }
+
   function _renderUniverseFreshness(data) {
     const el = document.getElementById('univFreshness');
     if (!el) return;
@@ -8379,6 +8527,64 @@
     const ageStr = age == null ? '?' : age < 60 ? `${Math.round(age)}s ago` : `${Math.round(age / 60)}m ago`;
     el.textContent = `live · ${ageStr}`;
     el.classList.toggle('stale', !!data.stale);
+  }
+
+  // ── <7DTE flow glyph ──────────────────────────────────────────────────────
+  // Three absence-distinct states. These are NOT interchangeable and none of them
+  // is "no data":
+  //   ranked  — intensity is a number. Segments lit by intensity, colored by lean.
+  //   thin    — present in rows{} with intensity === null. Measured (volume, premium
+  //             and lean are all real) but the visible OI base is too thin to rank.
+  //             Three hollow frames.
+  //   absent  — not in rows{} at all. No <7DTE contract cleared the vendor's ~200
+  //             volume reporting floor, i.e. genuinely quiet. ONE dim segment, because
+  //             quiet should read as less than thin, not as an empty slot.
+  //
+  // Deliberately a bar, not a dot: colored emoji dots already carry a different
+  // meaning two columns away in GAMMA, and are reused in Market Tide.
+  //
+  // Returns {html, tip} and is the single source of truth for both the initial render
+  // and the in-place poll patch, so the two cannot drift apart.
+  function _flow7dCell(ticker) {
+    const env   = flow7dCache;
+    const f     = env && env.rows ? env.rows[ticker] : null;
+    const stale = !!(env && env.stale);
+    const seg   = lit => `<i class="univ-f7-seg${lit ? ' lit' : ''}"></i>`;
+
+    let state, html, tip;
+
+    if (!f) {
+      state = 'absent';
+      // Unlit: the dimming comes from .univ-f7-absent's own rule, not from winning a
+      // same-specificity cascade tie against .lit.
+      html  = seg(false);                       // single dim segment
+      tip   = { s: 'absent' };
+    } else if (f.intensity == null) {
+      state = 'thin';
+      html  = seg(false) + seg(false) + seg(false);   // hollow frames
+      tip   = { s: 'thin', v: f.volume, p: f.premium, l: f.lean, vo: f.vol_oi };
+    } else {
+      const n = f.intensity >= 67 ? 3 : f.intensity >= 33 ? 2 : 1;
+      state = f.lean > 0.15 ? 'bull' : f.lean < -0.15 ? 'bear' : 'flat';
+      html  = [1, 2, 3].map(i => seg(i <= n)).join('');
+      tip   = { s: 'ranked', v: f.volume, p: f.premium, l: f.lean,
+                vo: f.vol_oi, i: f.intensity };
+    }
+
+    if (env) {
+      tip.ts = env.ts;
+      tip.age = env.age_secs;
+      tip.stale = stale;
+      if (env.lean_caveat) tip.cav = env.lean_caveat;
+    }
+
+    const cls = `univ-f7 univ-f7-${state}` + (stale ? ' univ-f7-stale' : '');
+    // tip is RAW json. The HTML-string path escapes it at interpolation; the DOM
+    // dataset path must not be escaped, since setAttribute handles that itself.
+    return {
+      html: `<span class="${cls}">${html}</span>`,
+      tip:  JSON.stringify(tip),
+    };
   }
 
   function renderUniverseTable(rows) {
@@ -8418,11 +8624,19 @@
         pmRangeAtr = (row.pm_high - row.pm_low) / _atr;
       }
 
+      // <7DTE flow sort key. The backend already emits a single numeric scalar, so
+      // the generic comparator above handles it with no per-column hook. Left
+      // undefined for BOTH thin (sort_key: null) and absent (no row at all) — the
+      // `va == null` test catches null and undefined alike, so both sort last.
+      const _f7 = flow7dCache && flow7dCache.rows && flow7dCache.rows[row.ticker];
+      const _f7key = _f7 && _f7.sort_key != null ? _f7.sort_key : undefined;
+
       return {
         ...row,
         live_price:     livePrice,
         pm_break_state: pmBreak,
         pm_ext_atr:     pmRangeAtr,
+        flow7d:         _f7key,
         _tier_ord:      TIER_ORD[row.tier] ?? 9,
         // Watchlist overlay
         trigger:    wl && wl.trigger    != null ? parseFloat(wl.trigger)    : null,
@@ -8448,8 +8662,14 @@
       return dir * (va - vb);
     });
 
+    // Widths sum to exactly 100% under table-layout:fixed (css/dashboard.css:4059),
+    // so adding a column is a re-proportion, not an append. The 4% for flow7d comes
+    // entirely out of ticker (12% -> 8%, still ample for 3-4 char symbols); every
+    // other column is byte-for-byte unchanged.
+    // 8+4+8+5+5+5+12+9+7+8+11+11+7 = 100
     const COLS = [
-      { key: 'ticker',         label: 'Ticker',   right: false,                width: '12%' },
+      { key: 'ticker',         label: 'Ticker',   right: false,                width: '8%'  },
+      { key: 'flow7d',         label: '7D FLOW',  right: false, center: true,  width: '4%'  },
       { key: 'live_price',     label: 'Price',    right: true,                 width: '8%'  },
       { key: 'cloud_10m',      label: '10m',      right: false, center: true,  width: '5%'  },
       { key: 'cloud_1h',       label: '1h',       right: false, center: true,  width: '5%'  },
@@ -8483,6 +8703,14 @@
         switch (c.key) {
           case 'ticker':
             return `<td class="univ-td univ-ticker">${r.ticker}</td>`;
+
+          case 'flow7d': {
+            // data-col drives the in-place poll patch; data-tip drives the rich
+            // tooltip. Both are set here and by loadFlow7dte() via _flow7dCell().
+            const g = _flow7dCell(r.ticker);
+            return `<td class="univ-td univ-center" data-col="flow7d" ` +
+                   `data-tip="${_esc(g.tip)}">${g.html}</td>`;
+          }
 
           case 'live_price':
             return `<td class="univ-td univ-r">${v > 0 ? '$' + v.toFixed(2) : '—'}</td>`;
