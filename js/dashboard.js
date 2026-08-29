@@ -1064,6 +1064,9 @@
           // Watched tag — ticker was on today's watchlist board
           const watchedHtml = watchlistDataCache.some(r => r.ticker === s.ticker)
             ? ' <span class="sig-watched">👁 WL</span>' : '';
+          // Earnings proximity flag — hard band prominent, soft band muted (band from backend)
+          const earnHtml = s.earnings_label
+            ? `<div class="sig-earn-row"><span class="sig-earn earn-${s.earnings_band || 'soft'}" title="${s.earnings_label}">${s.earnings_label}</span></div>` : '';
           // Tooltip data — win_probability, confidence, atr_label, setup_lines, gex_line
           const _tipObj = { wp: s.win_probability, conf: s.confidence, atr: s.atr_label,
                             lines: s.setup_lines || [], gex: s.gex_line || null };
@@ -1085,6 +1088,7 @@
     <span>${s.ask ? 'ask $' + parseFloat(s.ask).toFixed(2) : ''}</span>
     <span class="sig-time">${fmtRelTime(s.fire_time)}</span>
   </div>
+  ${earnHtml}
 </div>`;
         }).join('');
       }
@@ -1198,12 +1202,15 @@
                          rem_atr: r.remaining_atr, res: r.next_res_level,
                          sup: r.next_sup_level, gex: r.gex_line || null };
         const wlTipAttr = `data-tip='${JSON.stringify(_wlTip).replace(/'/g, "&#39;")}'`;
+        // Earnings proximity flag — persists all day; hard prominent, soft muted
+        const wlEarnHtml = r.earnings_label
+          ? `<span class="wl-earn earn-${r.earnings_band || 'soft'}" title="${r.earnings_label}">${r.earnings_label}</span>` : '';
         return `
 <div class="wl-row" data-ticker="${r.ticker || ''}" ${wlTipAttr}>
   <div class="wl-row-header">
     <span class="wl-ticker">${r.ticker || '?'}</span>
     <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
-    <span class="${zoneCls}">${zoneLabel}</span>${conflictBadgeHtml}${reachPillHtml}${signalMarkerHtml}
+    <span class="${zoneCls}">${zoneLabel}</span>${conflictBadgeHtml}${reachPillHtml}${signalMarkerHtml}${wlEarnHtml}
   </div>${gaugeHtml}
 </div>`;
       }).join('');
@@ -8701,8 +8708,13 @@
       const cells = COLS.map(c => {
         const v = r[c.key];
         switch (c.key) {
-          case 'ticker':
-            return `<td class="univ-td univ-ticker">${r.ticker}</td>`;
+          case 'ticker': {
+            // Earnings marker — glyph only (cell is width-constrained); full label on hover.
+            const eMark = r.earnings_band
+              ? `<span class="univ-earn earn-${r.earnings_band}" title="${r.earnings_label || ''}">${r.earnings_band === 'hard' ? '⚠️' : '📅'}</span>`
+              : '';
+            return `<td class="univ-td univ-ticker">${r.ticker}${eMark}</td>`;
+          }
 
           case 'flow7d': {
             // data-col drives the in-place poll patch; data-tip drives the rich
