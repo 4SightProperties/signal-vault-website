@@ -5110,3 +5110,17 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 /* Hard band (-1..+3d): prominent. Soft band (4..7d): muted. */
 .earn-hard { background: rgba(239,68,68,0.18);   color: var(--danger);     font-weight: 600; }
 .earn-soft { background: rgba(148,163,184,0.12); color: var(--text-muted); font-weight: 400; }
+
+/* ── Recent news marker (ticker channel, ages out of the display window) ───── */
+.wl-news {
+  display: inline-block;
+  margin-left: 6px;
+  font-size: 11px;
+  padding: 1px 6px;
+  border-radius: 4px;
+  white-space: nowrap;
+  background: rgba(96,165,250,0.14);
+  color: var(--accent, #60a5fa);
+  cursor: default;
+}
+.univ-news { margin-left: 4px; font-size: 11px; cursor: default; }

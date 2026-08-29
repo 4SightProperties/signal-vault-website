@@ -64,6 +64,8 @@
   let journalSelDate    = null;  // 'YYYY-MM-DD' currently selected cell
   let journalCalCache   = null;  // last calendar API response
   let universeDataCache = null;  // last /api/scan-universe payload
+  let newsTickerMap     = {};    // ticker -> {headline, source, created_at} — recent ticker-channel news
+  let newsMarkerTimer   = null;  // poll for the per-row news markers (distinct from the admin news drawer's newsTimer)
   let rvolLiveCache     = {};    // last /api/rvol-live data keyed by ticker
   let flow7dCache       = null;  // last /api/flow-7dte payload — whole envelope, not
                                  // just rows: ts/stale/lean_caveat all feed the tooltip
@@ -416,6 +418,8 @@
     _injectUniverseToggle();
     loadUniverse();
     universeTimer = setInterval(loadUniverse, 65_000);
+    loadNews();
+    newsMarkerTimer = setInterval(loadNews, 60_000);
     loadRvolLive();
     setInterval(loadRvolLive, 30_000);
     // Backend writes flow_7dte.json every 600 s; polling at 300 s guarantees a new
@@ -1104,6 +1108,34 @@
 
   // ── Watchlist ──────────────────────────────────────────────────────────────
 
+  // Relative age like "12m" / "2h" from an ISO-Z timestamp.
+  function _newsAgeStr(iso) {
+    const t = Date.parse(iso);
+    if (isNaN(t)) return '';
+    const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    return m < 60 ? m + 'm' : Math.floor(m / 60) + 'h';
+  }
+
+  // Recent ticker-channel news, keyed by universe ticker (most recent wins).
+  // Market-channel items are intentionally NOT surfaced per-row here.
+  async function loadNews() {
+    try {
+      const data = await apiFetch('/api/news');
+      const map = {};
+      (data.ticker || []).forEach(it => {
+        (it.universe_tickers || []).forEach(tk => {
+          const prev = map[tk];
+          if (!prev || (it.created_at || '') > (prev.created_at || '')) {
+            map[tk] = { headline: it.headline, source: it.source, created_at: it.created_at };
+          }
+        });
+      });
+      newsTickerMap = map;
+    } catch (e) {
+      // Keep last-good map on a transient failure — the marker just ages out.
+    }
+  }
+
   async function loadWatchlist() {
     const body = document.getElementById('watchlistBody');
     const meta = document.getElementById('watchlistMeta');
@@ -1205,12 +1237,16 @@
         // Earnings proximity flag — persists all day; hard prominent, soft muted
         const wlEarnHtml = r.earnings_label
           ? `<span class="wl-earn earn-${r.earnings_band || 'soft'}" title="${r.earnings_label}">${r.earnings_label}</span>` : '';
+        // Recent news marker + age (ticker channel, display window). Ages out on its own.
+        const _wn = newsTickerMap[r.ticker];
+        const wlNewsHtml = _wn
+          ? `<span class="wl-news" title="${((_wn.headline || '') + ' · ' + (_wn.source || '')).replace(/"/g, '&quot;')}">📰 ${_newsAgeStr(_wn.created_at)}</span>` : '';
         return `
 <div class="wl-row" data-ticker="${r.ticker || ''}" ${wlTipAttr}>
   <div class="wl-row-header">
     <span class="wl-ticker">${r.ticker || '?'}</span>
     <span class="wl-dir ${dirClass}">${dirArrow} ${dirLabel}</span>
-    <span class="${zoneCls}">${zoneLabel}</span>${conflictBadgeHtml}${reachPillHtml}${signalMarkerHtml}${wlEarnHtml}
+    <span class="${zoneCls}">${zoneLabel}</span>${conflictBadgeHtml}${reachPillHtml}${signalMarkerHtml}${wlEarnHtml}${wlNewsHtml}
   </div>${gaugeHtml}
 </div>`;
       }).join('');
@@ -8713,7 +8749,12 @@
             const eMark = r.earnings_band
               ? `<span class="univ-earn earn-${r.earnings_band}" title="${r.earnings_label || ''}">${r.earnings_band === 'hard' ? '⚠️' : '📅'}</span>`
               : '';
-            return `<td class="univ-td univ-ticker">${r.ticker}${eMark}</td>`;
+            // Recent news glyph — ticker channel, full headline on hover.
+            const _un = newsTickerMap[r.ticker];
+            const nMark = _un
+              ? `<span class="univ-news" title="${((_un.headline || '') + ' · ' + (_un.source || '')).replace(/"/g, '&quot;')}">📰</span>`
+              : '';
+            return `<td class="univ-td univ-ticker">${r.ticker}${eMark}${nMark}</td>`;
           }
 
           case 'flow7d': {
