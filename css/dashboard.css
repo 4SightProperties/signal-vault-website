@@ -5124,3 +5124,182 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   cursor: default;
 }
 .univ-news { margin-left: 4px; font-size: 11px; cursor: default; }
+
+/* ═══════════════════════════════════════════════════════════════════════════
+   0DTE flow tab (display only). Colour discipline: exactly ONE hue, the vol/OI
+   intensity bar (var(--blue)). Execution-mix bar and ladder bars are a monochrome
+   grayscale ramp — the single coloured element is the single meaningful one.
+   ═══════════════════════════════════════════════════════════════════════════ */
+.flow0-wrap {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  overflow: hidden;
+  background: var(--bg-base);
+}
+.flow0-title {
+  font-size: 0.65rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  color: var(--text-secondary);
+  font-family: var(--font-display);
+}
+.flow0-body {
+  flex: 1;
+  display: flex;
+  min-height: 0;
+  overflow: hidden;
+}
+.flow0-table-wrap {
+  flex: 1 1 62%;
+  overflow: auto;
+  min-height: 0;
+  border-right: 1px solid var(--border);
+}
+.flow0-ladder {
+  flex: 1 1 38%;
+  min-width: 240px;
+  overflow: auto;
+  min-height: 0;
+}
+
+/* Panel 1 — ranked contract table */
+.flow0-table { width: 100%; border-collapse: collapse; font-size: 0.72rem; }
+.flow0-table thead { position: sticky; top: 0; z-index: 2; background: var(--bg-surface); }
+.flow0-th {
+  padding: 0.35rem 0.55rem;
+  text-align: left;
+  font-size: 0.6rem;
+  font-weight: 600;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+  border-bottom: 1px solid var(--border);
+  white-space: nowrap;
+}
+.flow0-td {
+  padding: 0.3rem 0.55rem;
+  border-bottom: 1px solid var(--border);
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.flow0-r  { text-align: right; }
+.flow0-tk { font-weight: 600; color: var(--text-primary); }
+.flow0-cp { margin-left: 0.2rem; font-size: 0.62rem; color: var(--text-muted); }
+.flow0-row { cursor: pointer; }
+.flow0-row:hover { background: var(--bg-surface); }
+.flow0-row.flow0-sel { background: rgba(96,165,250,0.10); box-shadow: inset 2px 0 0 var(--blue); }
+.flow0-row.flow0-dim { opacity: 0.45; }   /* majority multi-leg — structure, not a bet */
+
+/* vol/OI intensity bar — the ONE coloured element */
+.flow0-voloi-bar {
+  display: inline-block;
+  width: 32px;
+  height: 6px;
+  margin-right: 0.4rem;
+  vertical-align: middle;
+  background: rgba(148,163,184,0.15);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.flow0-voloi-bar > i { display: block; height: 100%; background: var(--blue); border-radius: 3px; }
+.flow0-voloi-new { background: transparent; border: 1px dashed var(--text-muted); }
+.flow0-voloi-new > i { display: none; }
+.flow0-voloi-val { font-size: 0.7rem; color: var(--text-primary); }
+
+/* execution-mix stacked bar — monochrome 4-shade ramp (brightest = most notable kind) */
+.flow0-execbar {
+  display: inline-flex;
+  width: 92px;
+  height: 8px;
+  border-radius: 2px;
+  overflow: hidden;
+  vertical-align: middle;
+  background: rgba(148,163,184,0.10);
+}
+.flow0-seg { display: inline-block; height: 100%; }
+.flow0-seg-sweep  { background: #e2e8f0; }
+.flow0-seg-floor  { background: #94a3b8; }
+.flow0-seg-ml     { background: #64748b; }
+.flow0-seg-single { background: rgba(148,163,184,0.28); }
+
+.flow0-footer {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.35rem 0.55rem;
+  font-size: 0.6rem;
+  color: var(--text-muted);
+  flex-wrap: wrap;
+}
+.flow0-legend .flow0-seg {
+  width: 10px;
+  height: 8px;
+  margin: 0 0.15rem 0 0.5rem;
+  border-radius: 1px;
+  vertical-align: middle;
+}
+.flow0-cap { font-variant-numeric: tabular-nums; }
+
+/* Panel 2 — strike ladder */
+.flow0-ladder-head {
+  position: sticky;
+  top: 0;
+  background: var(--bg-surface);
+  border-bottom: 1px solid var(--border);
+  padding: 0.4rem 0.6rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.2rem;
+}
+.flow0-ladder-tk { font-weight: 700; color: var(--text-primary); font-size: 0.78rem; }
+.flow0-ladder-cols {
+  display: grid;
+  grid-template-columns: 1fr 64px 1fr;
+  font-size: 0.58rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--text-muted);
+}
+.flow0-ladder-cols > span:first-child { text-align: right; }
+.flow0-ladder-cols > span:nth-child(2) { text-align: center; }
+.flow0-ladder-rows { padding: 0.3rem 0.6rem 1rem; }
+.flow0-lrow {
+  display: grid;
+  grid-template-columns: 1fr 64px 1fr;
+  align-items: center;
+  gap: 0.3rem;
+  min-height: 20px;
+}
+.flow0-lput  { display: flex; justify-content: flex-end;   align-items: center; gap: 0.35rem; }
+.flow0-lcall { display: flex; justify-content: flex-start; align-items: center; gap: 0.35rem; }
+.flow0-lbar  { height: 10px; background: rgba(148,163,184,0.55); border-radius: 2px; }
+.flow0-lnum {
+  font-size: 0.64rem;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.flow0-lstrike {
+  text-align: center;
+  font-size: 0.66rem;
+  font-weight: 600;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+.flow0-lspot { border-top: 1px dashed var(--text-secondary); border-bottom: 1px dashed var(--text-secondary); }
+.flow0-lspot .flow0-lstrike {
+  font-size: 0.58rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+@media (max-width: 900px) {
+  .flow0-body { flex-direction: column; }
+  .flow0-table-wrap { flex: 1 1 auto; border-right: none; border-bottom: 1px solid var(--border); }
+  .flow0-ladder { flex: 1 1 auto; }
+}

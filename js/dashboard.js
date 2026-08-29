@@ -71,6 +71,12 @@
                                  // just rows: ts/stale/lean_caveat all feed the tooltip
   let universeTimer     = null;
   let flow7dTimer       = null;
+  // 0DTE flow tab (display only) — see the "0DTE flow tab" block below.
+  let flow0dteMode      = false;
+  let flow0dteCache     = null;  // last /api/flow-0dte envelope (spots + rows), whole
+                                 // thing so ts/stale feed the freshness badge
+  let flow0dteTimer     = null;
+  let flow0dteSelTicker = null;  // ticker whose strike ladder is shown in Panel 2
   let univSortCol       = 'ticker';
   let univSortDir       = 1;
   let univFilters       = { cloud_10m: null, cloud_1h: null, cloud_1d: null, pm_break_state: null };
@@ -426,6 +432,14 @@
     // write is picked up within one cycle without doubling the request rate again.
     loadFlow7dte();
     flow7dTimer = setInterval(loadFlow7dte, 300_000);
+    // 0DTE flow tab — available to all authenticated members (like Universe), so it is
+    // injected before the admin-only Journal. Backend writes flow_0dte.json every 60 s;
+    // polling at 30 s picks up a new write within one cycle. This reads the dashboard's
+    // cached file, not UW — the 60 s UW cadence is the writer's and is unaffected here.
+    _injectFlow0dteView();
+    _injectFlow0dteToggle();
+    loadFlow0dte();
+    flow0dteTimer = setInterval(loadFlow0dte, 30_000);
     if (isAdmin) {
       _injectJournalView();
       _injectJournalToggle();
@@ -8449,15 +8463,19 @@
   function _enterUniverseMode() {
     universeMode = true;
     journalMode  = false;
+    flow0dteMode = false;
     const main  = document.querySelector('.cmd-main');
     const uWrap = document.getElementById('universeWrap');
     const jWrap = document.getElementById('journalWrap');
+    const fWrap = document.getElementById('flow0dteWrap');
     if (main)  main.style.display  = 'none';
     if (uWrap) uWrap.style.display = 'flex';
     if (jWrap) jWrap.style.display = 'none';
+    if (fWrap) fWrap.style.display = 'none';
     document.getElementById('univViewBtn')?.classList.add('active');
     document.getElementById('cockpitViewBtn')?.classList.remove('active');
     document.getElementById('journalViewBtn')?.classList.remove('active');
+    document.getElementById('flow0dteViewBtn')?.classList.remove('active');
     if (universeDataCache) {
       _renderUniverseFreshness(universeDataCache);
       renderUniverseTable(universeDataCache.rows || []);
@@ -8469,15 +8487,19 @@
   function _enterCockpitMode() {
     universeMode = false;
     journalMode  = false;
+    flow0dteMode = false;
     const main  = document.querySelector('.cmd-main');
     const uWrap = document.getElementById('universeWrap');
     const jWrap = document.getElementById('journalWrap');
+    const fWrap = document.getElementById('flow0dteWrap');
     if (main)  main.style.display  = '';
     if (uWrap) uWrap.style.display = 'none';
     if (jWrap) jWrap.style.display = 'none';
+    if (fWrap) fWrap.style.display = 'none';
     document.getElementById('cockpitViewBtn')?.classList.add('active');
     document.getElementById('univViewBtn')?.classList.remove('active');
     document.getElementById('journalViewBtn')?.classList.remove('active');
+    document.getElementById('flow0dteViewBtn')?.classList.remove('active');
   }
 
   async function loadUniverse() {
@@ -8628,6 +8650,326 @@
       html: `<span class="${cls}">${html}</span>`,
       tip:  JSON.stringify(tip),
     };
+  }
+
+  // ── 0DTE flow tab (display only) ─────────────────────────────────────────────
+  // Two panels off one /api/flow-0dte payload. Panel 1: a ranked contract table for
+  // discovery. Panel 2: a strike ladder for the ticker selected from it. Nothing here
+  // scores or gates — every label is composition ("82% single-leg"), never a
+  // conclusion ("bullish"). See engine/flow/flow_0dte.py for the source contract.
+  //
+  // Colour discipline (per spec): exactly ONE coloured element, the intensity bar in
+  // the vol/OI cell. The execution-mix bar is a monochrome 4-shade ramp with a legend,
+  // and the ladder bars are monochrome (side encodes put/call, so hue is not needed).
+  // The single place colour appears is the single place it carries meaning.
+
+  const FLOW0_TABLE_LIMIT = 60;   // Panel-1 discovery cap. The ladder uses the FULL row
+                                  // set; only this board is trimmed, and the footer
+                                  // states the cap so it is never silent.
+  let flow0dteRenderSig = null;   // ordered option-symbol signature of the last full
+                                  // build. The contract set is not fixed across a 0DTE
+                                  // session (strikes list and drop), so we rebuild when
+                                  // membership/order changes and patch cells in place
+                                  // otherwise — the fb712ce discipline, adapted.
+
+  function _injectFlow0dteToggle() {
+    const toggle = document.querySelector('.univ-view-toggle');
+    if (!toggle || document.getElementById('flow0dteViewBtn')) return;
+    const btn = document.createElement('button');
+    btn.className   = 'univ-view-btn';
+    btn.id          = 'flow0dteViewBtn';
+    btn.textContent = '0DTE';
+    toggle.appendChild(btn);
+    btn.addEventListener('click', _enterFlow0dteMode);
+  }
+
+  function _injectFlow0dteView() {
+    if (document.getElementById('flow0dteWrap')) return;
+    const uWrap = document.getElementById('universeWrap');
+    const wrap  = document.createElement('div');
+    wrap.id        = 'flow0dteWrap';
+    wrap.className = 'flow0-wrap';
+    wrap.style.display = 'none';
+    wrap.innerHTML =
+      '<div class="univ-toolbar">' +
+        '<span class="univ-freshness" id="flow0Freshness">—</span>' +
+        '<span class="flow0-title">0DTE FLOW · same-day expiry</span>' +
+        '<span class="univ-disclaimer">Informational screen — composition, not advice</span>' +
+      '</div>' +
+      '<div class="flow0-body">' +
+        '<div class="flow0-table-wrap" id="flow0TableWrap">' +
+          '<div class="dash-placeholder">Loading 0DTE flow…</div>' +
+        '</div>' +
+        '<div class="flow0-ladder" id="flow0Ladder">' +
+          '<div class="dash-placeholder">Select a contract to load its strike ladder</div>' +
+        '</div>' +
+      '</div>';
+    if (uWrap && uWrap.parentNode) {
+      uWrap.parentNode.insertBefore(wrap, uWrap.nextSibling);
+    } else {
+      const main = document.querySelector('.cmd-main');
+      if (main && main.parentNode) main.parentNode.insertBefore(wrap, main.nextSibling);
+    }
+    // Delegated row-select, bound once on the persistent container so it survives the
+    // innerHTML rebuilds inside _renderFlow0dteTable.
+    const tw = document.getElementById('flow0TableWrap');
+    if (tw) tw.addEventListener('click', (e) => {
+      const row = e.target.closest('.flow0-row');
+      if (!row) return;
+      flow0dteSelTicker = row.dataset.ticker;
+      _highlightFlow0Selection();
+      renderFlow0dteLadder(flow0dteSelTicker);
+    });
+  }
+
+  function _enterFlow0dteMode() {
+    flow0dteMode = true;
+    universeMode = false;
+    journalMode  = false;
+    const main  = document.querySelector('.cmd-main');
+    const uWrap = document.getElementById('universeWrap');
+    const jWrap = document.getElementById('journalWrap');
+    const fWrap = document.getElementById('flow0dteWrap');
+    if (main)  main.style.display  = 'none';
+    if (uWrap) uWrap.style.display = 'none';
+    if (jWrap) jWrap.style.display = 'none';
+    if (fWrap) fWrap.style.display = 'flex';
+    document.getElementById('flow0dteViewBtn')?.classList.add('active');
+    document.getElementById('cockpitViewBtn')?.classList.remove('active');
+    document.getElementById('univViewBtn')?.classList.remove('active');
+    document.getElementById('journalViewBtn')?.classList.remove('active');
+    if (flow0dteCache) {
+      _renderFlow0dteFreshness(flow0dteCache);
+      renderFlow0dte(flow0dteCache);
+    } else {
+      loadFlow0dte();
+    }
+  }
+
+  async function loadFlow0dte() {
+    if (!authToken) return;
+    try {
+      const data = await apiFetch('/api/flow-0dte');
+      // A failed or unavailable poll is not evidence the market went quiet — keep the
+      // last good board rather than blanking it. Cache always; touch the DOM only when
+      // the tab is visible.
+      if (!data) return;
+      flow0dteCache = data;
+      if (!flow0dteMode) return;
+      _renderFlow0dteFreshness(data);
+      renderFlow0dte(data);
+    } catch (e) {
+      if (e.status === 403) return;
+      if (e.status && e.status !== 403) console.warn('[flow-0dte]', e.message || e);
+    }
+  }
+
+  function _renderFlow0dteFreshness(env) {
+    const el = document.getElementById('flow0Freshness');
+    if (!el) return;
+    if (!env || !env.available) { el.textContent = 'no data'; el.classList.remove('stale'); return; }
+    const age = env.age_secs;
+    const ageStr = age == null ? '?' : age < 60 ? `${Math.round(age)}s ago` : `${Math.round(age / 60)}m ago`;
+    el.textContent = `live · ${ageStr}`;
+    el.classList.toggle('stale', !!env.stale);
+  }
+
+  function renderFlow0dte(env) {
+    _renderFlow0dteTable(env);
+    if (flow0dteSelTicker) renderFlow0dteLadder(flow0dteSelTicker);
+  }
+
+  // ── formatters (compact, monochrome) ────────────────────────────────────────
+  function _f0k(n) {
+    if (n == null) return '—';
+    const a = Math.abs(n);
+    if (a >= 1e6) return (n / 1e6).toFixed(a >= 1e7 ? 0 : 1) + 'M';
+    if (a >= 1e3) return (n / 1e3).toFixed(a >= 1e4 ? 0 : 1) + 'k';
+    return String(Math.round(n));
+  }
+  function _f0prem(n) {
+    if (n == null) return '—';
+    const a = Math.abs(n);
+    if (a >= 1e9) return '$' + (n / 1e9).toFixed(1) + 'B';
+    if (a >= 1e6) return '$' + (n / 1e6).toFixed(1) + 'M';
+    if (a >= 1e3) return '$' + (n / 1e3).toFixed(0) + 'k';
+    return '$' + Math.round(n);
+  }
+  function _f0strike(s) { return s == null ? '—' : String(Math.round(s * 100) / 100); }
+
+  function _flow0VolOiHtml(r, maxVolOi) {
+    // The one coloured element. Bar is scaled to the largest vol/OI on the board (same
+    // "scaled to the largest on screen" rule the ladder uses). new-OI (oi==0) contracts
+    // are unrankable, not "infinite" — a hollow NEW marker, never a full solid bar that
+    // would assert a magnitude we do not have.
+    if (r.vol_oi == null) {
+      return r.new_oi
+        ? '<span class="flow0-voloi-bar flow0-voloi-new"><i></i></span><span class="flow0-voloi-val">NEW</span>'
+        : '<span class="flow0-voloi-val">—</span>';
+    }
+    const pct = Math.max(3, Math.min(100, (r.vol_oi / (maxVolOi || 1)) * 100));
+    return `<span class="flow0-voloi-bar"><i style="width:${pct.toFixed(0)}%"></i></span>` +
+           `<span class="flow0-voloi-val">${r.vol_oi.toFixed(r.vol_oi >= 10 ? 0 : 2)}</span>`;
+  }
+
+  function _flow0ExecHtml(r) {
+    // Monochrome stacked bar; the four shades are defined in CSS. Tooltip is the raw
+    // composition — the fact the column exists to show.
+    const e = r.exec || { sweep: 0, floor: 0, multileg: 0, single: 0 };
+    const seg = (cls, v) => v > 0
+      ? `<i class="flow0-seg flow0-seg-${cls}" style="width:${(v * 100).toFixed(1)}%"></i>` : '';
+    const pc = (v) => Math.round((v || 0) * 100);
+    const tip = `sweep ${pc(e.sweep)}% · floor ${pc(e.floor)}% · multi-leg ${pc(e.multileg)}% · single ${pc(e.single)}%`;
+    return `<span class="flow0-execbar" title="${tip}">` +
+           `${seg('sweep', e.sweep)}${seg('floor', e.floor)}${seg('ml', e.multileg)}${seg('single', e.single)}</span>`;
+  }
+
+  function _flow0RowHtml(r, maxVolOi, dimRatio) {
+    // Dim — not hide — a majority-multi-leg contract: a box/roll/spread is structure,
+    // not a directional bet, and the multi-leg column explains why. Threshold comes
+    // from the backend (env.dim_multileg_ratio) so the two never disagree.
+    const dim = r.multileg_ratio >= dimRatio ? ' flow0-dim' : '';
+    const sel = (flow0dteSelTicker && r.ticker === flow0dteSelTicker) ? ' flow0-sel' : '';
+    const cp  = r.type === 'call' ? 'C' : 'P';
+    return `<tr class="flow0-row${dim}${sel}" data-ticker="${r.ticker}" data-osym="${r.option_symbol}">` +
+      `<td class="flow0-td flow0-tk">${r.ticker}</td>` +
+      `<td class="flow0-td">${_f0strike(r.strike)}<span class="flow0-cp">${cp}</span></td>` +
+      `<td class="flow0-td flow0-r" data-col="voloi">${_flow0VolOiHtml(r, maxVolOi)}</td>` +
+      `<td class="flow0-td flow0-r" data-col="vol">${_f0k(r.volume)}</td>` +
+      `<td class="flow0-td flow0-r" data-col="prem">${_f0prem(r.premium)}</td>` +
+      `<td class="flow0-td flow0-r" data-col="ask">${r.ask_pct == null ? '—' : Math.round(r.ask_pct * 100) + '%'}</td>` +
+      `<td class="flow0-td" data-col="exec">${_flow0ExecHtml(r)}</td>` +
+      `<td class="flow0-td flow0-r">${_f0strike(r.spot)}</td>` +
+      `</tr>`;
+  }
+
+  function _patchFlow0Cell(row, col, html) {
+    const c = row.querySelector(`[data-col="${col}"]`);
+    if (c) c.innerHTML = html;
+  }
+
+  function _renderFlow0dteTable(env) {
+    const wrap = document.getElementById('flow0TableWrap');
+    if (!wrap) return;
+    if (!env || !env.available || !env.rows || !env.rows.length) {
+      wrap.innerHTML = '<div class="dash-placeholder">No 0DTE contracts yet — populates during the session</div>';
+      flow0dteRenderSig = null;
+      return;
+    }
+    const dimRatio = env.dim_multileg_ratio != null ? env.dim_multileg_ratio : 1;
+    const shown    = env.rows.slice(0, FLOW0_TABLE_LIMIT);
+    const measured = shown.filter(r => r.vol_oi != null);
+    const maxVolOi = measured.length ? Math.max.apply(null, measured.map(r => r.vol_oi)) : 1;
+    const sig      = shown.map(r => r.option_symbol).join('|');
+
+    if (sig === flow0dteRenderSig) {
+      // Stable contract set — patch mutable cells, no rebuild, no scroll reset.
+      shown.forEach(r => {
+        const row = wrap.querySelector(`.flow0-row[data-osym="${r.option_symbol}"]`);
+        if (!row) return;
+        _patchFlow0Cell(row, 'voloi', _flow0VolOiHtml(r, maxVolOi));
+        _patchFlow0Cell(row, 'vol',   _f0k(r.volume));
+        _patchFlow0Cell(row, 'prem',  _f0prem(r.premium));
+        _patchFlow0Cell(row, 'ask',   r.ask_pct == null ? '—' : Math.round(r.ask_pct * 100) + '%');
+        _patchFlow0Cell(row, 'exec',  _flow0ExecHtml(r));
+        row.classList.toggle('flow0-dim', r.multileg_ratio >= dimRatio);
+      });
+      return;
+    }
+
+    // Membership or order changed — full rebuild (accepts a scroll reset on the less
+    // frequent occasions the 0DTE contract set actually shifts).
+    wrap.innerHTML =
+      '<table class="flow0-table"><thead><tr>' +
+        '<th class="flow0-th">TICKER</th>' +
+        '<th class="flow0-th">CONTRACT</th>' +
+        '<th class="flow0-th flow0-r">VOL/OI</th>' +
+        '<th class="flow0-th flow0-r">VOL</th>' +
+        '<th class="flow0-th flow0-r">PREM</th>' +
+        '<th class="flow0-th flow0-r">ASK%</th>' +
+        '<th class="flow0-th">EXEC MIX</th>' +
+        '<th class="flow0-th flow0-r">SPOT</th>' +
+      '</tr></thead><tbody>' +
+        shown.map(r => _flow0RowHtml(r, maxVolOi, dimRatio)).join('') +
+      '</tbody></table>' +
+      '<div class="flow0-footer">' +
+        '<span class="flow0-legend">EXEC ' +
+          '<i class="flow0-seg flow0-seg-sweep"></i>sweep ' +
+          '<i class="flow0-seg flow0-seg-floor"></i>floor ' +
+          '<i class="flow0-seg flow0-seg-ml"></i>multi-leg ' +
+          '<i class="flow0-seg flow0-seg-single"></i>single</span>' +
+        `<span class="flow0-cap">ranked by vol/OI · showing ${shown.length} of ${env.rows.length}` +
+          ` · dim = ≥${Math.round(dimRatio * 100)}% multi-leg</span>` +
+      '</div>';
+    flow0dteRenderSig = sig;
+    if (flow0dteSelTicker) _highlightFlow0Selection();
+  }
+
+  function _highlightFlow0Selection() {
+    const wrap = document.getElementById('flow0TableWrap');
+    if (!wrap) return;
+    wrap.querySelectorAll('.flow0-row').forEach(row =>
+      row.classList.toggle('flow0-sel', row.dataset.ticker === flow0dteSelTicker));
+  }
+
+  // ── Panel 2: strike ladder ───────────────────────────────────────────────────
+  // Puts left, calls right, strikes descending, spot marked in its place between them.
+  // Bar length is volume, scaled to the largest single-side strike volume on screen.
+  function _flow0SpotRow(spot) {
+    return '<div class="flow0-lrow flow0-lspot">' +
+      '<div class="flow0-lput"></div>' +
+      `<div class="flow0-lstrike">spot ${_f0strike(spot)}</div>` +
+      '<div class="flow0-lcall"></div></div>';
+  }
+
+  function renderFlow0dteLadder(ticker) {
+    const el = document.getElementById('flow0Ladder');
+    if (!el) return;
+    const env = flow0dteCache;
+    if (!env || !env.rows) { el.innerHTML = '<div class="dash-placeholder">No data</div>'; return; }
+    const rows = env.rows.filter(r => r.ticker === ticker);
+    if (!rows.length) {
+      el.innerHTML = `<div class="dash-placeholder">No 0DTE contracts for ${ticker}</div>`;
+      return;
+    }
+    let spot = (env.spots && env.spots[ticker] != null) ? env.spots[ticker] : null;
+    if (spot == null) { const s = rows.find(r => r.spot != null); spot = s ? s.spot : null; }
+
+    // Fold to one entry per strike carrying call and put volume.
+    const byStrike = new Map();
+    rows.forEach(r => {
+      const o = byStrike.get(r.strike) || { strike: r.strike, call: 0, put: 0 };
+      if (r.type === 'call') o.call += r.volume; else o.put += r.volume;
+      byStrike.set(r.strike, o);
+    });
+    const strikes = [...byStrike.values()].sort((a, b) => b.strike - a.strike);   // descending
+    const maxVol  = Math.max.apply(null, [1].concat(strikes.map(s => Math.max(s.call, s.put))));
+
+    let body = '';
+    let spotDrawn = false;
+    strikes.forEach(s => {
+      if (spot != null && !spotDrawn && s.strike < spot) { body += _flow0SpotRow(spot); spotDrawn = true; }
+      const pPct = (s.put  / maxVol) * 100;
+      const cPct = (s.call / maxVol) * 100;
+      body +=
+        '<div class="flow0-lrow">' +
+          '<div class="flow0-lput">' +
+            `<span class="flow0-lnum">${s.put ? _f0k(s.put) : ''}</span>` +
+            `<span class="flow0-lbar" style="width:${pPct.toFixed(0)}%"></span></div>` +
+          `<div class="flow0-lstrike">${_f0strike(s.strike)}</div>` +
+          '<div class="flow0-lcall">' +
+            `<span class="flow0-lbar" style="width:${cPct.toFixed(0)}%"></span>` +
+            `<span class="flow0-lnum">${s.call ? _f0k(s.call) : ''}</span></div>` +
+        '</div>';
+    });
+    if (spot != null && !spotDrawn) body += _flow0SpotRow(spot);   // spot below the lowest strike
+
+    el.innerHTML =
+      '<div class="flow0-ladder-head">' +
+        `<span class="flow0-ladder-tk">${ticker}</span>` +
+        '<span class="flow0-ladder-cols"><span>PUTS</span><span>STRIKE</span><span>CALLS</span></span>' +
+      '</div>' +
+      `<div class="flow0-ladder-rows">${body}</div>`;
   }
 
   function renderUniverseTable(rows) {
@@ -8982,15 +9324,19 @@
   function _enterJournalMode() {
     journalMode  = true;
     universeMode = false;
+    flow0dteMode = false;
     const main  = document.querySelector('.cmd-main');
     const uWrap = document.getElementById('universeWrap');
     const jWrap = document.getElementById('journalWrap');
+    const fWrap = document.getElementById('flow0dteWrap');
     if (main)  main.style.display  = 'none';
     if (uWrap) uWrap.style.display = 'none';
     if (jWrap) jWrap.style.display = 'flex';
+    if (fWrap) fWrap.style.display = 'none';
     document.getElementById('journalViewBtn')?.classList.add('active');
     document.getElementById('cockpitViewBtn')?.classList.remove('active');
     document.getElementById('univViewBtn')?.classList.remove('active');
+    document.getElementById('flow0dteViewBtn')?.classList.remove('active');
     if (!journalMonth) {
       const now = new Date();
       journalMonth = now.getFullYear() + '-' + String(now.getMonth() + 1).padStart(2, '0');
