@@ -560,8 +560,33 @@
       const trailArmed = pos.trail_armed;
       const isClosingPending = pos.state === 'closing_pending';
 
+      // 10m cloud-state edge stripe (display-only). Follows the pos-gex-dot CODE
+      // pattern but renders as a 4px left edge on .pos-card. Unknown/NONE ->
+      // no class, no stripe. The stripe is colour-only, so the state is also
+      // surfaced as the card's title (accessibility). Never dims the P&L.
+      const cloudClass = {
+        RIDING:  'pos-cloud-riding',
+        HOLDING: 'pos-cloud-holding',
+        IN_BAND: 'pos-cloud-inband',
+        LOST:    'pos-cloud-lost',
+      }[pos.cloud_state] || '';
+      const cloudStale = !!cloudClass && pos.cloud_fresh === false;
+      // HOLDING is phrased per the position's direction (above for calls, below
+      // for puts) rather than printing "above/below".
+      let cloudTitle = {
+        RIDING:  'Riding the 5/12 cloud, 8/9 aligned',
+        HOLDING: dir === 'put'
+          ? 'Holding below the 5/12, no thrust'
+          : 'Holding above the 5/12, no thrust',
+        IN_BAND: 'Inside the 5/12 band, no read',
+        LOST:    'Lost the 5/12 against the position',
+      }[pos.cloud_state] || '';
+      if (cloudTitle && cloudStale) cloudTitle += ' (as of last cycle)';
+      const cloudCls       = cloudClass ? ` ${cloudClass}${cloudStale ? ' pos-cloud-stale' : ''}` : '';
+      const cloudTitleAttr = cloudTitle ? ` title="${cloudTitle}"` : '';
+
       return `
-<div class="pos-card${isClosingPending ? ' closing-pending' : ''}" data-pos-id="${pos.position_id || ''}">
+<div class="pos-card${isClosingPending ? ' closing-pending' : ''}${cloudCls}" data-pos-id="${pos.position_id || ''}"${cloudTitleAttr}>
   <div class="pos-card-top">
     <span class="pos-ticker">${pos.ticker || '?'}</span>
     <span class="pos-direction ${dir}">${dirLabel}</span>

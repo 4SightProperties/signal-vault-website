@@ -142,8 +142,43 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   padding: 0.65rem 0.75rem;
   margin-bottom: 0.4rem;
   transition: border-color 0.2s;
+  /* Reserve the 4px cloud-state gutter so stripes never shift row content. */
+  border-left: 4px solid transparent;
 }
 .pos-card:hover { border-color: var(--border-bright); }
+
+/* ── 10m cloud-state edge stripe (display-only) ──────────────────────────────
+   A 4px LEFT edge, catchable peripherally down a column of rows (not a dot).
+   RIDING/HOLDING/IN_BAND are a neutral brightness ramp and must not compete
+   with the green/red P&L text. LOST is the ONLY state that raises its voice.
+   NONE renders no stripe — absence of data is not a state. */
+.pos-cloud-riding  { border-left-color: #6B788F; }
+.pos-cloud-holding { border-left-color: #3E4759; }
+/* IN_BAND is hatched (an absence of verdict), never a flat color. border-image
+   would otherwise paint all four borders, so border-image-width pins it to the
+   left edge only. */
+.pos-cloud-inband  {
+  border-left-color: transparent;
+  border-image: repeating-linear-gradient(135deg,
+    rgba(57,66,83,0.5) 0 3px, #161C25 3px 6px) 4;
+  border-image-width: 0 0 0 4px;
+}
+.pos-cloud-lost {
+  border-left-color: #FFB84D;
+  border-color: #FFB84D;
+  background: #171A1C;
+}
+/* Stale = the read is a cycle old. Dim the STRIPE ONLY — never the card and
+   never the P&L numbers. `opacity` on .pos-card would dim the whole row, so
+   stale is expressed as a faded stripe colour per state instead. */
+.pos-cloud-riding.pos-cloud-stale  { border-left-color: rgba(107,120,143,0.45); }
+.pos-cloud-holding.pos-cloud-stale { border-left-color: rgba(62,71,89,0.45); }
+.pos-cloud-inband.pos-cloud-stale  {
+  border-image: repeating-linear-gradient(135deg,
+    rgba(57,66,83,0.22) 0 3px, #161C25 3px 6px) 4;
+  border-image-width: 0 0 0 4px;
+}
+.pos-cloud-lost.pos-cloud-stale    { border-left-color: rgba(255,184,77,0.45); }
 
 .pos-card-top {
   display: flex;
