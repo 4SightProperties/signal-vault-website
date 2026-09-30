@@ -560,6 +560,14 @@
       const trailArmed = pos.trail_armed;
       const isClosingPending = pos.state === 'closing_pending';
 
+      // GEX regime-sign dot (display-only context, D5) — same value/weight as
+      // the Universe GAMMA dot. "widening/tightening" trend + wall flags stay
+      // in the pop-out; this dot is the ONLY GEX element on the card face.
+      const gexDot = pos.gex_state === 'Expansion' ? '🟢'
+                   : pos.gex_state === 'Compression' ? '🔵' : '⚪';
+      const GEX_TITLE = { Expansion: 'neg-γ (dealers amplify)', Compression: 'pos-γ (dealers dampen)' };
+      const gexDotTitle = `GEX regime: ${GEX_TITLE[pos.gex_state] || 'n/a'}`;
+
       // 10m cloud-state edge stripe (display-only). Follows the pos-gex-dot CODE
       // pattern but renders as a 4px left edge on .pos-card. Unknown/NONE ->
       // no class, no stripe. The stripe is colour-only, so the state is also
@@ -588,6 +596,7 @@
       return `
 <div class="pos-card${isClosingPending ? ' closing-pending' : ''}${cloudCls}" data-pos-id="${pos.position_id || ''}"${cloudTitleAttr}>
   <div class="pos-card-top">
+    <span class="pos-gex-dot" title="${gexDotTitle}">${gexDot}</span>
     <span class="pos-ticker">${pos.ticker || '?'}</span>
     <span class="pos-direction ${dir}">${dirLabel}</span>
   </div>
@@ -8079,17 +8088,106 @@
       `<svg viewBox="0 0 ${W} ${svgH}" preserveAspectRatio="xMidYMid meet" width="100%" style="overflow:visible;display:block">` +
       parts.join('') + `</svg>`;
 
-    // Caption: regime + flip note + net gamma
-    const capParts = [];
+    // Caption: three context lines (D5). Line 1 graded regime + flip band,
+    // line 2 regime-conditioned wall descriptors, line 3 flip-gap trend.
+    captionEl.innerHTML =
+      `<div class="gex-cap-line">${_gexFlipLine(gex)}</div>` +
+      `<div class="gex-cap-line gex-cap-walls">${_gexWallLine(gex)}</div>` +
+      `<div class="gex-cap-line gex-cap-trend">${_gexTrendLine(gex)}</div>`;
+  }
+
+  // ── GEX caption line builders (display-only context, D5) ────────────────────
+
+  // Distance band — conviction scales with how far spot sits from the flip.
+  // NOTE: thresholds are UNTUNED placeholders, matching the spec's D1 discipline.
+  function _gexFlipBand(absPct) {
+    if (absPct == null) return '';
+    if (absPct < 0.3) return 'at flip (unstable)';
+    if (absPct < 1.0) return 'near flip';
+    if (absPct < 2.5) return 'clear of flip';
+    return 'deep in regime';
+  }
+
+  // Line 1: graded regime + flip-distance band. Flip is selected by holding
+  // timeframe (D3): DTE ≤ 1 keys off the 0DTE flip when available, else full-chain.
+  function _gexFlipLine(gex) {
     const regime = gex.regime;
-    if (regime === 'POS-gamma')      capParts.push('POS-γ (pin)');
-    else if (regime === 'NEG-gamma') capParts.push('NEG-γ (amplify)');
-    capParts.push(gex.gamma_flip != null ? `flip $${gex.gamma_flip.toFixed(2)}` : 'flip n/a (guarded)');
+    const regTxt = regime === 'POS-gamma' ? 'POS-γ'
+                 : regime === 'NEG-gamma' ? 'NEG-γ' : 'regime n/a';
+
+    const dte = gexModalPos ? _computeDteNum(gexModalPos.expiry) : null;
+    const use0dte = dte != null && dte <= 1 && gex.gamma_flip_0dte != null;
+    const flip    = use0dte ? gex.gamma_flip_0dte : gex.gamma_flip;
+    const dist    = use0dte ? gex.dist_to_flip_0dte_pct : gex.dist_to_flip_pct;
+    const flipLbl = use0dte ? 'flip(0DTE)' : 'flip(full)';
+
+    const parts = [regTxt];
+    if (flip != null) {
+      parts.push(`${flipLbl} $${flip.toFixed(2)}`);
+      if (dist != null) {
+        const dir = dist < 0 ? 'below' : 'above';
+        parts.push(`spot ${dist >= 0 ? '+' : ''}${dist.toFixed(1)}% ${dir}`);
+        const band = _gexFlipBand(Math.abs(dist));
+        if (band) parts.push(band);
+      }
+    } else {
+      parts.push('flip n/a (guarded)');
+    }
     if (gex.net_gex_dir != null) {
       const ng = gex.net_gex_dir;
-      capParts.push(`net γ ${ng >= 0 ? '+' : ''}${ng.toFixed(1)}/1%`);
+      parts.push(`net γ ${ng >= 0 ? '+' : ''}${ng.toFixed(1)}/1%`);
     }
-    captionEl.textContent = capParts.join(' · ');
+    return _esc(parts.join(' · '));
+  }
+
+  // Line 2: wall descriptors CONDITIONED ON REGIME — same level, opposite
+  // meaning. POS-γ: walls pin (support/resistance). NEG-γ: break ⇒ accelerant.
+  function _gexWallLine(gex) {
+    const neg = gex.regime === 'NEG-gamma';
+    const PROX = 0.5;   // proximity threshold, % of spot (placeholder)
+    const seg = [];
+
+    const fmt = (price, distPct, near) => {
+      const d = distPct != null ? ` (${distPct >= 0 ? '+' : ''}${distPct.toFixed(1)}%)` : '';
+      const approaching = distPct != null && Math.abs(distPct) < PROX;
+      return (approaching ? '▸ ' : '') + `$${price.toFixed(0)}${d} — ${near}`;
+    };
+
+    if (gex.call_wall != null) {
+      const meaning = neg ? 'break ⇒ accelerant ↑' : 'resistance/pin';
+      seg.push('CW ' + fmt(gex.call_wall, gex.dist_to_call_wall_pct, meaning));
+    }
+    if (gex.gamma_magnet != null) {
+      // Magnet meaning does not invert with regime.
+      const d = gex.dist_to_magnet_pct != null
+        ? ` (${gex.dist_to_magnet_pct >= 0 ? '+' : ''}${gex.dist_to_magnet_pct.toFixed(1)}%)` : '';
+      seg.push(`MAG $${gex.gamma_magnet.toFixed(0)}${d} — pull`);
+    }
+    if (gex.put_wall != null) {
+      const meaning = neg ? 'break ⇒ accelerant ↓' : 'support/pin';
+      seg.push('PW ' + fmt(gex.put_wall, gex.dist_to_put_wall_pct, meaning));
+    }
+    return seg.length ? _esc(seg.join('  ·  ')) : '<span class="gex-cap-muted">no walls</span>';
+  }
+
+  // Line 3: flip-gap trend (D2/D4) — "widening/tightening", NOT expansion/compression.
+  function _gexTrendLine(gex) {
+    const t = gex.flip_gap_trend;
+    if (!t || !t.state) return '<span class="gex-cap-muted">flip-gap trend: building history…</span>';
+    // Backend compute_flip_gap_trend() degrades its lookback silently once there
+    // is SOME history but fewer than _TREND_LOOKBACK_SAMPLES (3): with <4 samples
+    // the delta spans less than the intended ~30-40min window, so the arrow would
+    // read at full confidence off 1-2 points (e.g. the first ~20min after a CPI
+    // print). Below the mature window, show the thin-history state with the count.
+    const MATURE_SAMPLES = 4;   // = backend _TREND_LOOKBACK_SAMPLES + 1
+    if ((t.samples_used || 0) < MATURE_SAMPLES) {
+      return `<span class="gex-cap-muted">flip-gap trend: building history… (${t.samples_used || 0} samples)</span>`;
+    }
+    const arrow = t.state === 'tightening' ? '⇣'
+                : t.state === 'widening'   ? '⇡' : '↔';
+    const delta = t.delta_pp != null
+      ? ` (${t.delta_pp >= 0 ? '+' : ''}${t.delta_pp.toFixed(2)}pp)` : '';
+    return _esc(`flip gap ${arrow} ${t.state}${delta}`);
   }
 
   function _updateGexLevelBtns(gex) {

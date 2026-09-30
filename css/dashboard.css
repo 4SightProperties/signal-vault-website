@@ -193,6 +193,15 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   color: var(--text-primary);
   letter-spacing: 0.05em;
 }
+/* GEX regime-sign dot — glance-level context only, must not pull focus (D5) */
+.pos-gex-dot {
+  font-size: 0.6rem;
+  line-height: 1;
+  margin-right: 0.35rem;
+  opacity: 0.9;
+  cursor: default;
+}
+.pos-card-top .pos-direction { margin-left: auto; }
 .pos-direction {
   font-size: 0.65rem;
   font-weight: 600;
@@ -3372,6 +3381,10 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   font-size: 0.6rem; color: var(--text-muted);
   margin-top: 0.35rem; line-height: 1.45;
 }
+.gex-cap-line { font-size: 0.6rem; line-height: 1.5; }
+.gex-cap-walls { color: var(--text-secondary); }
+.gex-cap-trend { color: var(--text-muted); font-style: italic; }
+.gex-cap-muted { color: var(--text-muted); opacity: 0.8; }
 
 /* ── Projection calculator ───────────────────────────────────── */
 .gex-proj-controls {
