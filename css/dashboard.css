@@ -5432,10 +5432,14 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 .svg-grid-table td.sel { box-shadow: inset 2px 0 0 var(--blue), inset -2px 0 0 var(--blue); }
 .svg-cell-main { font-size: 0.72rem; color: var(--text-primary); }
 .svg-cell-sub { font-size: 0.6rem; color: var(--text-secondary); }
-.svg-cell-usd { font-size: 0.64rem; color: var(--text-primary); }
+/* Grid value cells: line 1 "$ P/L / % P/L" never wraps (desktop). js/grid.js _fitCells sets
+   --svg-cell-fs to the largest step (0.75 → 0.62rem) at which the table fits its box;
+   line 2 (option value) stays 0.06rem smaller. */
+.svg-grid-table td.svg-cell .svg-cell-main { font-size: var(--svg-cell-fs, 0.75rem); }
+.svg-grid-table td.svg-cell .svg-cell-sub { font-size: calc(var(--svg-cell-fs, 0.75rem) - 0.06rem); }
 /* beyond 1σ: neutral background + secondary text (≈7:1 on --bg-elevated), not opacity */
 .svg-cell.beyond { background: var(--bg-elevated); }
-.svg-cell.beyond .svg-cell-main, .svg-cell.beyond .svg-cell-usd { color: var(--text-secondary); }
+.svg-cell.beyond .svg-cell-main { color: var(--text-secondary); }
 .svg-cell-leg { background: rgba(96,165,250,0.06); }
 tr.is-target .svg-sticky { box-shadow: inset 3px 0 0 var(--accent); }
 tr.is-stop .svg-sticky { box-shadow: inset 3px 0 0 var(--danger); }
@@ -5520,6 +5524,7 @@ tr.is-spot td, tr.is-spot th { border-top: 1px solid var(--text-secondary); bord
 .svg-mock-btns, .svg-mock-toggle-row { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; align-items: center; }
 
 @media (max-width: 700px) {
+  .svg-grid-table td.svg-cell { white-space: normal; }   /* phone: line 1 may wrap at " / " */
   .svg-popout { top: 0; left: 0; transform: none; width: 100%; height: 100%; max-width: none; border-radius: 0; border: 0; }
   .svg-grid-lower { grid-template-columns: minmax(0, 1fr); }
   .svg-drawer { border-left: 0; }

@@ -18,7 +18,7 @@
   const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
   const MOCK       = LOCAL_HOSTS.has(location.hostname)
                   && new URLSearchParams(location.search).get('gridMock') === '1';
-  const ASSET_VER  = '20261111c';
+  const ASSET_VER  = '20261111f';
   const REFRESH_MS = 30000;
   const GATE       = 1.5;
   const PREF_KEY   = 'svGridPrefs';
@@ -101,6 +101,24 @@
   const fmtPx  = v => num(v) ? '$' + v.toFixed(2) : '—';
   const fmtPct = (v, dp = 1) => num(v) ? (v > 0 ? '+' : '') + v.toFixed(dp) + '%' : '—';
   const fmtUsd = v => num(v) ? (v < 0 ? '−' : v > 0 ? '+' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-US') : '—';
+  // Cell $: exact below $1,000; "$1.7k" from 1,000; "$17k" from 10,000; "$1.2M" from 1,000,000.
+  const fmtUsdShort = v => {
+    if (!num(v)) return '—';
+    const sign = v < 0 ? '−' : v > 0 ? '+' : '';
+    const a = Math.abs(v), r = Math.round(a);
+    let body;
+    if (r < 1000) body = String(r);
+    else if (a < 9950) body = (a / 1000).toFixed(1) + 'k';
+    else if (a < 999500) body = Math.round(a / 1000) + 'k';
+    else body = (a / 1e6).toFixed(1) + 'M';
+    return sign + '$' + body;
+  };
+  const isAbbrev = v => num(v) && Math.round(Math.abs(v)) >= 1000;
+  const fmtUsdExact = v => num(v) ? (v < 0 ? '−' : v > 0 ? '+' : '') + '$' +
+    Math.abs(v).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 }) : '—';
+
+  // Value-cell font fits the space: largest step that avoids horizontal scroll (floor 0.62rem).
+  const CELL_FS_STEPS = [0.75, 0.72, 0.69, 0.66, 0.62];
   const fmtRR  = v => num(v) ? v.toFixed(2) : '—';
   const fmtProb = v => num(v) ? Math.round(v * 100) + '%' : '—';
   const fmtTime = iso => {
@@ -183,6 +201,8 @@
     stop() {
       this.running = false;
       if (this.timer) { clearInterval(this.timer); this.timer = null; }
+      if (this._ro) { this._ro.disconnect(); this._ro = null; }
+      if (this._onWinResize) { window.removeEventListener('resize', this._onWinResize); this._onWinResize = null; }
       document.removeEventListener('visibilitychange', this._onVis);
       this.host.removeEventListener('click', this._onClick);
     }
@@ -290,7 +310,52 @@
         this.host.innerHTML = (this.error ? this._errorHtml(true) : '') + this._html(this.data);
       }
       const sc = this.host.querySelector('.svg-grid-scroll');
-      if (sc) sc.scrollLeft = sx;
+      if (sc) {
+        this._fitCells(sc);
+        sc.scrollLeft = sx;
+        this._observe(sc);
+      }
+    }
+
+    // Pick the largest CELL_FS_STEPS font at which the table's natural width fits the
+    // scroll box; floor 0.62rem (below that the table scrolls inside its own box).
+    _fitCells(sc) {
+      const tbl = sc.querySelector('table');
+      if (!tbl || !sc.clientWidth) return;
+      const prevMin = tbl.style.minWidth;
+      tbl.style.minWidth = '0';                 // measure natural width, not the 100% stretch
+      let chosen = CELL_FS_STEPS[CELL_FS_STEPS.length - 1];
+      for (const fs of CELL_FS_STEPS) {
+        tbl.style.setProperty('--svg-cell-fs', fs + 'rem');
+        if (tbl.getBoundingClientRect().width <= sc.clientWidth) { chosen = fs; break; }
+      }
+      tbl.style.setProperty('--svg-cell-fs', chosen + 'rem');
+      tbl.style.minWidth = prevMin;
+      this.cellFs = chosen;
+    }
+
+    _observe(sc) {
+      // Window resizes always re-fit (ResizeObserver callbacks only run on rendering frames,
+      // so they can stall in background tabs); the observer covers container-only changes.
+      if (!this._onWinResize) {
+        this._onWinResize = () => {
+          const cur = this.host.querySelector('.svg-grid-scroll');
+          if (cur) { this._roW = cur.clientWidth; this._fitCells(cur); }
+        };
+        window.addEventListener('resize', this._onWinResize);
+      }
+      if (typeof ResizeObserver === 'undefined') return;
+      if (!this._ro) {
+        this._ro = new ResizeObserver(() => {
+          const cur = this.host.querySelector('.svg-grid-scroll');
+          if (!cur) return;
+          const w = cur.clientWidth;
+          if (w !== this._roW) { this._roW = w; this._fitCells(cur); }
+        });
+      }
+      this._ro.disconnect();
+      this._roW = sc.clientWidth;
+      this._ro.observe(sc);
     }
 
     _errorHtml(stale) {
@@ -379,15 +444,16 @@
             return `<td class="svg-cell svg-cell-leg${j === sel ? ' sel' : ''}" title="Underlying price where the leg fills at this time">
               <div class="svg-cell-main">${fmtPx(c.underlying)}</div><div class="svg-cell-sub">${c.underlying != null ? fmtPct(c.pct_from_spot, 2) : esc(c.status || '')}</div></td>`;
           }
-          // Two lines: % P/L (top) and $ P/L (below), both vs the active basis (signal) or
-          // vs mark/cost (position). Option value lives in the tooltip.
+          // Line 1: "$ P/L / % P/L" vs the active basis (signal) or vs mark/cost (position).
+          // Line 2: option value. Tooltip only for the beyond-1σ note.
           const pct = this._cellPct(c, pos);
           const pnl = this._cellPnl(c, pos);
           const beyond = c.beyond_1sigma;
           const style = beyond ? '' : ` style="background:${heatBg(pct)}"`;
-          const tip = 'opt ' + fmtPx(c.value) + (beyond ? ' · beyond a 1σ move by this time' : '');
-          return `<td class="svg-cell${beyond ? ' beyond' : ''}${j === sel ? ' sel' : ''}"${style} title="${esc(tip)}">
-            <div class="svg-cell-main">${fmtPct(pct, 0)}</div><div class="svg-cell-usd">${fmtUsd(pnl)}</div></td>`;
+          const tip = [isAbbrev(pnl) ? 'P/L ' + fmtUsdExact(pnl) : '', beyond ? 'Beyond a 1σ move by this time' : '']
+            .filter(Boolean).join(' · ');
+          return `<td class="svg-cell${beyond ? ' beyond' : ''}${j === sel ? ' sel' : ''}"${style}${tip ? ` title="${esc(tip)}"` : ''}>
+            <div class="svg-cell-main">${fmtUsdShort(pnl)} / ${fmtPct(pct, 0)}</div><div class="svg-cell-sub">opt ${fmtPx(c.value)}</div></td>`;
         }).join('');
         const rowCls = r.is_target ? 'is-target' : r.is_stop ? 'is-stop' : r.role === 'spot' ? 'is-spot' : '';
         return `<tr class="${rowCls}">${first}${cells}</tr>`;
