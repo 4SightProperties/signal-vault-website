@@ -3589,6 +3589,37 @@
       const el = document.getElementById('cockpitOcoPriceStale');
       if (el) el.style.display = 'none';
     }
+    // A level button has been selected → the armed TP (_ocoTpStash / TP input) is frozen.
+    // Background refreshes may update button labels but never the armed value.
+    function _ocoLevelArmed() {
+      return !!(_ocoLvlStash && _ocoLvlStash !== '×1.50' && _ocoLvlStash !== 'custom' && _ocoTpStash);
+    }
+    // Inline "Level repriced: $X → $Y [Use new price]" notice. Reads the freshest projection
+    // (_rrProfitSide) for the selected level; writes ONLY to the notice element. The button
+    // is the only path by which a background reprice can change the armed TP.
+    function _updateOcoRepriceNote() {
+      const el = document.getElementById('cockpitOcoRepriceNote');
+      if (!el) return;
+      const hide = () => { el.style.display = 'none'; el.innerHTML = ''; };
+      if (!_ocoLevelArmed()) return hide();
+      const armed = parseFloat(_ocoTpStash);
+      const hit   = (_rrProfitSide || []).find(d => (d.lvl.label || '?') === _ocoLvlStash);
+      const fresh = hit && hit.value != null ? +hit.value.toFixed(2) : null;
+      if (!(armed > 0) || fresh == null) return hide();
+      if (Math.abs(fresh - armed) <= Math.max(0.05, armed * 0.02)) return hide();
+      el.innerHTML =
+        `Level repriced: $${armed.toFixed(2)} → $${fresh.toFixed(2)} ` +
+        `<button type="button" class="cockpit-level-btn" id="cockpitOcoUseNewTp">Use new price</button>`;
+      el.style.display = '';
+      document.getElementById('cockpitOcoUseNewTp').addEventListener('click', () => {
+        _setOcoDirty();
+        _ocoTpStash = fresh.toFixed(2);
+        const inp = document.getElementById('cockpitOcoTpInput');
+        if (inp) inp.value = _ocoTpStash;
+        hide();
+        _updateOcoPnl();
+      });
+    }
     function _updateBrokerBotCols(layer) {
       const brokerEl     = document.getElementById('cockpitBrokerContent');
       const botEl        = document.getElementById('cockpitBotContent');
@@ -3690,6 +3721,7 @@
             <span id="cockpitOcoTpPct" class="cockpit-oco-tp-pct"></span>
             <span class="cockpit-tif-sub" style="flex:1">SR fills · edit to adjust</span>
           </div>
+          <div id="cockpitOcoRepriceNote" class="cockpit-tif-sub" style="display:none;margin-top:0.1rem"></div>
           <div class="cockpit-tif-row" style="margin-top:0.22rem">
             <span class="cockpit-section-label">tif (legs)</span>
             <span class="cockpit-field-chip">gtc</span>
@@ -3712,6 +3744,7 @@
             if (tpInpEl) tpInpEl.value = price != null ? price.toFixed(2) : '';
             brokerEl.querySelectorAll('.cockpit-oco-tp-btn').forEach(b => b.classList.remove('active'));
             btn.classList.add('active');
+            _updateOcoRepriceNote();
             _updateOcoPnl();
           });
         });
@@ -3734,6 +3767,7 @@
                 _db.classList.add('active');
               }
             }
+            _updateOcoRepriceNote();
             _updateOcoPnl();
           });
         }
@@ -3783,7 +3817,14 @@
           const _matchBtn = _ocoLvlStash
             ? _allBtns.find(b => b.dataset.lvlLabel === _ocoLvlStash && !b.disabled)
             : null;
-          if (_matchBtn) {
+          if (_ocoLevelArmed()) {
+            // Armed TP is frozen: restore the armed value into the rebuilt input, never the
+            // freshly projected button price. If the level is now unpriced or gone, keep the
+            // armed value anyway (no fallback to ×1.50). Repricing surfaces via the notice.
+            if (_matchBtn) _matchBtn.classList.add('active');
+            if (tpInpEl) tpInpEl.value = _ocoTpStash;
+            _updateOcoRepriceNote();
+          } else if (_matchBtn) {
             _matchBtn.classList.add('active');
             const _rp = _matchBtn.dataset.lvlPrice;
             if (_rp && tpInpEl) tpInpEl.value = parseFloat(_rp).toFixed(2);
@@ -3816,7 +3857,8 @@
       if (cockpitExitLayer !== 'oco_bracket') return;
       // Panel dirty: user is mid-form. Tick the stale-price age display but do not rebuild
       // the DOM — a background timer must not reset controls the user has touched.
-      if (_ocoPanelDirty) { _setOcoDirty(); return; }
+      // The reprice notice is a separate element, so it may update without touching controls.
+      if (_ocoPanelDirty) { _setOcoDirty(); _updateOcoRepriceNote(); return; }
       _updateBrokerBotCols('oco_bracket');
     };
 
@@ -3913,6 +3955,8 @@
       // ── OCO / tp_only confirm-modal summary ──────────────────────────────────
       let ocoTpPayload;     // undefined → omit from body; server uses tp2_price (fill × 1.50)
       let ocoBracketHtml = '';
+      // Render the exact number that body.tp_price will carry — no display rounding.
+      const _tpExact = v => (Math.round(v * 100) / 100 === v ? v.toFixed(2) : String(v));
       if (effectiveExitLayer === 'oco_bracket') {
         const tpInp     = document.getElementById('cockpitOcoTpInput');
         const typed     = tpInp ? parseFloat(tpInp.value) : NaN;
@@ -3920,7 +3964,7 @@
         const derivedSl = +(ask * _slMult()).toFixed(2);
         if (typed > 0) ocoTpPayload = typed;
         const tpDisplay   = ocoTpPayload !== undefined
-          ? `$${ocoTpPayload.toFixed(2)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
+          ? `$${_tpExact(ocoTpPayload)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
           : `≈$${derivedTp.toFixed(2)} (est. from ask; server uses actual fill)`;
         const stopDisplay = _ocoStopStash
           ? `$${parseFloat(_ocoStopStash).toFixed(2)} (manual)`
@@ -3934,7 +3978,7 @@
         const derivedTp = +(ask * _tpMult(EXIT_TP_PCT)).toFixed(2);
         if (typed > 0) ocoTpPayload = typed;
         const tpDisplay = ocoTpPayload !== undefined
-          ? `$${ocoTpPayload.toFixed(2)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
+          ? `$${_tpExact(ocoTpPayload)} (${_ocoLvlStash && _ocoLvlStash !== '×1.50' ? _ocoLvlStash : 'selected'})`
           : `≈$${derivedTp.toFixed(2)} (est. from ask; server uses actual fill)`;
         ocoBracketHtml = `TP limit resting at broker: <strong>${tpDisplay}</strong> — no stop<br>`;
       }
