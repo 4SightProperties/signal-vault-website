@@ -16,6 +16,7 @@ window.SV_GRID_FIXTURES = {
   "qty": 2,
   "now": "2026-11-20T10:05:00-05:00",
   "spot": 500.0,
+  "spot_source": "engine_live",
   "basis": {
    "type": "ask",
    "price": 0.64
@@ -1159,6 +1160,7 @@ window.SV_GRID_FIXTURES = {
   "qty": 2,
   "now": "2026-11-17T10:30:00-05:00",
   "spot": 500.0,
+  "spot_source": "engine_live",
   "basis": {
    "type": "ask",
    "price": 2.78
@@ -1949,6 +1951,7 @@ window.SV_GRID_FIXTURES = {
   "qty": 3,
   "now": "2026-11-18T11:15:00-05:00",
   "spot": 500.0,
+  "spot_source": "position_live",
   "basis": {
    "type": "mark",
    "price": 2.25
@@ -3250,6 +3253,7 @@ window.SV_GRID_FIXTURES = {
   "qty": 1,
   "now": "2026-11-19T14:40:00-05:00",
   "spot": 500.0,
+  "spot_source": "position_live",
   "basis": {
    "type": "mark",
    "price": 2.9

@@ -18,7 +18,7 @@
   const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
   const MOCK       = LOCAL_HOSTS.has(location.hostname)
                   && new URLSearchParams(location.search).get('gridMock') === '1';
-  const ASSET_VER  = '20261111a';
+  const ASSET_VER  = '20261111b';
   const REFRESH_MS = 30000;
   const GATE       = 1.5;
   const PREF_KEY   = 'svGridPrefs';
@@ -123,6 +123,9 @@
     override: { cls: 'ovr',   text: 'Override' },
   };
 
+  const SPOT_SRC = { cockpit: 'cockpit', engine_live: 'live feed', tradier_last: 'Tradier last',
+                     position_live: 'position feed' };
+
   const WARN_TEXT = [
     ['atr_anchor',         w => 'ATR ladder anchor: ' + w.replace(/^atr_anchor:\s*/, '')],
     ['stop_fallback',      () => 'No structural stop on the other side — the stop shown is a 30% loss on the premium, converted to an underlying price per column.'],
@@ -206,6 +209,18 @@
     }
 
     async load() {
+      if (this.opts.contextFn) {
+        // Signal mode: rebuild from the cockpit each time (live spot + Target $), keeping
+        // the grid's own basis choice.
+        try {
+          this.context = { ...this.opts.contextFn(), basis: this.context.basis || 'ask' };
+        } catch (e) {
+          console.warn('[grid] could not rebuild signal context from the cockpit', e);
+          this.error = e;
+          if (this.running) this.render();
+          return;
+        }
+      }
       const key = ctxKey(this.context);
       if (_inflight.has(key)) return _inflight.get(key);
       if (!this.data) this.render();      // first load → loading state
@@ -233,6 +248,8 @@
       _inflight.set(key, p);
       return p;
     }
+
+    refresh() { return this.load(); }   // re-request in place (no loading flash)
 
     setContext(ctx) {
       this.context = ctx;
@@ -317,7 +334,7 @@
             <span class="svg-chip" title="Implied volatility, calendar-annualized (matches broker IV)">IV ${ivTxt}</span>
             <span class="svg-chip svg-chip-soft">${srcTxt}</span>
             ${ivChange}
-            <span class="svg-chip svg-chip-soft">spot ${fmtPx(d.spot)}</span>
+            <span class="svg-chip svg-chip-soft" title="Spot source">spot ${fmtPx(d.spot)}${d.spot_source ? ' · ' + esc(SPOT_SRC[d.spot_source] || d.spot_source) : ''}</span>
             <span class="svg-chip svg-chip-soft" title="ATR ladder anchored on this session's close">ATR anchor ${esc(d.atr_anchor_date || '—')}</span>
           </div>
           <div class="svg-grid-ctrls">
@@ -433,7 +450,7 @@
         <p class="svg-decay-note">${sentence}</p>
       </div>`;
 
-      const tgt = d.target ? `${esc(d.target.tag)} ${fmtPx(d.target.price)}` : 'none';
+      const tgt = d.target ? `${esc(d.target.tag)} ${fmtPx(d.target.price)} <span class="svg-muted">(${esc(d.target.source || '')})</span>` : 'none';
       const stp = d.stop.price != null ? `${esc(d.stop.tag)} ${fmtPx(d.stop.price)}` : esc(d.stop.name);
       const legend = `<div class="svg-legend">
         <span class="svg-role svg-role-target">◎ Target</span> ${tgt}
@@ -445,41 +462,87 @@
     }
   }
 
-  // ── Panel (signal mode, cockpit) ──────────────────────────────────────────
+  // ── Popout (signal mode, cockpit Grid button) ─────────────────────────────
+  // Large overlay (≈90vw × 85vh, max 1600px; full-screen < 700px) hosting the same GridView
+  // as the drawer. Esc / ✕ / backdrop close it; closing stops refresh and returns focus to
+  // the Grid button. Context is rebuilt from the cockpit on every request (live spot and
+  // Target $); typing in a watched input re-requests after a 500 ms debounce.
 
-  let _panel = null;   // { view, toggle, host }
+  const TARGET_DEBOUNCE_MS = 500;
+  let _popout = null;   // { root, view, returnFocus, watch: [[el, handler]], debounce }
 
-  function closePanel() {
-    if (!_panel) return;
-    _panel.view.stop();
-    if (_panel.host.isConnected) { _panel.host.hidden = true; _panel.host.innerHTML = ''; }
-    if (_panel.toggle.isConnected) _panel.toggle.setAttribute('aria-expanded', 'false');
-    _panel = null;
+  function _onPopoutKey(e) {
+    if (!_popout) return;
+    if (e.key === 'Escape') { e.preventDefault(); closePopout(); return; }
+    if (e.key === 'Tab') {                         // keep focus inside the modal
+      const f = [..._popout.root.querySelectorAll('button, [href], input, select, [tabindex]:not([tabindex="-1"])')]
+        .filter(el => !el.disabled && el.offsetParent !== null);
+      if (!f.length) return;
+      const first = f[0], last = f[f.length - 1];
+      if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+      else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+    }
   }
 
-  function mountPanel(toggle, host, getContext) {
-    if (!toggle || !host) return;
+  function closePopout() {
+    if (!_popout) return;
+    const { root, view, returnFocus, watch, debounce } = _popout;
+    view.stop();                                   // closing stops refresh
+    if (debounce) clearTimeout(debounce);
+    watch.forEach(([el, h]) => el.removeEventListener('input', h));
+    document.removeEventListener('keydown', _onPopoutKey, true);
+    root.remove();
+    _popout = null;
+    if (returnFocus && returnFocus.isConnected && returnFocus.focus) returnFocus.focus();
+  }
+
+  function openPopout(getContext, { title, returnFocus, watch = [] } = {}) {
+    closePopout();
+    let first;
+    try {
+      first = getContext();
+    } catch (e) {
+      console.warn('[grid] could not build signal context from the armed contract', e);
+      first = null;
+    }
+    const root = document.createElement('div');
+    root.className = 'svg-popout-root';
+    root.innerHTML = `<div class="svg-popout-backdrop" data-popout-close></div>
+      <section class="svg-popout" role="dialog" aria-modal="true" aria-label="Projection grid">
+        <div class="svg-drawer-head">
+          <span class="svg-drawer-title">Projection grid${title ? ' · ' + esc(title) : ''}</span>
+          <button type="button" class="svg-icon-btn" data-popout-close aria-label="Close projection grid">✕</button>
+        </div>
+        <div class="svg-popout-body"></div>
+      </section>`;
+    document.body.appendChild(root);
+    root.addEventListener('click', e => { if (e.target.closest('[data-popout-close]')) closePopout(); });
+    const body = root.querySelector('.svg-popout-body');
+    const view = new GridView(body, { basis: 'ask', ...(first || {}) }, { contextFn: getContext });
+    _popout = { root, view, returnFocus, watch: [], debounce: null };
+    for (const el of watch.filter(Boolean)) {
+      const h = () => {
+        if (!_popout) return;
+        clearTimeout(_popout.debounce);
+        _popout.debounce = setTimeout(() => { if (_popout) _popout.view.refresh(); }, TARGET_DEBOUNCE_MS);
+      };
+      el.addEventListener('input', h);             // listen only; never written
+      _popout.watch.push([el, h]);
+    }
+    document.addEventListener('keydown', _onPopoutKey, true);
+    root.querySelector('.svg-icon-btn').focus();
+    view.start();
+  }
+
+  function mountPanel(toggle, getContext, opts = {}) {
+    if (!toggle) return;
     toggle.addEventListener('click', () => {
-      if (_panel && _panel.host === host) { closePanel(); return; }
-      closePanel();
-      let ctx;
-      try {
-        ctx = { basis: 'ask', ...getContext() };
-      } catch (e) {
-        console.warn('[grid] could not build signal context from the armed contract', e);
-        host.hidden = false;
-        host.innerHTML = `<div class="svg-grid-error" role="alert"><span>No armed contract to project.</span>
-          <button type="button" class="svg-btn" data-grid-action="retry">Retry</button></div>`;
-        host.querySelector('[data-grid-action="retry"]').addEventListener('click', () => { host.hidden = true; toggle.click(); });
-        return;
-      }
-      host.hidden = false;
-      toggle.setAttribute('aria-expanded', 'true');
-      const view = new GridView(host, ctx);
-      _panel = { view, toggle, host };
-      view.start();
+      openPopout(getContext, { ...opts, returnFocus: toggle });
     });
   }
+
+  // Back-compat name used by dashboard.js armContract(): re-arming closes the popout.
+  function closePanel() { closePopout(); }
 
   // ── Drawer (position mode) ────────────────────────────────────────────────
 
@@ -548,7 +611,7 @@
     if (lastFocus && lastFocus.isConnected && lastFocus.focus) lastFocus.focus();
   }
 
-  // ── Dev mock launcher (only with ?gridMock=1) ─────────────────────────────
+  // ── Dev mock launcher (only with ?gridMock=1 on a local host) ─────────────
 
   function mountMockLauncher() {
     const box = document.createElement('section');
@@ -558,29 +621,37 @@
         <span class="svg-muted">fixtures · no network</span>
         <button type="button" class="svg-icon-btn" data-mock="hide" aria-label="Hide grid mock launcher">✕</button></div>
       <div class="svg-mock-btns">
-        <button type="button" class="svg-btn" data-mock="call">Panel · 0DTE call</button>
-        <button type="button" class="svg-btn" data-mock="put">Panel · 3DTE put</button>
+        <button type="button" class="svg-btn" data-mock="call">Popout · 0DTE call</button>
+        <button type="button" class="svg-btn" data-mock="put">Popout · 3DTE put</button>
         <button type="button" class="svg-btn" data-mock="pos">Drawer · position + legs</button>
         <button type="button" class="svg-btn" data-mock="nolegs">Drawer · no legs / fallbacks</button>
         <button type="button" class="svg-btn" data-mock="err">Drawer · error → Retry</button>
       </div>
-      <div class="svg-mock-toggle-row"><button type="button" class="svg-grid-toggle" id="svgMockToggle" aria-expanded="false" aria-controls="svgMockPanel">Grid</button>
-        <span class="svg-muted">← cockpit toggle (uses the contract picked above)</span></div>
-      <div id="svgMockPanel" class="svg-grid-panel" hidden></div>`;
+      <div class="svg-mock-toggle-row">
+        <button type="button" class="svg-grid-toggle" id="svgMockToggle">Grid</button>
+        <label class="svg-muted">mock spot <input id="svgMockSpot" type="number" step="0.01" value="500" style="width:6rem"></label>
+        <label class="svg-muted">mock Target $ <input id="svgMockTarget" type="number" step="0.01" placeholder="empty → structural" style="width:9rem"></label>
+      </div>`;
     document.body.appendChild(box);
     let pick = { ticker: 'SPY', strike: 501, expiry: '2026-11-20', right: 'call' };
     const toggle = box.querySelector('#svgMockToggle');
-    const host = box.querySelector('#svgMockPanel');
-    mountPanel(toggle, host, () => ({ mode: 'signal', contract: { ...pick }, qty: 2 }));
+    const spotEl = box.querySelector('#svgMockSpot');
+    const tgtEl  = box.querySelector('#svgMockTarget');
+    const mockCtx = () => {
+      const tgt = parseFloat(tgtEl.value);
+      const spot = parseFloat(spotEl.value);
+      return { mode: 'signal', contract: { ...pick }, qty: 2,
+               ...(spot > 0 ? { spot } : {}), ...(tgt > 0 ? { target_price: tgt } : {}) };
+    };
+    mountPanel(toggle, mockCtx, { title: 'mock', watch: [tgtEl] });
     box.addEventListener('click', e => {
       const b = e.target.closest('[data-mock]');
       if (!b) return;
       const m = b.dataset.mock;
-      if (m === 'hide') { closePanel(); box.remove(); return; }
+      if (m === 'hide') { closePopout(); box.remove(); return; }
       if (m === 'call' || m === 'put') {
         pick = m === 'call' ? { ticker: 'SPY', strike: 501, expiry: '2026-11-20', right: 'call' }
                             : { ticker: 'SPY', strike: 498, expiry: '2026-11-20', right: 'put' };
-        closePanel();
         toggle.click();
       }
       if (m === 'pos')    openDrawer({ mode: 'position', position_id: 'mock-pos-legs' }, 'SPY 502C (mock)');
@@ -589,7 +660,7 @@
     });
   }
 
-  window.SVGrid = { mountPanel, closePanel, openDrawer, closeDrawer, fetchGrid, setApi, MOCK };
+  window.SVGrid = { mountPanel, closePanel, openPopout, closePopout, openDrawer, closeDrawer, fetchGrid, setApi, MOCK };
 
   if (MOCK) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountMockLauncher);

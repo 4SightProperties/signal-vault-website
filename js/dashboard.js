@@ -3299,8 +3299,7 @@
 
   <!-- Projection grid (read-only, js/grid.js) — toggle + panel below the R:R line -->
   <div class="svg-grid-bar"><button type="button" class="svg-grid-toggle" id="cockpitGridToggle"
-    aria-expanded="false" aria-controls="cockpitGridPanel">Grid</button></div>
-  <div id="cockpitGridPanel" class="svg-grid-panel" hidden></div>
+    aria-haspopup="dialog">Grid</button></div>
 
   <!-- MATRIX / PAYOUT tab strip — flex-shrink:0, no vertical cost -->
   <div class="cockpit-proj-tabs" id="cockpitProjTabs">
@@ -3897,14 +3896,17 @@
       btn.addEventListener('click', () => _activateCockpitProjTab(btn.dataset.tab));
     });
 
-    // Projection grid toggle (read-only display; reads the armed contract and qty only)
+    // Projection grid popout (read-only display). Reads the armed contract, qty, the
+    // cockpit's live spot (chainCurrentPrice — same value the header/matrix use) and the
+    // Target $ input; writes nothing. Target edits re-request after a 500 ms debounce.
     if (window.SVGrid) {
+      const _gridTargetEl = document.getElementById('cockpitTarget');
       window.SVGrid.mountPanel(
         document.getElementById('cockpitGridToggle'),
-        document.getElementById('cockpitGridPanel'),
         () => {
           if (!armedContract || !chainTicker) throw new Error('no armed contract');
           const qtyEl = document.getElementById('chainQty');
+          const tgt   = _gridTargetEl ? parseFloat(_gridTargetEl.value) : NaN;
           return {
             mode:     'signal',
             contract: {
@@ -3914,7 +3916,13 @@
               right:  armedContract.bias === 'bullish' ? 'call' : 'put',
             },
             qty: Math.max(1, parseInt(qtyEl ? qtyEl.value : '1', 10) || 1),
+            ...(chainCurrentPrice > 0 ? { spot: chainCurrentPrice } : {}),
+            ...(tgt > 0 ? { target_price: tgt } : {}),
           };
+        },
+        {
+          title: `${chainTicker} ${armedContract.strike}${bias === 'bullish' ? 'C' : 'P'} ${armedContract.expiration}`,
+          watch: [_gridTargetEl],
         },
       );
     }
