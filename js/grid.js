@@ -18,27 +18,28 @@
   const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
   const MOCK       = LOCAL_HOSTS.has(location.hostname)
                   && new URLSearchParams(location.search).get('gridMock') === '1';
-  const ASSET_VER  = '20261111b';
+  const ASSET_VER  = '20261111c';
   const REFRESH_MS = 30000;
   const GATE       = 1.5;
   const PREF_KEY   = 'svGridPrefs';
 
-  // ── UI prefs (localStorage: cell mode + vs-mark/vs-cost only) ──────────────
+  // ── UI prefs (localStorage: drawer vs-mark/vs-cost only) ───────────────────
+  // (A legacy "cell" key from the removed $/% toggle is ignored and dropped on next save.)
 
   function loadPrefs() {
     try {
       const p = JSON.parse(localStorage.getItem(PREF_KEY) || '{}');
-      return { cell: p.cell === 'pct' ? 'pct' : 'usd', vs: p.vs === 'cost' ? 'cost' : 'mark' };
+      return { vs: p.vs === 'cost' ? 'cost' : 'mark' };
     } catch (e) {
       // Prefs are cosmetic: log and fall back to defaults (no data error to render).
       console.warn('[grid] could not read UI prefs from localStorage; using defaults', e);
-      return { cell: 'usd', vs: 'mark' };
+      return { vs: 'mark' };
     }
   }
 
   function savePrefs(p) {
     try {
-      localStorage.setItem(PREF_KEY, JSON.stringify({ cell: p.cell, vs: p.vs }));
+      localStorage.setItem(PREF_KEY, JSON.stringify({ vs: p.vs }));
     } catch (e) {
       console.warn('[grid] could not save UI prefs to localStorage', e);
     }
@@ -98,7 +99,6 @@
     c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
   const num = v => (typeof v === 'number' && isFinite(v));
   const fmtPx  = v => num(v) ? '$' + v.toFixed(2) : '—';
-  const fmtOpt = v => num(v) ? v.toFixed(2) : '—';
   const fmtPct = (v, dp = 1) => num(v) ? (v > 0 ? '+' : '') + v.toFixed(dp) + '%' : '—';
   const fmtUsd = v => num(v) ? (v < 0 ? '−' : v > 0 ? '+' : '') + '$' + Math.abs(Math.round(v)).toLocaleString('en-US') : '—';
   const fmtRR  = v => num(v) ? v.toFixed(2) : '—';
@@ -264,7 +264,6 @@
       const act = btn.dataset.gridAction;
       if (act === 'retry') { this.error = null; this.load(); return; }
       if (act === 'col') { this.selected = parseInt(btn.dataset.col, 10) || 0; this.render(); return; }
-      if (act === 'cell') { this.prefs.cell = btn.dataset.value; savePrefs(this.prefs); this.render(); return; }
       if (act === 'vs')   { this.prefs.vs = btn.dataset.value; savePrefs(this.prefs); this.render(); return; }
       if (act === 'basis') { this.setContext({ ...this.context, basis: btn.dataset.value }); return; }
       if (act === 'close' && this.opts.onClose) this.opts.onClose();
@@ -344,9 +343,6 @@
             ${pos ? `<div class="svg-seg" role="group" aria-label="P/L reference">
               ${[['mark', 'vs mark'], ['cost', 'vs cost']].map(([v, l]) => `<button type="button" class="svg-seg-btn${this.prefs.vs === v ? ' on' : ''}" data-grid-action="vs" data-value="${v}" aria-pressed="${this.prefs.vs === v}">${l}</button>`).join('')}
             </div>` : ''}
-            <div class="svg-seg" role="group" aria-label="Cell display">
-              ${[['usd', '$ P/L'], ['pct', '% P/L']].map(([v, l]) => `<button type="button" class="svg-seg-btn${this.prefs.cell === v ? ' on' : ''}" data-grid-action="cell" data-value="${v}" aria-pressed="${this.prefs.cell === v}">${l}</button>`).join('')}
-            </div>
             <span class="svg-muted svg-asof">as of ${esc(fmtTime(d.now))}</span>
           </div>
         </div>`;
@@ -383,14 +379,15 @@
             return `<td class="svg-cell svg-cell-leg${j === sel ? ' sel' : ''}" title="Underlying price where the leg fills at this time">
               <div class="svg-cell-main">${fmtPx(c.underlying)}</div><div class="svg-cell-sub">${c.underlying != null ? fmtPct(c.pct_from_spot, 2) : esc(c.status || '')}</div></td>`;
           }
+          // Two lines: % P/L (top) and $ P/L (below), both vs the active basis (signal) or
+          // vs mark/cost (position). Option value lives in the tooltip.
           const pct = this._cellPct(c, pos);
           const pnl = this._cellPnl(c, pos);
-          const main = this.prefs.cell === 'pct' ? fmtPct(pct, 0) : fmtUsd(pnl);
           const beyond = c.beyond_1sigma;
           const style = beyond ? '' : ` style="background:${heatBg(pct)}"`;
-          return `<td class="svg-cell${beyond ? ' beyond' : ''}${j === sel ? ' sel' : ''}"${style}
-              ${beyond ? 'title="Beyond a 1σ move by this time"' : ''}>
-            <div class="svg-cell-main">${main}</div><div class="svg-cell-sub">opt ${fmtOpt(c.value)}</div></td>`;
+          const tip = 'opt ' + fmtPx(c.value) + (beyond ? ' · beyond a 1σ move by this time' : '');
+          return `<td class="svg-cell${beyond ? ' beyond' : ''}${j === sel ? ' sel' : ''}"${style} title="${esc(tip)}">
+            <div class="svg-cell-main">${fmtPct(pct, 0)}</div><div class="svg-cell-usd">${fmtUsd(pnl)}</div></td>`;
         }).join('');
         const rowCls = r.is_target ? 'is-target' : r.is_stop ? 'is-stop' : r.role === 'spot' ? 'is-spot' : '';
         return `<tr class="${rowCls}">${first}${cells}</tr>`;

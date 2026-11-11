@@ -5432,9 +5432,10 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 .svg-grid-table td.sel { box-shadow: inset 2px 0 0 var(--blue), inset -2px 0 0 var(--blue); }
 .svg-cell-main { font-size: 0.72rem; color: var(--text-primary); }
 .svg-cell-sub { font-size: 0.6rem; color: var(--text-secondary); }
+.svg-cell-usd { font-size: 0.64rem; color: var(--text-primary); }
 /* beyond 1σ: neutral background + secondary text (≈7:1 on --bg-elevated), not opacity */
 .svg-cell.beyond { background: var(--bg-elevated); }
-.svg-cell.beyond .svg-cell-main { color: var(--text-secondary); }
+.svg-cell.beyond .svg-cell-main, .svg-cell.beyond .svg-cell-usd { color: var(--text-secondary); }
 .svg-cell-leg { background: rgba(96,165,250,0.06); }
 tr.is-target .svg-sticky { box-shadow: inset 3px 0 0 var(--accent); }
 tr.is-stop .svg-sticky { box-shadow: inset 3px 0 0 var(--danger); }
