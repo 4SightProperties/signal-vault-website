@@ -411,6 +411,7 @@
     setupCenterPanel();
     _initTooltip();
     setupConsoleHandlers();
+    setupProjectButtons();
     setupHistoryTab();
     setupModal();
     setupGexModal();
@@ -623,6 +624,7 @@
     </div>
   </div>
   ${isAdmin ? '<button class="pos-gex-btn" title="GEX terrain + option projection">GEX ▸</button>' : ''}
+  ${(isAdmin || isElite) ? '<button type="button" class="pos-proj-btn" aria-label="Open projection grid for this position">Project</button>' : ''}
   ${_renderOrdersForPosition(pos.position_id)}
 </div>`;
     }).join('');
@@ -3176,6 +3178,7 @@
 
   async function armContract(strike, bias) {
     if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
+    if (window.SVGrid) window.SVGrid.closePanel();   // read-only grid panel (js/grid.js)
     _ocoButtonRefreshFn = null;
     armedContract = { ...strike, bias };
     const _isCall = bias === 'bullish';
@@ -3291,6 +3294,11 @@
 
   <!-- R:R premium number line — renders from matrixProjCache, no fetch -->
   <div id="cockpitRrLine" style="display:none"></div>
+
+  <!-- Projection grid (read-only, js/grid.js) — toggle + panel below the R:R line -->
+  <div class="svg-grid-bar"><button type="button" class="svg-grid-toggle" id="cockpitGridToggle"
+    aria-expanded="false" aria-controls="cockpitGridPanel">Grid</button></div>
+  <div id="cockpitGridPanel" class="svg-grid-panel" hidden></div>
 
   <!-- MATRIX / PAYOUT tab strip — flex-shrink:0, no vertical cost -->
   <div class="cockpit-proj-tabs" id="cockpitProjTabs">
@@ -3886,6 +3894,28 @@
     document.querySelectorAll('#cockpitProjTabs .cpt-tab').forEach(btn => {
       btn.addEventListener('click', () => _activateCockpitProjTab(btn.dataset.tab));
     });
+
+    // Projection grid toggle (read-only display; reads the armed contract and qty only)
+    if (window.SVGrid) {
+      window.SVGrid.mountPanel(
+        document.getElementById('cockpitGridToggle'),
+        document.getElementById('cockpitGridPanel'),
+        () => {
+          if (!armedContract || !chainTicker) throw new Error('no armed contract');
+          const qtyEl = document.getElementById('chainQty');
+          return {
+            mode:     'signal',
+            contract: {
+              ticker: chainTicker,
+              strike: Number(armedContract.strike),
+              expiry: armedContract.expiration,
+              right:  armedContract.bias === 'bullish' ? 'call' : 'put',
+            },
+            qty: Math.max(1, parseInt(qtyEl ? qtyEl.value : '1', 10) || 1),
+          };
+        },
+      );
+    }
 
     // Open Position button
     document.getElementById('chainOpenBtn').addEventListener('click', () => {
@@ -5595,12 +5625,27 @@
 
   // ── Position management console (Part 3 — close wired) ───────────────────
 
+  function setupProjectButtons() {
+    document.getElementById('positionsBody').addEventListener('click', e => {
+      const btn = e.target.closest('.pos-proj-btn');
+      if (!btn || !window.SVGrid) return;
+      e.stopPropagation();
+      const card = btn.closest('.pos-card');
+      const pos  = card && currentPositions.find(p => p.position_id === card.dataset.posId);
+      if (!pos) return;
+      const label = `${pos.ticker} ${pos.strike}${(pos.direction || '').charAt(0).toUpperCase()} ${pos.expiry}`;
+      window.SVGrid.openDrawer({ mode: 'position', position_id: pos.position_id }, label);
+    });
+  }
+
   function setupConsoleHandlers() {
     document.getElementById('positionsBody').addEventListener('click', e => {
       // Clicks inside the console itself should not re-toggle the card.
       if (e.target.closest('.pos-console')) return;
       // GEX button handled by its own delegated listener in setupGexModal.
       if (e.target.closest('.pos-gex-btn')) return;
+      // Project button handled below (read-only grid drawer, js/grid.js).
+      if (e.target.closest('.pos-proj-btn')) return;
       const card = e.target.closest('.pos-card');
       if (!card) return;
       const posId = card.dataset.posId;

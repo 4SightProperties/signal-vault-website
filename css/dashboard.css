@@ -5351,3 +5351,168 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   .flow0-table-wrap { flex: 1 1 auto; border-right: none; border-bottom: 1px solid var(--border); }
   .flow0-ladder { flex: 1 1 auto; }
 }
+
+/* ════════════════════════════════════════════════════════════════
+   Projection grid (js/grid.js) — READ-ONLY panel + position drawer
+   Reuses cockpit tokens. Table scrolls inside its own box; never the page.
+   ════════════════════════════════════════════════════════════════ */
+.svg-grid-bar { display: flex; justify-content: flex-end; margin: 0.15rem 0; }
+.svg-grid-toggle, .svg-btn, .svg-seg-btn, .svg-col-btn, .svg-icon-btn, .pos-proj-btn {
+  font-family: var(--font-body); cursor: pointer;
+}
+.svg-grid-toggle, .svg-btn, .pos-proj-btn {
+  background: var(--bg-elevated); color: var(--text-primary);
+  border: 1px solid var(--border-bright); border-radius: var(--radius-sm);
+  font-size: 0.7rem; padding: 0.2rem 0.6rem;
+}
+.svg-grid-toggle[aria-expanded="true"] { border-color: var(--blue); color: var(--blue); }
+.svg-grid-toggle:hover, .svg-btn:hover, .pos-proj-btn:hover { background: var(--bg-card-hover); }
+.pos-proj-btn { margin-left: 0.3rem; }
+.svg-icon-btn {
+  background: transparent; border: 1px solid var(--border); color: var(--text-secondary);
+  border-radius: var(--radius-sm); width: 1.8rem; height: 1.8rem; font-size: 0.85rem;
+}
+.svg-grid-panel :focus-visible, .svg-drawer :focus-visible, .svg-mock :focus-visible,
+.svg-grid-toggle:focus-visible, .pos-proj-btn:focus-visible {
+  outline: 2px solid var(--blue); outline-offset: 2px;
+}
+.svg-grid-panel {
+  min-width: 0; max-width: 100%; margin: 0.25rem 0 0.4rem;
+  border: 1px solid var(--border); border-radius: var(--radius-sm);
+  background: var(--bg-surface); padding: 0.5rem; font-size: 0.72rem; color: var(--text-primary);
+}
+.svg-muted { color: var(--text-secondary); font-weight: 400; }
+.svg-amber { color: var(--warning); }
+.svg-grid-state { padding: 0.6rem; color: var(--text-secondary); }
+.svg-grid-error {
+  display: flex; align-items: center; gap: 0.5rem; flex-wrap: wrap;
+  padding: 0.45rem 0.55rem; margin-bottom: 0.4rem; border-radius: var(--radius-sm);
+  border: 1px solid var(--danger); background: var(--danger-dim); color: var(--text-primary);
+}
+.svg-grid-head { display: flex; flex-direction: column; gap: 0.3rem; margin-bottom: 0.35rem; }
+.svg-grid-title { font-weight: 700; font-size: 0.85rem; }
+.svg-grid-meta, .svg-grid-ctrls { display: flex; flex-wrap: wrap; gap: 0.3rem; align-items: center; }
+.svg-chip {
+  border: 1px solid var(--border-bright); border-radius: 999px; padding: 0.05rem 0.45rem;
+  font-family: var(--font-mono, monospace); font-size: 0.66rem; white-space: nowrap;
+}
+.svg-chip-soft { border-color: var(--border); color: var(--text-secondary); }
+.svg-chip-basis { border-color: var(--blue); color: var(--blue); }
+.svg-chip-entry { border-color: var(--gold); color: var(--gold); }
+.svg-seg { display: inline-flex; border: 1px solid var(--border-bright); border-radius: var(--radius-sm); overflow: hidden; }
+.svg-seg-btn {
+  background: transparent; color: var(--text-secondary); border: 0; font-size: 0.66rem;
+  padding: 0.15rem 0.5rem;
+}
+.svg-seg-btn + .svg-seg-btn { border-left: 1px solid var(--border-bright); }
+.svg-seg-btn.on { background: var(--blue-glow); color: var(--text-primary); }
+.svg-asof { font-size: 0.64rem; }
+.svg-grid-warn {
+  list-style: none; margin: 0 0 0.35rem; padding: 0.3rem 0.5rem;
+  border-left: 3px solid var(--warning); background: rgba(245,158,11,0.08);
+  color: var(--text-primary); font-size: 0.68rem; display: flex; flex-direction: column; gap: 0.15rem;
+}
+.svg-legend { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; margin-bottom: 0.3rem; font-size: 0.66rem; }
+.svg-legend-beyond { color: var(--text-secondary); margin-left: auto; }
+
+/* table */
+.svg-grid-scroll { overflow-x: auto; max-width: 100%; border: 1px solid var(--border); border-radius: var(--radius-sm); }
+.svg-grid-table { border-collapse: separate; border-spacing: 0; width: max-content; min-width: 100%; }
+.svg-grid-table th, .svg-grid-table td {
+  padding: 0.22rem 0.4rem; border-bottom: 1px solid var(--border); text-align: right;
+  font-family: var(--font-mono, monospace); white-space: nowrap; vertical-align: middle;
+}
+.svg-grid-table thead th { position: sticky; top: 0; background: var(--bg-elevated); font-weight: 600; z-index: 2; }
+.svg-grid-table .svg-sticky {
+  position: sticky; left: 0; z-index: 1; text-align: left; background: var(--bg-surface);
+  border-right: 1px solid var(--border-bright); min-width: 9.5rem;
+}
+.svg-grid-table thead .svg-sticky { z-index: 3; background: var(--bg-elevated); }
+.svg-col-btn {
+  background: transparent; border: 0; color: var(--text-primary); font: inherit;
+  padding: 0.1rem 0.2rem; border-radius: 4px;
+}
+.svg-grid-table th.sel .svg-col-btn { background: var(--blue-glow); color: var(--blue); }
+.svg-grid-table th.lowc .svg-col-btn { border-bottom: 2px dashed var(--warning); }
+.svg-grid-table td.sel { box-shadow: inset 2px 0 0 var(--blue), inset -2px 0 0 var(--blue); }
+.svg-cell-main { font-size: 0.72rem; color: var(--text-primary); }
+.svg-cell-sub { font-size: 0.6rem; color: var(--text-secondary); }
+/* beyond 1σ: neutral background + secondary text (≈7:1 on --bg-elevated), not opacity */
+.svg-cell.beyond { background: var(--bg-elevated); }
+.svg-cell.beyond .svg-cell-main { color: var(--text-secondary); }
+.svg-cell-leg { background: rgba(96,165,250,0.06); }
+tr.is-target .svg-sticky { box-shadow: inset 3px 0 0 var(--accent); }
+tr.is-stop .svg-sticky { box-shadow: inset 3px 0 0 var(--danger); }
+tr.is-spot td, tr.is-spot th { border-top: 1px solid var(--text-secondary); border-bottom: 1px solid var(--text-secondary); }
+.svg-lvl { display: flex; flex-wrap: wrap; gap: 0.2rem; align-items: center; }
+.svg-lvl-px { font-size: 0.64rem; margin-top: 0.1rem; }
+.svg-tag { font-weight: 700; font-size: 0.68rem; padding: 0 0.3rem; border-radius: 4px; border: 1px solid var(--border-bright); }
+.svg-role {
+  font-family: var(--font-body); font-size: 0.58rem; text-transform: uppercase; letter-spacing: 0.03em;
+  padding: 0 0.3rem; border-radius: 4px; border: 1px solid var(--border);
+}
+.svg-tag-sr, .svg-role-sr { color: var(--text-primary); }
+.svg-tag-cloud, .svg-role-cloud { color: var(--blue); border-color: var(--blue); }
+.svg-tag-atr, .svg-role-atr { color: var(--gold); border-color: rgba(251,191,36,0.5); border-style: dashed; }
+.svg-tag-spot, .svg-role-spot { color: var(--text-primary); background: rgba(226,232,240,0.12); }
+.svg-tag-tpleg, .svg-role-tpleg { color: var(--accent); border-style: dotted; border-color: var(--accent); }
+.svg-tag-stopleg, .svg-role-stopleg { color: #fca5a5; border-style: dotted; border-color: var(--danger); }
+.svg-tag-ovr, .svg-role-ovr { color: var(--text-primary); border-style: double; }
+.svg-role-target { color: var(--accent); border-color: var(--accent); font-weight: 700; }
+.svg-role-stop { color: #fca5a5; border-color: var(--danger); font-weight: 700; }
+.svg-sum th, .svg-sum td { background: var(--bg-elevated); }
+.svg-rr.low .svg-cell-main { color: var(--warning); font-weight: 700; }
+.svg-amber-mark { font-size: 0.6rem; border: 1px solid var(--warning); border-radius: 50%; padding: 0 0.22rem; }
+
+/* inspector + decay chart */
+.svg-grid-lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; margin-top: 0.45rem; }
+.svg-insp, .svg-decay { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.4rem 0.5rem; min-width: 0; }
+.svg-insp-title, .svg-decay-title { font-weight: 700; margin-bottom: 0.3rem; }
+.svg-insp-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.2rem 0.6rem; margin: 0; }
+.svg-insp-grid dt { color: var(--text-secondary); font-size: 0.62rem; }
+.svg-insp-grid dd { margin: 0; font-family: var(--font-mono, monospace); }
+.svg-why { margin: 0.35rem 0 0; color: var(--warning); font-size: 0.68rem; }
+.svg-decay-plot {
+  position: relative; display: flex; align-items: flex-end; gap: 3px; height: 90px;
+  border-bottom: 1px solid var(--border-bright); padding-bottom: 14px; overflow-x: auto;
+}
+.svg-gate { position: absolute; left: 0; right: 0; border-top: 1px dashed var(--warning); pointer-events: none; margin-bottom: 14px; }
+.svg-gate span { position: absolute; right: 2px; top: -0.8rem; font-size: 0.56rem; color: var(--warning); background: var(--bg-surface); padding: 0 2px; z-index: 1; }
+.svg-bar {
+  position: relative; flex: 1 1 0; min-width: 18px; height: 100%; background: transparent;
+  border: 0; padding: 0; display: flex; align-items: flex-end; justify-content: center;
+}
+.svg-bar-fill { display: block; width: 70%; background: var(--accent-dim); border-radius: 2px 2px 0 0; }
+.svg-bar.low .svg-bar-fill { background: var(--warning); }
+.svg-bar.sel .svg-bar-fill { outline: 2px solid var(--blue); }
+.svg-bar-lbl { position: absolute; bottom: -14px; font-size: 0.52rem; color: var(--text-secondary); white-space: nowrap; }
+.svg-decay-note { margin: 0.3rem 0 0; font-size: 0.68rem; color: var(--text-secondary); }
+
+/* drawer (fixed; sits left of the positions rail on desktop, full width < 700px) */
+.svg-drawer {
+  position: fixed; bottom: 0; z-index: 150; display: flex; flex-direction: column;
+  background: var(--bg-surface); border-left: 1px solid var(--border-bright);
+  box-shadow: var(--shadow-lg); max-width: 100vw;
+}
+.svg-drawer-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 0.5rem;
+  padding: 0.45rem 0.6rem; border-bottom: 1px solid var(--border);
+}
+.svg-drawer-title { font-weight: 700; font-size: 0.8rem; }
+.svg-drawer-body { overflow-y: auto; overflow-x: hidden; padding: 0.5rem; font-size: 0.72rem; flex: 1 1 auto; min-height: 0; }
+
+/* dev mock launcher (?gridMock=1 only) */
+.svg-mock {
+  position: fixed; left: 8px; bottom: 8px; z-index: 160; width: min(760px, calc(100vw - 16px));
+  max-height: 80vh; overflow-y: auto; overflow-x: hidden; padding: 0.5rem;
+  background: var(--bg-surface); border: 1px dashed var(--warning); border-radius: var(--radius-sm);
+  font-size: 0.72rem; color: var(--text-primary);
+}
+.svg-mock-head { display: flex; gap: 0.5rem; align-items: center; justify-content: space-between; }
+.svg-mock-btns, .svg-mock-toggle-row { display: flex; flex-wrap: wrap; gap: 0.3rem; margin-top: 0.35rem; align-items: center; }
+
+@media (max-width: 700px) {
+  .svg-grid-lower { grid-template-columns: minmax(0, 1fr); }
+  .svg-drawer { border-left: 0; }
+  .svg-legend-beyond { margin-left: 0; }
+}
