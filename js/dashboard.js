@@ -411,6 +411,8 @@
     setupCenterPanel();
     _initTooltip();
     setupConsoleHandlers();
+    // Projection grid (js/grid.js) authenticates through this file's own apiPost.
+    if (window.SVGrid) window.SVGrid.setApi({ post: apiPost });
     setupProjectButtons();
     setupHistoryTab();
     setupModal();

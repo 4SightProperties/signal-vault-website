@@ -18,7 +18,7 @@
   const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
   const MOCK       = LOCAL_HOSTS.has(location.hostname)
                   && new URLSearchParams(location.search).get('gridMock') === '1';
-  const ASSET_VER  = '20261110a';
+  const ASSET_VER  = '20261111a';
   const REFRESH_MS = 30000;
   const GATE       = 1.5;
   const PREF_KEY   = 'svGridPrefs';
@@ -69,26 +69,20 @@
     return JSON.parse(JSON.stringify(fx[key]));
   }
 
-  // Same base URL + Bearer pattern as dashboard.js apiPost (CONFIG.backendUrl, DiscordAuth token).
+  // Auth: fetchGrid goes through dashboard.js's own apiPost (registered via setApi), so the
+  // base URL, the Authorization header (authHeaders() → 'Bearer ' + authToken) and error
+  // shape ({status, message = backend detail}) are identical to every other cockpit call.
+  // NOTE: window.DiscordAuth does not exist — discord-auth.js declares a top-level const,
+  // which is a global binding but not a window property (the cause of the empty header).
+  let _api = null;
+  function setApi(api) { _api = api; }
+
   async function fetchGrid(context) {
     if (MOCK) return mockResponse(await loadFixtures(), context);
-    const token = (window.DiscordAuth && window.DiscordAuth.getToken()) || '';
-    const res = await fetch(CONFIG.backendUrl + '/api/projection/grid', {
-      method:  'POST',
-      headers: { Authorization: 'Bearer ' + token, 'Content-Type': 'application/json' },
-      body:    JSON.stringify({ context }),
-    });
-    let data;
-    try {
-      data = await res.json();
-    } catch (e) {
-      console.warn('[grid] /api/projection/grid returned non-JSON', res.status, e);
-      data = {};
+    if (!_api || typeof _api.post !== 'function') {
+      throw new Error('Grid auth helper not registered (dashboard.js did not call SVGrid.setApi)');
     }
-    if (!res.ok) {
-      const detail = typeof data.detail === 'string' ? data.detail : (res.status + ' /api/projection/grid');
-      throw Object.assign(new Error(detail), { status: res.status });
-    }
+    const data = await _api.post('/api/projection/grid', { context });
     if (!data || !Array.isArray(data.columns) || !Array.isArray(data.rows)) {
       throw new Error('Malformed grid response');
     }
@@ -191,12 +185,13 @@
     }
 
     _arm() {
+      if (this._authStopped) return;
       if (this.timer) clearInterval(this.timer);
       this.timer = document.hidden ? null : setInterval(() => this._tick(), REFRESH_MS);
     }
 
     _visibility() {
-      if (!this.running) return;
+      if (!this.running || this._authStopped) return;
       if (document.hidden) {
         if (this.timer) { clearInterval(this.timer); this.timer = null; }
       } else {
@@ -223,6 +218,13 @@
         } catch (e) {
           console.warn('[grid] projection grid fetch failed', this.context, e);
           this.error = e;
+          if (e && (e.status === 401 || e.status === 403)) {
+            // Same as the cockpit's other authed calls: static inline message, and a polled
+            // view stops polling on an auth failure (cf. dashboard.js _pollOrders 403).
+            this.authError = e;
+            if (this.timer) { clearInterval(this.timer); this.timer = null; }
+            this._authStopped = true;
+          }
         } finally {
           _inflight.delete(key);
         }
@@ -255,6 +257,15 @@
     render() {
       const restoreScroll = this.host.querySelector('.svg-grid-scroll');
       const sx = restoreScroll ? restoreScroll.scrollLeft : 0;
+      if (this.authError) {
+        // Mirrors the cockpit's 403 placeholders (e.g. "Admin access required"); no Retry —
+        // the same token would fail again. 401 has no re-auth path in the cockpit either.
+        const msg = this.authError.status === 403
+          ? 'Projection grid requires Elite or admin access.'
+          : 'Session not valid — reload the page to sign in again.';
+        this.host.innerHTML = `<div class="dash-placeholder svg-grid-state" role="alert">${msg}</div>`;
+        return;
+      }
       if (this.error && !this.data) {
         this.host.innerHTML = this._errorHtml();
       } else if (!this.data) {
@@ -578,7 +589,7 @@
     });
   }
 
-  window.SVGrid = { mountPanel, closePanel, openDrawer, closeDrawer, fetchGrid, MOCK };
+  window.SVGrid = { mountPanel, closePanel, openDrawer, closeDrawer, fetchGrid, setApi, MOCK };
 
   if (MOCK) {
     if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', mountMockLauncher);
