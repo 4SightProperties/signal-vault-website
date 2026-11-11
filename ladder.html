@@ -442,8 +442,11 @@
     document.getElementById('ctxDte').textContent     = d.days_remain!=null ? d.days_remain+'d' : '—';
     document.getElementById('ctxEntryIv').textContent = d.entry_iv!=null ? (d.entry_iv*100).toFixed(1)+'%' : '—';
 
+    // Display the calendar-annualized IV (d.iv, matches Tradier/broker), scaled by the same
+    // catalyst crush as the math σ. d.sigma (trading-time basis) is for pricing only.
     const sig = effSig();
-    document.getElementById('ctxIv').textContent = sig!=null ? (sig*100).toFixed(1)+'%' : '—';
+    const ivDisp = (sig!=null && d.iv!=null && d.sigma) ? d.iv * (sig / d.sigma) : null;
+    document.getElementById('ctxIv').textContent = ivDisp!=null ? (ivDisp*100).toFixed(1)+'%' : '—';
     document.getElementById('ivWarnCell').style.display = d.iv_ok ? 'none' : '';
   }
 
