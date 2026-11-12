@@ -1,6 +1,8 @@
 // js/fixtures/grid_samples.js — DEV MOCK ONLY. Loaded solely when the URL has ?gridMock=1.
 // Generated from the real trading_system compute_grid (step 3) with stubbed quotes/levels/legs
 // (market closed). Do not reference from production code paths.
+// today_atr + per-row atr_zone/rem_atr_pct added with the real engine today_atr_context/atr_zone
+// (invented RTH ranges); signal_3dte_put_afterclose is rebuilt via build_grid at 16:30 (next-session mode).
 window.SV_GRID_FIXTURES = {
  "signal_0dte_call": {
   "available": true,
@@ -168,7 +170,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 1672.0,
       "pct": 1306.25
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 300.0
    },
    {
     "name": "Overhead swing 2",
@@ -234,7 +238,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 972.0,
       "pct": 759.38
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 179.3
    },
    {
     "name": "ATR +1× (prior close 499.10)",
@@ -300,7 +306,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 732.0,
       "pct": 571.88
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 137.9
    },
    {
     "name": "Overhead swing 1",
@@ -368,7 +376,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 312.0,
       "pct": 243.75
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 65.5
    },
    {
     "name": "ATR +0.382× (prior close 499.10)",
@@ -434,7 +444,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -34.32,
       "pct": -26.81
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 5.8
    },
    {
     "name": "ATR +0.236× (prior close 499.10)",
@@ -500,7 +512,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "Spot",
@@ -566,7 +580,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "10m 5/12 cloud bottom",
@@ -634,7 +650,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "Underfoot swing 1",
@@ -703,7 +721,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 34.5
    },
    {
     "name": "ATR −0.618× (prior close 499.10)",
@@ -769,7 +789,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 108.0
    },
    {
     "name": "Underfoot swing 2",
@@ -835,7 +857,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 148.3
    },
    {
     "name": "ATR −1× (prior close 499.10)",
@@ -901,7 +925,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 189.7
    },
    {
     "name": "Round below",
@@ -967,7 +993,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -128.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 289.7
    }
   ],
   "target": {
@@ -1144,7 +1172,21 @@ window.SV_GRID_FIXTURES = {
   "legs": null,
   "warnings": [
    "low_confidence: 0DTE columns inside the last trading hour"
-  ]
+  ],
+  "today_atr": {
+   "atr": 5.8,
+   "atr_cockpit": 5.8,
+   "atr_ladder": 6.2,
+   "day_high": 501.3,
+   "day_low": 498.4,
+   "day_range": 2.9,
+   "used_pct": 50.00000000000059,
+   "remaining": 2.8999999999999657,
+   "reach_up": 504.2,
+   "reach_down": 495.5,
+   "session_date": "2026-11-20",
+   "is_live_session": true
+  }
  },
  "signal_3dte_put": {
   "available": true,
@@ -1270,7 +1312,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 1044.0,
       "pct": 187.77
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 292.3
    },
    {
     "name": "ATR −1× (prior close 499.10)",
@@ -1318,7 +1362,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 464.0,
       "pct": 83.45
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 180.8
    },
    {
     "name": "Underfoot swing 2",
@@ -1366,7 +1412,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": 224.0,
       "pct": 40.29
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 134.6
    },
    {
     "name": "ATR −0.618× (prior close 499.10)",
@@ -1414,7 +1462,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -9.68,
       "pct": -1.74
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 89.7
    },
    {
     "name": "Underfoot swing 1",
@@ -1465,7 +1515,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -436.0,
       "pct": -78.42
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 7.7
    },
    {
     "name": "Spot",
@@ -1513,7 +1565,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "10m 5/12 cloud bottom",
@@ -1563,7 +1617,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "10m 5/12 cloud top",
@@ -1613,7 +1669,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 15.4
    },
    {
     "name": "Overhead swing 1",
@@ -1663,7 +1721,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 92.3
    },
    {
     "name": "ATR +1× (prior close 499.10)",
@@ -1711,7 +1771,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 173.1
    },
    {
     "name": "Overhead swing 2",
@@ -1759,7 +1821,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 219.2
    },
    {
     "name": "Round above",
@@ -1807,7 +1871,9 @@ window.SV_GRID_FIXTURES = {
       "pnl": -556.0,
       "pct": -100.0
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 353.8
    }
   ],
   "target": {
@@ -1935,7 +2001,21 @@ window.SV_GRID_FIXTURES = {
    "ts": "2026-11-17T10:30:00-05:00"
   },
   "legs": null,
-  "warnings": []
+  "warnings": [],
+  "today_atr": {
+   "atr": 5.8,
+   "atr_cockpit": 5.8,
+   "atr_ladder": 6.2,
+   "day_high": 500.8,
+   "day_low": 497.6,
+   "day_range": 3.2,
+   "used_pct": 55.17241379310326,
+   "remaining": 2.600000000000011,
+   "reach_up": 503.4,
+   "reach_down": 495.0,
+   "session_date": "2026-11-17",
+   "is_live_session": true
+  }
  },
  "position_legs": {
   "available": true,
@@ -2077,7 +2157,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 255.56
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "Overhead swing 2",
@@ -2149,7 +2231,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR +1× (prior close 499.10)",
@@ -2221,7 +2305,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 46.67
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "Overhead swing 1",
@@ -2295,7 +2381,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -46.67
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR +0.382× (prior close 499.10)",
@@ -2367,7 +2455,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR +0.236× (prior close 499.10)",
@@ -2439,7 +2529,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "Spot",
@@ -2511,7 +2603,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "10m 5/12 cloud top",
@@ -2583,7 +2677,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "10m 5/12 cloud bottom",
@@ -2655,7 +2751,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "Underfoot swing 1",
@@ -2730,7 +2828,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR −0.618× (prior close 499.10)",
@@ -2802,7 +2902,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "Underfoot swing 2",
@@ -2874,7 +2976,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR −1× (prior close 499.10)",
@@ -2946,7 +3050,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "Round below",
@@ -3018,7 +3124,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": null
    },
    {
     "name": "OCO take-profit leg",
@@ -3237,7 +3345,21 @@ window.SV_GRID_FIXTURES = {
   },
   "warnings": [
    "atr_anchor: bar for last completed session 2026-11-17 missing — anchored on 2026-11-16"
-  ]
+  ],
+  "today_atr": {
+   "atr": 5.8,
+   "atr_cockpit": 5.8,
+   "atr_ladder": 6.2,
+   "day_high": 502.9,
+   "day_low": 496.6,
+   "day_range": 6.3,
+   "used_pct": 108.62068965517165,
+   "remaining": 0.0,
+   "reach_up": 502.4,
+   "reach_down": 497.1,
+   "session_date": "2026-11-18",
+   "is_live_session": true
+  }
  },
  "position_nolegs": {
   "available": true,
@@ -3419,7 +3541,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 248.28
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 159.5
    },
    {
     "name": "Underfoot swing 2",
@@ -3515,7 +3639,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 206.9
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 131.0
    },
    {
     "name": "ATR −0.618× (prior close 499.10)",
@@ -3611,7 +3737,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 166.61
       }
      }
-    ]
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 103.1
    },
    {
     "name": "Underfoot swing 1",
@@ -3710,7 +3838,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 93.1
       }
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 52.4
    },
    {
     "name": "10m 5/12 cloud bottom",
@@ -3806,7 +3936,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 37.93
       }
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 14.3
    },
    {
     "name": "10m 5/12 cloud top",
@@ -3902,7 +4034,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 10.34
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "Spot",
@@ -3998,7 +4132,9 @@ window.SV_GRID_FIXTURES = {
        "pct": 3.45
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR +0.236× (prior close 499.10)",
@@ -4094,7 +4230,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -15.97
       }
      }
-    ]
+    ],
+    "atr_zone": "range",
+    "rem_atr_pct": null
    },
    {
     "name": "ATR +0.382× (prior close 499.10)",
@@ -4190,7 +4328,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -47.19
       }
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 6.4
    },
    {
     "name": "ATR +0.618× (prior close 499.10)",
@@ -4286,7 +4426,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -97.64
       }
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 41.2
    },
    {
     "name": "ATR +1× (prior close 499.10)",
@@ -4382,7 +4524,9 @@ window.SV_GRID_FIXTURES = {
        "pct": -100.0
       }
      }
-    ]
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 97.6
    }
   ],
   "target": {
@@ -4572,6 +4716,655 @@ window.SV_GRID_FIXTURES = {
   "warnings": [
    "vendor_iv_fallback: σ from Tradier IV (converted to trading basis), not the mid",
    "stop_fallback: no structural stop — using −30% of premium per column"
-  ]
+  ],
+  "today_atr": {
+   "atr": 5.8,
+   "atr_cockpit": 5.8,
+   "atr_ladder": 6.2,
+   "day_high": 501.2,
+   "day_low": 499.6,
+   "day_range": 1.6,
+   "used_pct": 27.586206896551136,
+   "remaining": 4.200000000000034,
+   "reach_up": 505.4,
+   "reach_down": 495.4,
+   "session_date": "2026-11-19",
+   "is_live_session": true
+  }
+ },
+ "signal_3dte_put_afterclose": {
+  "available": true,
+  "mode": "signal",
+  "contract": {
+   "ticker": "SPY",
+   "strike": 498.0,
+   "expiry": "2026-11-20",
+   "right": "put",
+   "option_symbol": "SPY261120P00498000"
+  },
+  "position_id": null,
+  "qty": 2,
+  "now": "2026-11-17T16:30:00-05:00",
+  "spot": 500.0,
+  "spot_source": "engine_live",
+  "basis": {
+   "type": "ask",
+   "price": 2.78
+  },
+  "cost": null,
+  "mid": 2.76,
+  "sigma_trading": 0.154617,
+  "iv_display": 0.203083,
+  "sigma_source": "back_solved_mid",
+  "daily_atr": 6.2,
+  "prev_close": 499.1,
+  "atr_anchor_date": "2026-11-17",
+  "columns": [
+   {
+    "label": "Now",
+    "ts": "2026-11-17T16:30:00-05:00",
+    "t_years": 0.011904761904761904,
+    "is_expiry": false,
+    "low_confidence": false,
+    "expected_move_1sigma": 0.0
+   },
+   {
+    "label": "Wed close",
+    "ts": "2026-11-18T16:00:00-05:00",
+    "t_years": 0.007936507936507936,
+    "is_expiry": false,
+    "low_confidence": false,
+    "expected_move_1sigma": 4.87
+   },
+   {
+    "label": "Thu close",
+    "ts": "2026-11-19T16:00:00-05:00",
+    "t_years": 0.003968253968253968,
+    "is_expiry": false,
+    "low_confidence": false,
+    "expected_move_1sigma": 6.8872
+   },
+   {
+    "label": "Expiry",
+    "ts": "2026-11-20T16:00:00-05:00",
+    "t_years": 0.0,
+    "is_expiry": true,
+    "low_confidence": false,
+    "expected_move_1sigma": 8.435
+   }
+  ],
+  "rows": [
+   {
+    "name": "Round below",
+    "tag": "RND↓",
+    "price": 490.0,
+    "pct_from_spot": -2.0,
+    "role": "sr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 8.5521,
+      "beyond_1sigma": false,
+      "pnl": 1154.42,
+      "pct": 207.63
+     },
+     {
+      "value": 8.2622,
+      "beyond_1sigma": true,
+      "pnl": 1096.43,
+      "pct": 197.2
+     },
+     {
+      "value": 8.0211,
+      "beyond_1sigma": true,
+      "pnl": 1048.22,
+      "pct": 188.53
+     },
+     {
+      "value": 8.0,
+      "beyond_1sigma": true,
+      "pnl": 1044.0,
+      "pct": 187.77
+     }
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 156.9
+   },
+   {
+    "name": "ATR −1× (prior close 499.10)",
+    "tag": "ATR−1",
+    "price": 492.9,
+    "pct_from_spot": -1.42,
+    "role": "atr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 6.3142,
+      "beyond_1sigma": false,
+      "pnl": 706.83,
+      "pct": 127.13
+     },
+     {
+      "value": 5.8774,
+      "beyond_1sigma": true,
+      "pnl": 619.48,
+      "pct": 111.42
+     },
+     {
+      "value": 5.3929,
+      "beyond_1sigma": true,
+      "pnl": 522.57,
+      "pct": 93.99
+     },
+     {
+      "value": 5.1,
+      "beyond_1sigma": false,
+      "pnl": 464.0,
+      "pct": 83.45
+     }
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 106.9
+   },
+   {
+    "name": "Underfoot swing 2",
+    "tag": "UF2",
+    "price": 494.1,
+    "pct_from_spot": -1.18,
+    "role": "sr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 5.484,
+      "beyond_1sigma": false,
+      "pnl": 540.8,
+      "pct": 97.27
+     },
+     {
+      "value": 4.9953,
+      "beyond_1sigma": true,
+      "pnl": 443.06,
+      "pct": 79.69
+     },
+     {
+      "value": 4.411,
+      "beyond_1sigma": false,
+      "pnl": 326.21,
+      "pct": 58.67
+     },
+     {
+      "value": 3.9,
+      "beyond_1sigma": false,
+      "pnl": 224.0,
+      "pct": 40.29
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 86.2
+   },
+   {
+    "name": "ATR −0.618× (prior close 499.10)",
+    "tag": "ATR−0.618",
+    "price": 495.2684,
+    "pct_from_spot": -0.95,
+    "role": "atr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 4.736,
+      "beyond_1sigma": false,
+      "pnl": 391.19,
+      "pct": 70.36
+     },
+     {
+      "value": 4.2063,
+      "beyond_1sigma": false,
+      "pnl": 285.26,
+      "pct": 51.31
+     },
+     {
+      "value": 3.539,
+      "beyond_1sigma": false,
+      "pnl": 151.8,
+      "pct": 27.3
+     },
+     {
+      "value": 2.7316,
+      "beyond_1sigma": false,
+      "pnl": -9.68,
+      "pct": -1.74
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 66.1
+   },
+   {
+    "name": "Underfoot swing 1",
+    "tag": "UF1",
+    "price": 497.4,
+    "pct_from_spot": -0.52,
+    "role": "sr",
+    "is_target": true,
+    "is_stop": false,
+    "merged": [
+     "ATR−0.382",
+     "ATR−0.236"
+    ],
+    "cells": [
+     {
+      "value": 3.5334,
+      "beyond_1sigma": false,
+      "pnl": 150.67,
+      "pct": 27.1
+     },
+     {
+      "value": 2.9611,
+      "beyond_1sigma": false,
+      "pnl": 36.23,
+      "pct": 6.52
+     },
+     {
+      "value": 2.2054,
+      "beyond_1sigma": false,
+      "pnl": -114.92,
+      "pct": -20.67
+     },
+     {
+      "value": 0.6,
+      "beyond_1sigma": false,
+      "pnl": -436.0,
+      "pct": -78.42
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 29.3
+   },
+   {
+    "name": "Spot",
+    "tag": "SPOT",
+    "price": 500.0,
+    "pct_from_spot": 0.0,
+    "role": "spot",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 2.3569,
+      "beyond_1sigma": false,
+      "pnl": -84.62,
+      "pct": -15.22
+     },
+     {
+      "value": 1.7967,
+      "beyond_1sigma": false,
+      "pnl": -196.66,
+      "pct": -35.37
+     },
+     {
+      "value": 1.074,
+      "beyond_1sigma": false,
+      "pnl": -341.19,
+      "pct": -61.37
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": false,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 15.5
+   },
+   {
+    "name": "10m 5/12 cloud bottom",
+    "tag": "5/12▼",
+    "price": 500.4,
+    "pct_from_spot": 0.08,
+    "role": "cloud",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [
+     "ATR+0.236"
+    ],
+    "cells": [
+     {
+      "value": 2.2037,
+      "beyond_1sigma": false,
+      "pnl": -115.25,
+      "pct": -20.73
+     },
+     {
+      "value": 1.6514,
+      "beyond_1sigma": false,
+      "pnl": -225.72,
+      "pct": -40.6
+     },
+     {
+      "value": 0.9469,
+      "beyond_1sigma": false,
+      "pnl": -366.63,
+      "pct": -65.94
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": false,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 22.4
+   },
+   {
+    "name": "10m 5/12 cloud top",
+    "tag": "5/12▲",
+    "price": 501.2,
+    "pct_from_spot": 0.24,
+    "role": "cloud",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [
+     "ATR+0.382"
+    ],
+    "cells": [
+     {
+      "value": 1.9189,
+      "beyond_1sigma": false,
+      "pnl": -172.23,
+      "pct": -30.98
+     },
+     {
+      "value": 1.3865,
+      "beyond_1sigma": false,
+      "pnl": -278.71,
+      "pct": -50.13
+     },
+     {
+      "value": 0.7264,
+      "beyond_1sigma": false,
+      "pnl": -410.71,
+      "pct": -73.87
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": false,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 36.2
+   },
+   {
+    "name": "Overhead swing 1",
+    "tag": "OH1",
+    "price": 503.2,
+    "pct_from_spot": 0.64,
+    "role": "sr",
+    "is_target": false,
+    "is_stop": true,
+    "merged": [
+     "ATR+0.618"
+    ],
+    "cells": [
+     {
+      "value": 1.325,
+      "beyond_1sigma": false,
+      "pnl": -291.01,
+      "pct": -52.34
+     },
+     {
+      "value": 0.8626,
+      "beyond_1sigma": false,
+      "pnl": -383.48,
+      "pct": -68.97
+     },
+     {
+      "value": 0.3461,
+      "beyond_1sigma": false,
+      "pnl": -486.78,
+      "pct": -87.55
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": false,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "reach",
+    "rem_atr_pct": 70.7
+   },
+   {
+    "name": "ATR +1× (prior close 499.10)",
+    "tag": "ATR+1",
+    "price": 505.3,
+    "pct_from_spot": 1.06,
+    "role": "atr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 0.8641,
+      "beyond_1sigma": false,
+      "pnl": -383.19,
+      "pct": -68.92
+     },
+     {
+      "value": 0.4936,
+      "beyond_1sigma": true,
+      "pnl": -457.29,
+      "pct": -82.25
+     },
+     {
+      "value": 0.1398,
+      "beyond_1sigma": false,
+      "pnl": -528.03,
+      "pct": -94.97
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": false,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 106.9
+   },
+   {
+    "name": "Overhead swing 2",
+    "tag": "OH2",
+    "price": 506.5,
+    "pct_from_spot": 1.3,
+    "role": "sr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 0.6645,
+      "beyond_1sigma": false,
+      "pnl": -423.1,
+      "pct": -76.1
+     },
+     {
+      "value": 0.3486,
+      "beyond_1sigma": true,
+      "pnl": -486.27,
+      "pct": -87.46
+     },
+     {
+      "value": 0.0783,
+      "beyond_1sigma": false,
+      "pnl": -540.33,
+      "pct": -97.18
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": false,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 127.6
+   },
+   {
+    "name": "Round above",
+    "tag": "RND↑",
+    "price": 510.0,
+    "pct_from_spot": 2.0,
+    "role": "sr",
+    "is_target": false,
+    "is_stop": false,
+    "merged": [],
+    "cells": [
+     {
+      "value": 0.2854,
+      "beyond_1sigma": false,
+      "pnl": -498.91,
+      "pct": -89.73
+     },
+     {
+      "value": 0.1118,
+      "beyond_1sigma": true,
+      "pnl": -533.64,
+      "pct": -95.98
+     },
+     {
+      "value": 0.0111,
+      "beyond_1sigma": true,
+      "pnl": -553.78,
+      "pct": -99.6
+     },
+     {
+      "value": 0.0,
+      "beyond_1sigma": true,
+      "pnl": -556.0,
+      "pct": -100.0
+     }
+    ],
+    "atr_zone": "beyond",
+    "rem_atr_pct": 187.9
+   }
+  ],
+  "target": {
+   "price": 497.4,
+   "name": "Underfoot swing 1",
+   "tag": "UF1",
+   "source": "structural"
+  },
+  "stop": {
+   "price": 503.2,
+   "name": "Overhead swing 1",
+   "tag": "OH1",
+   "source": "structural_beyond_cloud",
+   "premium_ref": null,
+   "underlying_per_column": [
+    503.2,
+    503.2,
+    503.2,
+    503.2
+   ]
+  },
+  "summary": [
+   {
+    "label": "Now",
+    "breakeven": 498.9871,
+    "breakeven_pct": -0.2,
+    "reward": 0.7534,
+    "risk": 1.455,
+    "reward_dollars": 150.67,
+    "risk_dollars": 291.01,
+    "rr": 0.518,
+    "clears_gate": false,
+    "expected_move_1sigma": 0.0,
+    "touch_prob_target": null,
+    "touch_prob_stop": null,
+    "stop_underlying": 503.2,
+    "low_confidence": false
+   },
+   {
+    "label": "Wed close",
+    "breakeven": 497.7572,
+    "breakeven_pct": -0.45,
+    "reward": 0.1811,
+    "risk": 1.9174,
+    "reward_dollars": 36.23,
+    "risk_dollars": 383.48,
+    "rr": 0.094,
+    "clears_gate": false,
+    "expected_move_1sigma": 4.87,
+    "touch_prob_target": 0.5925,
+    "touch_prob_stop": 0.5125,
+    "stop_underlying": 503.2,
+    "low_confidence": false
+   },
+   {
+    "label": "Thu close",
+    "breakeven": 496.4088,
+    "breakeven_pct": -0.72,
+    "reward": -0.5746,
+    "risk": 2.4339,
+    "reward_dollars": -114.92,
+    "risk_dollars": 486.78,
+    "rr": null,
+    "clears_gate": false,
+    "expected_move_1sigma": 6.8872,
+    "touch_prob_target": 0.7051,
+    "touch_prob_stop": 0.6433,
+    "stop_underlying": 503.2,
+    "low_confidence": false
+   },
+   {
+    "label": "Expiry",
+    "breakeven": 495.2234,
+    "breakeven_pct": -0.96,
+    "reward": -2.18,
+    "risk": 2.78,
+    "reward_dollars": -436.0,
+    "risk_dollars": 556.0,
+    "rr": null,
+    "clears_gate": false,
+    "expected_move_1sigma": 8.435,
+    "touch_prob_target": 0.7573,
+    "touch_prob_stop": 0.7053,
+    "stop_underlying": 503.2,
+    "low_confidence": false
+   }
+  ],
+  "stale_at": {
+   "index": 0,
+   "label": "Now",
+   "ts": "2026-11-17T16:30:00-05:00"
+  },
+  "legs": null,
+  "warnings": [],
+  "today_atr": {
+   "atr": 5.8,
+   "atr_cockpit": 5.8,
+   "atr_ladder": 6.2,
+   "day_high": null,
+   "day_low": null,
+   "day_range": null,
+   "used_pct": 0.0,
+   "remaining": 5.8,
+   "reach_up": 504.9,
+   "reach_down": 493.3,
+   "session_date": "2026-11-18",
+   "is_live_session": false
+  }
  }
 };

@@ -5473,6 +5473,50 @@ tr.is-spot td, tr.is-spot th { border-top: 1px solid var(--text-secondary); bord
 .svg-rr.low .svg-cell-main { color: var(--warning); font-weight: 700; }
 .svg-amber-mark { font-size: 0.6rem; border: 1px solid var(--warning); border-radius: 50%; padding: 0 0.22rem; }
 
+/* today's ATR: header bar + per-row rail (js/grid.js atrHeaderHtml / rail cells).
+   Zones differ in pattern and lightness, not hue alone: range = solid strong amber,
+   reach = solid light blue, beyond = red diagonal hatch. */
+.svg-z-range  { background: rgba(245,158,11,0.50); }
+.svg-z-reach  { background: rgba(96,165,250,0.30); }
+.svg-z-beyond { background: repeating-linear-gradient(135deg, rgba(244,63,94,0.34) 0 5px, rgba(244,63,94,0.08) 5px 10px); }
+.svg-atr {
+  border: 1px solid var(--border); border-radius: var(--radius-sm); background: var(--bg-elevated);
+  padding: 0.45rem 0.6rem; margin-bottom: 0.4rem; display: flex; flex-direction: column; gap: 0.35rem;
+}
+.svg-atr-top { display: flex; flex-wrap: wrap; align-items: baseline; gap: 0.3rem 0.75rem; font-size: 0.7rem; }
+.svg-atr-title { font-size: 0.62rem; font-weight: 600; letter-spacing: 0.08em; text-transform: uppercase; color: var(--text-secondary); }
+.svg-atr-used { font-family: var(--font-mono, monospace); font-weight: 600; font-size: 0.8rem; color: #fbbf24; }
+.svg-atr-used--exh { color: #fb7185; }
+.svg-atr-left { color: var(--text-primary); }
+.svg-atr-val { color: var(--text-primary); text-decoration: underline dotted var(--text-secondary); text-underline-offset: 2px; cursor: help; }
+.svg-atr-reach { margin-left: auto; }
+.svg-atr-reach b { font-family: var(--font-mono, monospace); font-weight: 500; color: var(--text-primary); }
+.svg-atrbar { position: relative; height: 18px; border-radius: 4px; overflow: visible; background: var(--bg-surface); }
+.svg-atrbar-seg { position: absolute; top: 0; bottom: 0; }
+.svg-atrbar-seg:first-child { border-radius: 4px 0 0 4px; }
+.svg-atrbar-spot { position: absolute; top: -3px; bottom: -3px; width: 3px; margin-left: -1.5px; background: #f8fafc; border-radius: 2px; }
+.svg-atrbar-prior { position: absolute; top: 2px; bottom: 2px; width: 0; margin-left: -1px; border-left: 2px dashed var(--text-secondary); }
+.svg-atr-legend { display: flex; flex-wrap: wrap; gap: 0.25rem 0.9rem; font-size: 0.64rem; color: var(--text-secondary); }
+.svg-atr-legend span { display: inline-flex; align-items: center; gap: 0.3rem; }
+.svg-atr-legend i { display: inline-block; width: 11px; height: 11px; border-radius: 3px; }
+.svg-atr-legend i.svg-legend-spot { width: 3px; background: #f8fafc; border-radius: 1px; }
+.svg-atr-legend i.svg-legend-prior { width: 0; border-left: 2px dashed var(--text-secondary); border-radius: 0; }
+.svg-atr-note { margin: 0 0 0.35rem; font-size: 0.66rem; color: var(--text-secondary); }
+
+/* rail column (between Level and Now): 22px band, continuous across rows — no row borders,
+   no padding on the band's cell; the band is absolutely positioned to fill the cell height. */
+.svg-grid-table td.svg-rail, .svg-grid-table td.svg-rail-foot, .svg-grid-table th.svg-rail-th {
+  position: relative; padding: 0 0.45rem 0 calc(22px + 0.85rem); text-align: left; min-width: 6.2rem;
+  border-bottom: 0; border-top: 0; border-right: 1px solid var(--border);
+}
+.svg-grid-table th.svg-rail-th { padding-left: 0.45rem; font-family: var(--font-body); font-size: 0.64rem; color: var(--text-secondary); }
+.svg-rail-band { position: absolute; top: 0; bottom: 0; left: 0.4rem; width: 22px; }
+.svg-rail-spot { position: absolute; left: -4px; right: -4px; top: 50%; height: 3px; margin-top: -1.5px; background: #f8fafc; border-radius: 2px; }
+.svg-rail-lbl { font-family: var(--font-body); font-size: 0.62rem; font-weight: 600; white-space: nowrap; }
+.svg-rail-lbl--range  { color: #fbbf24; }
+.svg-rail-lbl--reach  { color: #93c5fd; }
+.svg-rail-lbl--beyond { color: #fb7185; }
+
 /* inspector + decay chart */
 .svg-grid-lower { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.5rem; margin-top: 0.45rem; }
 .svg-insp, .svg-decay { border: 1px solid var(--border); border-radius: var(--radius-sm); padding: 0.4rem 0.5rem; min-width: 0; }

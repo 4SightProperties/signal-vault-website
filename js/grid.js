@@ -18,7 +18,7 @@
   const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
   const MOCK       = LOCAL_HOSTS.has(location.hostname)
                   && new URLSearchParams(location.search).get('gridMock') === '1';
-  const ASSET_VER  = '20261111h';
+  const ASSET_VER  = '20261112b';
   const REFRESH_MS = 30000;
   const GATE       = 1.5;
   const PREF_KEY   = 'svGridPrefs';
@@ -66,6 +66,7 @@
     if (ctx.position_id === 'mock-error') throw new Error('Mock error — exercising the Retry path');
     let key;
     if (ctx.mode === 'position') key = /nolegs/.test(ctx.position_id) ? 'position_nolegs' : 'position_legs';
+    else if (ctx._mock === 'afterclose') key = 'signal_3dte_put_afterclose';
     else key = ctx.contract && ctx.contract.right === 'put' ? 'signal_3dte_put' : 'signal_0dte_call';
     const d = JSON.parse(JSON.stringify(fx[key]));
     // Mock only: a Target $ typed in the launcher replaces the fixture's target (rows untouched).
@@ -207,6 +208,79 @@
   // level now above spot), the level is behind price rather than ahead of it.
   const atrBehind = (lv, price, spot) =>
     num(price) && num(spot) && (lv.sign > 0 ? price < spot : price > spot);
+
+  // ── Today's ATR: header bar + per-row rail ─────────────────────────────────
+  // Zones differ in pattern AND lightness, not hue alone: range = solid strong amber,
+  // reach = solid light blue, beyond = red diagonal hatch (CSS .svg-z-*).
+
+  const ZONE_LBL = { range: 'traded today', reach: 'reachable with remaining ATR', beyond: "beyond today's ATR" };
+  const fmtDay = iso => {
+    try {
+      return new Intl.DateTimeFormat('en-US', { timeZone: 'UTC', weekday: 'short', month: 'numeric', day: 'numeric' })
+        .format(new Date(iso + 'T12:00:00Z'));
+    } catch (e) {
+      console.warn('[grid] bad session_date', iso, e);
+      return String(iso);
+    }
+  };
+  // Column timestamps are ET ISO strings ("2026-11-20T16:00:00-05:00") → ET calendar date.
+  const colDay = c => String(c.ts || '').slice(0, 10);
+
+  function railLabel(r) {
+    if (r.atr_zone === 'range') return 'in range';
+    if (num(r.rem_atr_pct)) return Math.round(r.rem_atr_pct) + '% of rem.';
+    return r.atr_zone === 'beyond' ? 'beyond · 0 left' : '';
+  }
+
+  function atrHeaderHtml(ta, spot) {
+    const live = ta.is_live_session;
+    const hasRange = num(ta.day_high) && num(ta.day_low);
+    // Scale: reach band plus 15% of it on each side; spot / range edges clamp into view.
+    const lo0 = Math.min(ta.reach_down, hasRange ? ta.day_low : ta.reach_down);
+    const hi0 = Math.max(ta.reach_up, hasRange ? ta.day_high : ta.reach_up);
+    const pad = (hi0 - lo0) * 0.15 || 1;
+    const lo = Math.min(lo0 - pad, num(spot) ? spot : lo0), hi = Math.max(hi0 + pad, num(spot) ? spot : hi0);
+    const X = v => Math.max(0, Math.min(100, (v - lo) / (hi - lo) * 100));
+    // Segments left → right. With remaining 0, reach_down > day_low (and reach_up < day_high):
+    // the reach bands collapse to nothing and the range touches the hatch directly.
+    const inner = hasRange ? [Math.min(ta.reach_down, ta.day_low), ta.day_low, ta.day_high, Math.max(ta.reach_up, ta.day_high)]
+                           : [ta.reach_down, ta.reach_down, ta.reach_up, ta.reach_up];
+    const cuts = [lo, ...inner, hi].map(X);
+    const zones = hasRange ? ['beyond', 'reach', 'range', 'reach', 'beyond'] : ['beyond', 'reach', 'reach', 'reach', 'beyond'];
+    const segs = zones.map((z, i) => {
+      const w = Math.max(0, cuts[i + 1] - cuts[i]);
+      return w > 0 ? `<span class="svg-atrbar-seg svg-z-${z}" style="left:${cuts[i].toFixed(2)}%;width:${w.toFixed(2)}%"></span>` : '';
+    }).join('');
+    const spotMark = num(spot) ? `<span class="svg-atrbar-spot" style="left:${X(spot).toFixed(2)}%" title="spot ${fmtPx(spot)}"></span>` : '';
+    const prior = !hasRange ? `<span class="svg-atrbar-prior" style="left:${X((ta.reach_up + ta.reach_down) / 2).toFixed(2)}%" title="prior close"></span>` : '';
+    const usedCls = ta.used_pct >= 95 ? ' svg-atr-used--exh' : '';
+    const title = live ? "Today's ATR" : `Next session ATR · ${esc(fmtDay(ta.session_date))}`;
+    // Two ATRs: the bar, rail and reach use the cockpit's (Wilder ATR14, same as the cockpit's
+    // "ATR used / $ left" bar); the grid's ATR ladder rows use Saty's session-fixed ATR.
+    const atrTip = `Cockpit ATR ${fmtPx(ta.atr_cockpit != null ? ta.atr_cockpit : ta.atr)} (Wilder ATR14) — drives this bar, the rail and reach; matches the cockpit's ATR used / $ left bar.`
+      + (num(ta.atr_ladder) ? ` Ladder ATR ${fmtPx(ta.atr_ladder)} (Saty, fixed for the session) — used only by the ATR± level rows.` : '');
+    const atrVal = `<span class="svg-atr-val" title="${esc(atrTip)}">ATR ${fmtPx(ta.atr)}</span>`;
+    const summary = hasRange
+      ? `<span class="svg-atr-used${usedCls}">${Math.round(ta.used_pct)}% used</span>
+         <span class="svg-muted">range ${fmtPx(ta.day_low)} – ${fmtPx(ta.day_high)} of ${atrVal} · <span class="svg-atr-left">${fmtPx(ta.remaining)} left</span></span>`
+      : `<span class="svg-atr-used">${live ? 'no range yet' : 'next session'}</span>
+         <span class="svg-muted">full ${atrVal} from prior close ${fmtPx((ta.reach_up + ta.reach_down) / 2)}</span>`;
+    return `<section class="svg-atr" aria-label="${live ? "Today's" : 'Next session'} ATR consumption">
+      <div class="svg-atr-top">
+        <span class="svg-atr-title" title="${esc(atrTip)}">${title}</span>
+        ${summary}
+        <span class="svg-atr-reach svg-muted">reach ↓ <b>${fmtPx(ta.reach_down)}</b> · ↑ <b>${fmtPx(ta.reach_up)}</b></span>
+      </div>
+      <div class="svg-atrbar" role="img" aria-label="${hasRange ? `Range ${fmtPx(ta.day_low)} to ${fmtPx(ta.day_high)}; ` : ''}reach ${fmtPx(ta.reach_down)} to ${fmtPx(ta.reach_up)}; spot ${fmtPx(spot)}">${segs}${prior}${spotMark}</div>
+      <div class="svg-atr-legend">
+        ${hasRange ? `<span><i class="svg-z-range"></i>${ZONE_LBL.range}</span>` : ''}
+        <span><i class="svg-z-reach"></i>${ZONE_LBL.reach}</span>
+        <span><i class="svg-z-beyond"></i>${live ? ZONE_LBL.beyond : 'beyond the ATR'}</span>
+        <span><i class="svg-legend-spot"></i>spot</span>
+        ${!hasRange ? '<span><i class="svg-legend-prior"></i>prior close</span>' : ''}
+      </div>
+    </section>`;
+  }
 
   // ── Grid view (shared by panel and drawer) ─────────────────────────────────
 
@@ -468,9 +542,18 @@
       }
       const warnHtml = warns.length ? `<ul class="svg-grid-warn" aria-label="Notices">${warns.join('')}</ul>` : '';
 
+      // ── today's ATR header + note ──
+      const ta = d.today_atr || null;
+      const atrHead = ta ? atrHeaderHtml(ta, d.spot) : '';
+      const days = new Set(d.columns.map(colDay).filter(Boolean));
+      const atrNote = ta && days.size > 1
+        ? `<p class="svg-atr-note">ATR bar and rail describe ${ta.is_live_session ? "today's" : 'the next'} session (${esc(fmtDay(ta.session_date))}) only — columns on later days start a fresh ATR.</p>`
+        : '';
+
       // ── table ──
       const cols = d.columns;
-      const thead = `<thead><tr><th class="svg-sticky" scope="col">Level</th>${cols.map((c, j) => `
+      const railTh = ta ? `<th scope="col" class="svg-rail-th" title="Where each level sits against ${ta.is_live_session ? "today's" : "the next session's"} ATR">ATR · ${ta.is_live_session ? 'today' : 'next'}</th>` : '';
+      const thead = `<thead><tr><th class="svg-sticky" scope="col">Level</th>${railTh}${cols.map((c, j) => `
         <th scope="col" class="${j === sel ? 'sel' : ''}${c.low_confidence ? ' lowc' : ''}">
           <button type="button" class="svg-col-btn" data-grid-action="col" data-col="${j}" aria-pressed="${j === sel}"
             ${c.low_confidence ? 'title="Last trading hour of a 0DTE — low confidence"' : `title="${esc(fmtTime(c.ts))}"`}>
@@ -521,16 +604,19 @@
           return `<td class="svg-cell${beyond ? ' beyond' : ''}${intrOnly && j > 0 ? ' intr-muted' : ''}${j === sel ? ' sel' : ''}"${style}${tip ? ` title="${esc(tip)}"` : ''}>
             <div class="svg-cell-main">${fmtUsdShort(pnl)} / ${pctTxt}</div><div class="svg-cell-sub">opt ${fmtPx(c.value)}</div></td>`;
         }).join('');
+        const rail = !ta ? '' : (r.atr_zone
+          ? `<td class="svg-rail" title="${esc(ZONE_LBL[r.atr_zone] || '')}"><span class="svg-rail-band svg-z-${r.atr_zone}">${r.role === 'spot' ? '<span class="svg-rail-spot" aria-hidden="true"></span>' : ''}</span><span class="svg-rail-lbl svg-rail-lbl--${r.atr_zone}">${esc(railLabel(r))}</span></td>`
+          : '<td class="svg-rail svg-rail-none"></td>');
         const rowCls = (r.is_target ? 'is-target' : r.is_stop ? 'is-stop' : r.role === 'spot' ? 'is-spot' : '')
                      + (intrOnly ? ' is-intr' : '');
-        return `<tr class="${rowCls}">${first}${cells}</tr>`;
+        return `<tr class="${rowCls}">${first}${rail}${cells}</tr>`;
       }).join('');
 
       const beOf = sm => (pos && this.prefs.vs === 'cost' && sm.vs_cost) ? sm.vs_cost : sm;
       const tfoot = `<tfoot>
-        <tr class="svg-sum"><th scope="row" class="svg-sticky">Breakeven${pos ? (this.prefs.vs === 'cost' ? ' (cost)' : ' (mark)') : ''}</th>
+        <tr class="svg-sum"><th scope="row" class="svg-sticky">Breakeven${pos ? (this.prefs.vs === 'cost' ? ' (cost)' : ' (mark)') : ''}</th>${ta ? '<td class="svg-rail-foot"></td>' : ''}
           ${d.summary.map((sm, j) => { const b = beOf(sm); return `<td class="${j === sel ? 'sel' : ''}"><div class="svg-cell-main">${fmtPx(b.breakeven)}</div><div class="svg-cell-sub">${fmtPct(b.breakeven_pct, 2)}</div></td>`; }).join('')}</tr>
-        <tr class="svg-sum"><th scope="row" class="svg-sticky">R:R${pos ? ' (vs mark)' : ''}</th>
+        <tr class="svg-sum"><th scope="row" class="svg-sticky">R:R${pos ? ' (vs mark)' : ''}</th>${ta ? '<td class="svg-rail-foot"></td>' : ''}
           ${d.summary.map((sm, j) => { const low = !num(sm.rr) || sm.rr < GATE; return `<td class="svg-rr${low ? ' low' : ''}${j === sel ? ' sel' : ''}" ${low ? `title="${esc(whyText(sm))}"` : ''}><div class="svg-cell-main">${fmtRR(sm.rr)}${low ? ' <span class="svg-amber-mark" aria-label="below gate">!</span>' : ''}</div></td>`; }).join('')}</tr>
       </tfoot>`;
 
@@ -588,7 +674,7 @@
         <span class="svg-legend-beyond">dotted, faded cell = beyond 1σ by that time</span>
       </div>`;
 
-      return header + warnHtml + legend + table + `<div class="svg-grid-lower">${insp}${chart}</div>`;
+      return header + warnHtml + atrHead + atrNote + legend + table + `<div class="svg-grid-lower">${insp}${chart}</div>`;
     }
   }
 
@@ -753,6 +839,7 @@
       <div class="svg-mock-btns">
         <button type="button" class="svg-btn" data-mock="call">Popout · 0DTE call</button>
         <button type="button" class="svg-btn" data-mock="put">Popout · 3DTE put</button>
+        <button type="button" class="svg-btn" data-mock="afterclose">Popout · put after close (next session)</button>
         <button type="button" class="svg-btn" data-mock="pos">Drawer · position + legs</button>
         <button type="button" class="svg-btn" data-mock="nolegs">Drawer · no legs / fallbacks</button>
         <button type="button" class="svg-btn" data-mock="err">Drawer · error → Retry</button>
@@ -764,13 +851,14 @@
       </div>`;
     document.body.appendChild(box);
     let pick = { ticker: 'SPY', strike: 501, expiry: '2026-11-20', right: 'call' };
+    let afterClose = false;
     const toggle = box.querySelector('#svgMockToggle');
     const spotEl = box.querySelector('#svgMockSpot');
     const tgtEl  = box.querySelector('#svgMockTarget');
     const mockCtx = () => {
       const tgt = parseFloat(tgtEl.value);
       const spot = parseFloat(spotEl.value);
-      return { mode: 'signal', contract: { ...pick }, qty: 2,
+      return { mode: 'signal', contract: { ...pick }, qty: 2, ...(afterClose ? { _mock: 'afterclose' } : {}),
                ...(spot > 0 ? { spot } : {}), ...(tgt > 0 ? { target_price: tgt } : {}) };
     };
     mountPanel(toggle, mockCtx, { title: 'mock', watch: [tgtEl] });
@@ -779,7 +867,8 @@
       if (!b) return;
       const m = b.dataset.mock;
       if (m === 'hide') { closePopout(); box.remove(); return; }
-      if (m === 'call' || m === 'put') {
+      if (m === 'call' || m === 'put' || m === 'afterclose') {
+        afterClose = m === 'afterclose';
         pick = m === 'call' ? { ticker: 'SPY', strike: 501, expiry: '2026-11-20', right: 'call' }
                             : { ticker: 'SPY', strike: 498, expiry: '2026-11-20', right: 'put' };
         toggle.click();
