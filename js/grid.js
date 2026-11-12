@@ -18,7 +18,7 @@
   const LOCAL_HOSTS = new Set(['localhost', '127.0.0.1', '::1', '[::1]']);
   const MOCK       = LOCAL_HOSTS.has(location.hostname)
                   && new URLSearchParams(location.search).get('gridMock') === '1';
-  const ASSET_VER  = '20261111f';
+  const ASSET_VER  = '20261111h';
   const REFRESH_MS = 30000;
   const GATE       = 1.5;
   const PREF_KEY   = 'svGridPrefs';
@@ -67,7 +67,10 @@
     let key;
     if (ctx.mode === 'position') key = /nolegs/.test(ctx.position_id) ? 'position_nolegs' : 'position_legs';
     else key = ctx.contract && ctx.contract.right === 'put' ? 'signal_3dte_put' : 'signal_0dte_call';
-    return JSON.parse(JSON.stringify(fx[key]));
+    const d = JSON.parse(JSON.stringify(fx[key]));
+    // Mock only: a Target $ typed in the launcher replaces the fixture's target (rows untouched).
+    if (num(ctx.target_price)) d.target = { price: ctx.target_price, tag: 'TGT', name: 'Cockpit target', source: 'cockpit' };
+    return d;
   }
 
   // Auth: fetchGrid goes through dashboard.js's own apiPost (registered via setApi), so the
@@ -119,6 +122,13 @@
 
   // Value-cell font fits the space: largest step that avoids horizontal scroll (floor 0.62rem).
   const CELL_FS_STEPS = [0.75, 0.72, 0.69, 0.66, 0.62];
+  // Cell %: below ±1000% as "+N%"; from +1000% as the value multiple of the basis
+  // ("×137" = 137× the price paid; 13643% → 1 + 136.43), capped at "×999+".
+  const fmtCellPct = v => {
+    if (!num(v) || Math.abs(v) < 1000 || v < 0) return fmtPct(v, 0);
+    const m = 1 + v / 100;
+    return m >= 999.5 ? '×999+' : '×' + Math.round(m);
+  };
   const fmtRR  = v => num(v) ? v.toFixed(2) : '—';
   const fmtProb = v => num(v) ? Math.round(v * 100) + '%' : '—';
   const fmtTime = iso => {
@@ -167,11 +177,36 @@
     return 'Reward/risk below 1.5 gate.';
   }
 
-  function heatBg(pct) {
+  function heatBg(pct, strength = 1) {
     if (!num(pct)) return 'transparent';
-    const a = (0.06 + Math.min(Math.abs(pct) / 100, 1) * 0.30).toFixed(3);
+    const a = ((0.06 + Math.min(Math.abs(pct) / 100, 1) * 0.30) * strength).toFixed(3);
     return pct >= 0 ? `rgba(74,222,128,${a})` : `rgba(239,68,68,${a})`;
   }
+
+  const BEYOND_HEAT = 0.5;   // beyond-1σ cells keep their red/green at half strength
+  const INTRINSIC_EPS = 0.01;
+
+  const intrinsicAt = (px, strike, right) =>
+    right === 'put' ? Math.max(0, strike - px) : Math.max(0, px - strike);
+
+  // Row is intrinsic-only when every column's value is within $0.01 of intrinsic at the level.
+  function isIntrinsicOnly(r, contract) {
+    if (!num(r.price) || !num(Number(contract.strike)) || !r.cells || !r.cells.length) return false;
+    const intr = intrinsicAt(r.price, Number(contract.strike), contract.right);
+    return r.cells.every(c => num(c.value) && Math.abs(c.value - intr) < INTRINSIC_EPS);
+  }
+
+  // ATR ladder row → { sign, frac } from its tag ("ATR+0.382", "ATR−1").
+  function atrLevel(r) {
+    const m = /^ATR\s*([+\u2212-])\s*([\d.]+)/.exec(String(r.tag || ''));
+    return m ? { sign: m[1] === '+' ? 1 : -1, frac: m[2] } : null;
+  }
+
+  // "Behind price": a + level sits on the upside of the anchor, a − level on the downside.
+  // When price has already travelled through it today (a + level now below spot, or a −
+  // level now above spot), the level is behind price rather than ahead of it.
+  const atrBehind = (lv, price, spot) =>
+    num(price) && num(spot) && (lv.sign > 0 ? price < spot : price > spot);
 
   // ── Grid view (shared by panel and drawer) ─────────────────────────────────
 
@@ -375,6 +410,16 @@
       return (this.prefs.vs === 'cost' ? cell.vs_cost : cell.vs_mark)?.pnl;
     }
 
+    // |target − spot| in units of the 1σ move to expiry: spot · σ_trading · √T, with T the
+    // "Now" column's t_years (trading-time years to expiry; same basis as expected_move_1sigma).
+    _targetSigma(d) {
+      const tgt = d.target && d.target.price;
+      const T = d.columns && d.columns[0] && d.columns[0].t_years;
+      if (!num(tgt) || !num(d.spot) || !num(d.sigma_trading) || !num(T) || T <= 0) return null;
+      const move = d.spot * d.sigma_trading * Math.sqrt(T);
+      return move > 0 ? Math.abs(tgt - d.spot) / move : null;
+    }
+
     _html(d) {
       const pos = d.mode === 'position';
       const right = (d.contract.right || '').toUpperCase().slice(0, 1);
@@ -417,6 +462,10 @@
       if (pos && d.legs && !d.legs.tp_leg && !d.legs.stop_leg && d.legs.reason) {
         warns.push(`<li>Live OCO legs not shown: ${esc(d.legs.reason)}</li>`);
       }
+      const tz = this._targetSigma(d);
+      if (num(tz) && tz > 2) {
+        warns.push(`<li class="svg-warn-target">Target is ~${tz.toFixed(1)}σ away by expiry — unlikely.</li>`);
+      }
       const warnHtml = warns.length ? `<ul class="svg-grid-warn" aria-label="Notices">${warns.join('')}</ul>` : '';
 
       // ── table ──
@@ -432,10 +481,23 @@
         const marks = (r.is_target ? '<span class="svg-role svg-role-target">◎ Target</span>' : '')
                     + (r.is_stop ? '<span class="svg-role svg-role-stop">✕ Stop</span>' : '');
         const isLeg = r.role === 'tp_leg' || r.role === 'stop_leg';
+        const intrOnly = !isLeg && isIntrinsicOnly(r, d.contract);
+        // $0.00 in every column (as displayed) → "worthless"; "intrinsic" only when value > 0.
+        const worthless = intrOnly && r.cells.every(c => Math.abs(c.value) < 0.005);
+        const lv = r.role === 'atr' ? atrLevel(r) : null;
+        const anchor = num(d.prev_close) ? d.prev_close : null;
+        const behind = lv && atrBehind(lv, r.price, d.spot);
+        const tagHtml = lv
+          ? `<span class="svg-tag svg-tag-${chip.cls}" title="${esc(r.name)}">ATR${lv.sign > 0 ? '+' : '−'}${esc(lv.frac)}</span>`
+            + (anchor != null ? `<span class="svg-muted svg-atr-from">(from ${anchor.toFixed(2)})</span>` : '')
+          : `<span class="svg-tag svg-tag-${chip.cls}" title="${esc(r.name)}">${esc(r.tag)}</span>
+            <span class="svg-role svg-role-${chip.cls}">${chip.text}</span>`;
+        const flags = (behind ? `<span class="svg-flag svg-flag-behind" title="${lv.sign > 0 ? 'Upside' : 'Downside'} ATR level price has already passed today (now ${lv.sign > 0 ? 'below' : 'above'} spot)">behind price</span>` : '')
+                    + (worthless ? '<span class="svg-flag svg-flag-intr" title="Option is worth $0.00 in every column at this level">worthless</span>'
+                       : intrOnly ? '<span class="svg-flag svg-flag-intr" title="Option value equals intrinsic in every column — no time value left at this level">intrinsic</span>' : '');
         const first = `<th scope="row" class="svg-sticky">
           <div class="svg-lvl">
-            <span class="svg-tag svg-tag-${chip.cls}" title="${esc(r.name)}">${esc(r.tag)}</span>
-            <span class="svg-role svg-role-${chip.cls}">${chip.text}</span>${marks}
+            ${tagHtml}${marks}${flags}
           </div>
           <div class="svg-lvl-px">${isLeg ? 'option ' + fmtPx(r.leg_price) : fmtPx(r.price) + ' <span class="svg-muted">' + fmtPct(r.pct_from_spot, 2) + '</span>'}</div>
         </th>`;
@@ -449,13 +511,18 @@
           const pct = this._cellPct(c, pos);
           const pnl = this._cellPnl(c, pos);
           const beyond = c.beyond_1sigma;
-          const style = beyond ? '' : ` style="background:${heatBg(pct)}"`;
-          const tip = [isAbbrev(pnl) ? 'P/L ' + fmtUsdExact(pnl) : '', beyond ? 'Beyond a 1σ move by this time' : '']
+          const style = ` style="background:${heatBg(pct, beyond ? BEYOND_HEAT : 1)}"`;
+          const pctTxt = fmtCellPct(pct);
+          const tip = [isAbbrev(pnl) ? 'P/L ' + fmtUsdExact(pnl) : '',
+                       pctTxt.startsWith('×') ? fmtPct(pct, 0) + ' on basis' : '',
+                       beyond ? 'Beyond a 1σ move by this time' : '',
+                       intrOnly && j > 0 ? (worthless ? 'Worthless' : 'Intrinsic only') : '']
             .filter(Boolean).join(' · ');
-          return `<td class="svg-cell${beyond ? ' beyond' : ''}${j === sel ? ' sel' : ''}"${style}${tip ? ` title="${esc(tip)}"` : ''}>
-            <div class="svg-cell-main">${fmtUsdShort(pnl)} / ${fmtPct(pct, 0)}</div><div class="svg-cell-sub">opt ${fmtPx(c.value)}</div></td>`;
+          return `<td class="svg-cell${beyond ? ' beyond' : ''}${intrOnly && j > 0 ? ' intr-muted' : ''}${j === sel ? ' sel' : ''}"${style}${tip ? ` title="${esc(tip)}"` : ''}>
+            <div class="svg-cell-main">${fmtUsdShort(pnl)} / ${pctTxt}</div><div class="svg-cell-sub">opt ${fmtPx(c.value)}</div></td>`;
         }).join('');
-        const rowCls = r.is_target ? 'is-target' : r.is_stop ? 'is-stop' : r.role === 'spot' ? 'is-spot' : '';
+        const rowCls = (r.is_target ? 'is-target' : r.is_stop ? 'is-stop' : r.role === 'spot' ? 'is-spot' : '')
+                     + (intrOnly ? ' is-intr' : '');
         return `<tr class="${rowCls}">${first}${cells}</tr>`;
       }).join('');
 
@@ -518,7 +585,7 @@
       const legend = `<div class="svg-legend">
         <span class="svg-role svg-role-target">◎ Target</span> ${tgt}
         <span class="svg-role svg-role-stop">✕ Stop</span> ${stp} <span class="svg-muted">(${esc(d.stop.source || '')})</span>
-        <span class="svg-legend-beyond">muted cell = beyond 1σ by that time</span>
+        <span class="svg-legend-beyond">dotted, faded cell = beyond 1σ by that time</span>
       </div>`;
 
       return header + warnHtml + legend + table + `<div class="svg-grid-lower">${insp}${chart}</div>`;

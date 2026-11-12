@@ -5437,9 +5437,18 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
    line 2 (option value) stays 0.06rem smaller. */
 .svg-grid-table td.svg-cell .svg-cell-main { font-size: var(--svg-cell-fs, 0.75rem); }
 .svg-grid-table td.svg-cell .svg-cell-sub { font-size: calc(var(--svg-cell-fs, 0.75rem) - 0.06rem); }
-/* beyond 1σ: neutral background + secondary text (≈7:1 on --bg-elevated), not opacity */
-.svg-cell.beyond { background: var(--bg-elevated); }
-.svg-cell.beyond .svg-cell-main { color: var(--text-secondary); }
+/* beyond 1σ: heat kept at half strength (set inline by js/grid.js) + dotted inner border.
+   Text stays primary/secondary: worst case (secondary on half-alpha green over --bg-surface)
+   ≈4.9:1. Dotted outline sits inside the cell so it never collides with the .sel box-shadow. */
+.svg-cell.beyond { outline: 1px dotted var(--text-secondary); outline-offset: -3px; }
+/* intrinsic-only rows: columns after Now in muted text so the eye skips them */
+.svg-cell.intr-muted .svg-cell-main, .svg-cell.intr-muted .svg-cell-sub { color: var(--text-secondary); }
+.svg-flag {
+  font-family: var(--font-body); font-size: 0.56rem; text-transform: lowercase;
+  padding: 0 0.28rem; border-radius: 999px; border: 1px solid var(--border-bright); color: var(--text-secondary);
+}
+.svg-flag-behind { border-color: var(--warning); color: var(--warning); }
+.svg-atr-from { font-size: 0.6rem; }
 .svg-cell-leg { background: rgba(96,165,250,0.06); }
 tr.is-target .svg-sticky { box-shadow: inset 3px 0 0 var(--accent); }
 tr.is-stop .svg-sticky { box-shadow: inset 3px 0 0 var(--danger); }
