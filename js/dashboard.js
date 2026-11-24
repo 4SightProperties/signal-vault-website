@@ -132,6 +132,9 @@
   let cockpitEntryMode     = 'auto';   // entry price mode: 'auto' | 'take_ask' | 'your_price'
   let cockpitExitLayer     = 'default'; // exit layer: 'default' | 'tight_trail' | 'cloud_break' | 'oco_bracket'
   let _tif                 = 'day';     // TIF for order open: 'day' | 'gtc'; reset on re-arm
+  const ENTRY_MAX_SLIP_DEFAULT_PCT = 10; // default slippage cap over the displayed ask
+  const ENTRY_QUOTE_MAX_AGE_S      = 20; // mirrors trading.py ENTRY_QUOTE_MAX_AGE_S
+  let _maxSlipPct          = ENTRY_MAX_SLIP_DEFAULT_PCT; // ticket-adjustable; reset on re-arm
   let srLevelsCache        = null;  // /api/sr_levels result for focused ticker
   let chainArmedCloudLevels = null; // five cloud SR edges frozen at arm (direction-appropriate)
   let focusGexCache        = null;  // /api/gex result for focused ticker (admin)
@@ -221,6 +224,24 @@
 
   function optionMid(bid, ask) {
     return (bid + ask) / 2;
+  }
+
+  // Entry limit = ask × (1 + slip%), floored to a tick valid under both the penny
+  // and non-penny programs ($0.05 below $3, $0.10 at/above). Floor, not round, so
+  // the limit never exceeds the cap; never below the ask itself.
+  function _entryLimitFromAsk(ask, slipPct) {
+    const cap  = ask * (1 + slipPct / 100);
+    const tick = cap < 3 ? 0.05 : 0.10;
+    let lim = Math.floor(cap / tick + 1e-9) * tick;
+    if (lim < ask) lim = ask;
+    return Math.round(lim * 100) / 100;
+  }
+
+  // Seconds since the armed contract's bid/ask was fetched from Tradier, from the
+  // server-reported age (no reliance on the browser clock). Infinity if unknown.
+  function _armedQuoteAge() {
+    if (!armedContract || armedContract.quoteAgeBase == null || !armedContract.quoteRecvAt) return Infinity;
+    return armedContract.quoteAgeBase + (Date.now() - armedContract.quoteRecvAt) / 1000;
   }
 
   // Returns true when within regular trading hours (9:30–16:00 ET).
@@ -3346,6 +3367,17 @@
              min="0.01" step="0.01" placeholder="0.00">
     </div>
 
+    <!-- Max slippage over the displayed ask: Auto/Ask limit = ask × (1 + slip), floored to tick;
+         Yours must not exceed it. Server re-quotes and prompts (price_moved) if the live ask
+         is above the limit actually sent, i.e. the order would not fill immediately. -->
+    <div style="display:flex; align-items:center; gap:0.4rem; margin-top:0.3rem;">
+      <span class="cockpit-section-label">max slip</span>
+      <input type="number" id="cockpitMaxSlipInput" class="cockpit-target-input"
+             min="1" max="50" step="1" value="${ENTRY_MAX_SLIP_DEFAULT_PCT}" style="width:3.6rem">
+      <span class="cockpit-section-label">% over ask</span>
+      <span id="cockpitSlipCapNote" style="font-size:0.53rem;color:var(--text-muted)"></span>
+    </div>
+
     <!-- Quantity + quick-set chips + TIF chip -->
     <div class="cockpit-qty-row">
       <span class="cockpit-section-label">quantity</span>
@@ -3493,6 +3525,12 @@
     cockpitEntryMode = 'auto';
     cockpitExitLayer = 'default';
     _tif             = 'day';
+    _maxSlipPct      = ENTRY_MAX_SLIP_DEFAULT_PCT;
+    document.getElementById('cockpitMaxSlipInput').addEventListener('input', e => {
+      const v = parseFloat(e.target.value);
+      // Server accepts (0, 50]; ignore out-of-range input until it is valid.
+      if (v > 0 && v <= 50) { _maxSlipPct = v; _updateEntryDisplay(); }
+    });
     document.getElementById('cockpitEntryModeBtns').addEventListener('click', e => {
       const btn = e.target.closest('[data-entry-mode]');
       if (!btn) return;
@@ -3928,30 +3966,29 @@
     }
 
     // Open Position button
-    document.getElementById('chainOpenBtn').addEventListener('click', () => {
+    document.getElementById('chainOpenBtn').addEventListener('click', async () => {
+      // Fresh quote first, so the modal shows (and ref_quote_ts carries) a current bid/ask.
+      await refreshArmedQuote();
       const qty     = Math.max(1, parseInt(document.getElementById('chainQty').value, 10) || 1);
       const cpLabel = dir === 'call' ? 'CALL' : 'PUT';
       const bid     = armedContract.bid ?? 0;
       const ask     = armedContract.ask;
 
-      // ── Spread preview (same thresholds as server: warn >40%, reject >60%) ──
-      let spreadPct      = null;
+      // ── Spread preview (same thresholds as server, all modes: warn >40%, reject >60%) ──
       let spreadWarnHtml = '';
-      if (bid > 0 && ask > 0) {
-        const mid = optionMid(bid, ask);
-        spreadPct = (ask - bid) / mid;
+      if (!(bid > 0)) {
+        spreadWarnHtml = `<span style="color:var(--danger,#e05);font-weight:600">⚠ No bid — server will reject this order (spread unbounded). Choose a different strike.</span><br>`;
+      } else if (ask > 0) {
+        const spreadPct = (ask - bid) / optionMid(bid, ask);
         if (spreadPct > 0.60) {
-          const pct = (spreadPct * 100).toFixed(0);
-          spreadWarnHtml = cockpitEntryMode === 'your_price'
-            ? `<span style="color:var(--warn-amber,#fa0)">⚠ Spread ${pct}% — server guard bypassed in Your price mode. Order may rest or fill thinly.</span><br>`
-            : `<span style="color:var(--danger,#e05);font-weight:600">⚠ Spread ${pct}% — server will reject this order (&gt;60% limit). Choose a different strike.</span><br>`;
+          spreadWarnHtml = `<span style="color:var(--danger,#e05);font-weight:600">⚠ Spread ${(spreadPct * 100).toFixed(0)}% — server will reject this order (&gt;60% limit). Choose a different strike.</span><br>`;
         } else if (spreadPct > 0.40) {
           spreadWarnHtml = `<span style="color:var(--warn-amber,#fa0)">⚠ Wide spread ${(spreadPct * 100).toFixed(0)}% — order may not fill promptly.</span><br>`;
         }
       }
 
-      // ── Entry limit resolution — delegates formula to _resolveEntryPrice() ─────
-      const { payload: limitPricePayload, displayPrice: displayCostPrice } = _resolveEntryPrice();
+      // ── Entry limit preview — recomputed again at Place Order (see onOk) ─────
+      const { payload: limitPreview, displayPrice: displayCostPrice, capPrice, overCap } = _resolveEntryPrice();
 
       // your_price: validate that a price was actually typed before opening the modal
       if (cockpitEntryMode === 'your_price' && !(displayCostPrice > 0)) {
@@ -3961,18 +3998,23 @@
       }
 
       let entryPriceHtml;
-      if (cockpitEntryMode === 'auto') {
-        entryPriceHtml = bid <= 0
-          ? `<span style="color:var(--danger,#e05);font-weight:600">⚠ No bid — no order will be placed (Auto never sends a market order). Use Your price or pick another strike.</span>`
-          : `$${displayCostPrice.toFixed(2)} (server-derived)`;
-      } else if (cockpitEntryMode === 'take_ask') {
-        entryPriceHtml = `$${displayCostPrice.toFixed(2)} (ask + 2% fill cushion)`;
+      if (limitPreview == null) {
+        entryPriceHtml = `<span style="color:var(--danger,#e05);font-weight:600">⚠ No ask — no order will be placed.</span>`;
+      } else if (cockpitEntryMode === 'your_price') {
+        entryPriceHtml = overCap
+          ? `<span style="color:var(--danger,#e05);font-weight:600">$${limitPreview.toFixed(2)} — above the ${_maxSlipPct}% cap ($${capPrice.toFixed(2)}); will be rejected</span>`
+          : `$${limitPreview.toFixed(2)} (your price — may rest unfilled; cap $${capPrice.toFixed(2)})`;
       } else {
-        entryPriceHtml = `$${displayCostPrice.toFixed(2)} (your price — may rest unfilled)`;
+        entryPriceHtml = `≤ $${limitPreview.toFixed(2)} (ask $${ask.toFixed(2)} + max ${_maxSlipPct}% slippage)`;
       }
+      const ageS = _armedQuoteAge();
+      const quoteHtml = `Quote: bid $${bid > 0 ? bid.toFixed(2) : '—'} / ask $${ask.toFixed(2)}` +
+        (isFinite(ageS) ? ` <span style="color:var(--text-muted)">(${ageS.toFixed(0)}s old)</span>` : '') + '<br>';
 
       const costHtml = displayCostPrice != null
-        ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong><br>`
+        ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong>` +
+          (limitPreview != null && limitPreview !== displayCostPrice
+            ? ` · max <strong>${fmtPrice(limitPreview * qty * 100)}</strong>` : '') + '<br>'
         : `Est. cost: <strong>— no limit price, no order will be placed</strong><br>`;
 
       // ── Exit-layer resolution — derive from checkbox state ───────────────────
@@ -4023,11 +4065,18 @@
         ocoBracketHtml = `TP limit resting at broker: <strong>${tpDisplay}</strong> — no stop<br>`;
       }
 
-      showConfirmModal({
+      // Yours-mode price_moved choice pending: { liveAsk, typed }. Set by submit() on a
+      // price_moved 409; consumed by the next OK ("Place at $Y") or Alt ("Rest at $X") click.
+      let pendingYoursMove = null;
+      // Hide the secondary button unless the result explicitly asks for it.
+      const _withAltDefault = r => (r && r.altLabel) ? r : { ...(r || {}), hideAlt: true };
+
+      const openModalOpts = {
         title:   `Open ${chainTicker} ${cpLabel}`,
         body:    spreadWarnHtml +
                  `<strong>${sym}</strong><br>` +
                  `Qty: <strong>${qty}</strong> contract${qty > 1 ? 's' : ''}<br>` +
+                 quoteHtml +
                  `Entry limit: <strong>${entryPriceHtml}</strong><br>` +
                  costHtml +
                  ocoBracketHtml +
@@ -4036,41 +4085,71 @@
                  `Gated by kill-switch. Order goes to your active env (verify sandbox before first live use).</span>`,
         okLabel: 'Place Order',
         okClass: '',
-        onOk: async (setStatus) => {
-          // Block: no bid in AUTO mode → would send unbounded market order
-          if (cockpitEntryMode === 'auto' && bid <= 0) {
+        // Submit at the quote on screen. allowRest = Yours-mode "Rest at $X" choice
+        // (server skips only the live_ask > limit check; everything else still applies).
+        submit: async (setStatus, allowRest) => {
+          // Recompute from the quote on screen NOW — not the values frozen at the
+          // first click (background refresh / a price_moved confirm may have changed it).
+          const bidNow = armedContract.bid ?? 0;
+          const askNow = armedContract.ask;
+          const { payload: limitNow, capPrice: capNow, overCap: overCapNow } = _resolveEntryPrice();
+
+          // Spread guard, all modes — server rejects; spare the round-trip.
+          if (!(bidNow > 0)) {
+            setStatus('⚠ No bid — spread unbounded; the server will reject this order. Choose a different strike.', 'error');
+            return;
+          }
+          const spreadNow = (askNow - bidNow) / optionMid(bidNow, askNow);
+          if (spreadNow > 0.60) {
+            setStatus(`Spread ${(spreadNow * 100).toFixed(0)}% exceeds the 60% limit — order would be rejected. Choose a different strike.`, 'error');
+            return;
+          }
+          if (limitNow === undefined) {
+            setStatus('No limit price — enter a price (Yours) or wait for a quote.', 'error');
+            return;
+          }
+          if (overCapNow) {
             setStatus(
-              '⚠ No bid — refusing to send a market order on an illiquid contract. ' +
-              'Switch to Your price mode to set a limit, or choose a different strike.',
+              `Your price $${limitNow.toFixed(2)} is more than ${_maxSlipPct}% above the ask ` +
+              `$${askNow.toFixed(2)} (cap $${capNow.toFixed(2)}). Lower it or raise max slip.`,
               'error',
             );
             return;
           }
-          // Block: spread >60% in AUTO/take_ask — server rejects, spare the round-trip
-          if (spreadPct !== null && spreadPct > 0.60 && cockpitEntryMode !== 'your_price') {
+          // Stale quote: refresh and make the user confirm the new numbers — never send blind.
+          const ageNow = _armedQuoteAge();
+          if (!(ageNow <= ENTRY_QUOTE_MAX_AGE_S)) {
+            setStatus('Refreshing quote…');
+            await refreshArmedQuote();
+            const { payload: lim2 } = _resolveEntryPrice();
             setStatus(
-              `Spread ${(spreadPct * 100).toFixed(0)}% exceeds 60% server limit — order would be rejected. ` +
-              'Choose a different strike or use Your price mode.',
-              'error',
+              `Quote was ${isFinite(ageNow) ? ageNow.toFixed(0) + 's old' : 'not timestamped'} — refreshed: ` +
+              `bid $${(armedContract.bid ?? 0).toFixed(2)} / ask $${armedContract.ask.toFixed(2)}` +
+              (lim2 != null ? ` → limit $${lim2.toFixed(2)}` : '') + '. Click Place Order to send at this quote.',
+              'warn',
             );
-            return;
+            return { okLabel: 'Place Order' };
           }
 
           setStatus('Placing order…');
           try {
             const body = {
-              ticker:        chainTicker,
-              option_symbol: armedContract.symbol,
-              direction:     dir,
-              strike:        armedContract.strike,
-              expiry:        armedContract.expiration,
+              ticker:           chainTicker,
+              option_symbol:    armedContract.symbol,
+              direction:        dir,
+              strike:           armedContract.strike,
+              expiry:           armedContract.expiration,
               qty,
-              bid_price:     ask,
-              tif:           _tif,
+              bid_price:        askNow,   // fallback entry price if no fill price is returned
+              tif:              _tif,
+              limit_price:      limitNow,
+              ref_bid:          bidNow,
+              ref_ask:          askNow,
+              ref_quote_ts:     armedContract.quote_ts,
+              max_slippage_pct: _maxSlipPct,
+              entry_mode:       cockpitEntryMode,
             };
-            if (limitPricePayload !== undefined) {
-              body.limit_price = limitPricePayload;
-            }
+            if (allowRest) body.allow_rest = true;   // server accepts only with entry_mode your_price
             if (effectiveExitLayer !== 'default') {
               body.exit_layer = effectiveExitLayer;
             }
@@ -4123,11 +4202,62 @@
               setStatus(`Status: ${result.status} — ${result.detail || ''}`, 'ok');
             }
           } catch (err) {
-            const detail = err.data && err.data.detail ? err.data.detail : err.message;
-            setStatus(`Error: ${detail}`, 'error');
+            const d = err.data && err.data.detail;
+            if (err.status === 409 && d && d.code === 'price_moved') {
+              // Adopt the live quote as the new reference; the user must confirm.
+              // No automatic retry — the next Place Order click resubmits at this quote.
+              armedContract.bid          = d.live.bid;
+              armedContract.ask          = d.live.ask;
+              armedContract.quote_ts     = d.live.ts;
+              armedContract.quoteAgeBase = 0;
+              armedContract.quoteRecvAt  = Date.now();
+              _updateEntryDisplay();
+              const sign = d.pct_change >= 0 ? '+' : '';
+              const moved = `You saw $${d.ref.ask.toFixed(2)}, now $${d.live.ask.toFixed(2)} ` +
+                            `(${sign}${d.pct_change.toFixed(1)}%).`;
+              if (cockpitEntryMode === 'your_price') {
+                // Yours: two explicit choices — take the live ask, or rest the typed price.
+                pendingYoursMove = { liveAsk: d.live.ask, typed: limitNow };
+                setStatus(
+                  `${moved} Your $${limitNow.toFixed(2)} would not fill now — ` +
+                  `place at $${d.live.ask.toFixed(2)}, or rest at $${limitNow.toFixed(2)}?`,
+                  'warn',
+                );
+                return { okLabel: `Place at $${d.live.ask.toFixed(2)}`,
+                         altLabel: `Rest at $${limitNow.toFixed(2)}` };
+              }
+              // Auto / Ask: prompt-only.
+              setStatus(`${moved} Place at $${d.live.ask.toFixed(2)}?`, 'warn');
+              return { okLabel: 'Confirm' };
+            }
+            if (err.status === 409 && d && d.code === 'stale_quote') {
+              await refreshArmedQuote();
+              setStatus(`${d.message} Quote refreshed — click Place Order to send at the new quote.`, 'warn');
+              return { okLabel: 'Place Order' };
+            }
+            const msg = d && typeof d === 'object' ? (d.message || JSON.stringify(d)) : (d || err.message);
+            setStatus(`Error: ${msg}`, 'error');
           }
         },
-      });
+      };
+      // OK: first click = Place Order; after a Yours-mode price_moved = "Place at $Y"
+      // (the live ask becomes the typed price, then the same submit runs).
+      openModalOpts.onOk = async (setStatus) => {
+        if (pendingYoursMove && cockpitEntryMode === 'your_price') {
+          const inp = document.getElementById('cockpitEntryPriceInput');
+          if (inp) inp.value = pendingYoursMove.liveAsk.toFixed(2);
+          _updateEntryDisplay();
+        }
+        pendingYoursMove = null;
+        return _withAltDefault(await openModalOpts.submit(setStatus, false));
+      };
+      // Alt: only shown after a Yours-mode price_moved — "Rest at $X" (typed price kept).
+      openModalOpts.onAlt = async (setStatus) => {
+        if (!pendingYoursMove) return { hideAlt: true };
+        pendingYoursMove = null;
+        return _withAltDefault(await openModalOpts.submit(setStatus, true));
+      };
+      showConfirmModal(openModalOpts);
     });
 
     // Auto-refresh quote then load projection matrix + payout curve on arm
@@ -4137,28 +4267,28 @@
     loadPayoutCurve();
   }
 
-  // Resolves the entry limit price from current cockpitEntryMode and armedContract.
-  // Single source of truth for the formula — called by _updateEntryDisplay and the Open button.
-  // Mirrors the server gate at trading.py:554: AUTO omits limit_price → gate = bid_price (=ask);
-  // take_ask/your_price send limit_price → gate = that value. Update here if server changes.
+  // Resolves the entry limit price from current cockpitEntryMode, _maxSlipPct and armedContract.
+  // Single source of truth for the formula — called by _updateEntryDisplay and at Place Order.
+  //   payload      — limit_price sent to the server (always explicit now)
+  //   displayPrice — expected fill used for cost / B/E / max-loss displays
+  //   gatePrice    — spend-gate price; the server gates on limit_price (trading.py d2)
+  //   capPrice     — ask × (1 + slip%); Yours above it is rejected (overCap)
+  // Auto and Ask both send a marketable limit at the cap (expected fill ≈ ask).
   function _resolveEntryPrice() {
-    if (!armedContract) return { payload: undefined, displayPrice: null, gatePrice: null };
+    const none = { payload: undefined, displayPrice: null, gatePrice: null, capPrice: null, overCap: false };
+    if (!armedContract) return none;
     const ask = armedContract.ask;
-    const bid = armedContract.bid ?? 0;
-    if (cockpitEntryMode === 'auto') {
-      if (bid <= 0) return { payload: undefined, displayPrice: null, gatePrice: ask };
-      const mid     = optionMid(bid, ask);
-      const derived = Math.min(ask * 1.02, mid * 1.08);
-      return { payload: undefined, displayPrice: derived, gatePrice: ask };
-    } else if (cockpitEntryMode === 'take_ask') {
-      const p = ask * 1.02;
-      return { payload: p, displayPrice: p, gatePrice: p };
-    } else {
-      const inp   = document.getElementById('cockpitEntryPriceInput');
-      const typed = inp ? parseFloat(inp.value) : NaN;
-      if (!(typed > 0)) return { payload: undefined, displayPrice: null, gatePrice: null };
-      return { payload: typed, displayPrice: typed, gatePrice: typed };
+    if (!(ask > 0)) return none;
+    const capPrice = ask * (1 + _maxSlipPct / 100);
+    if (cockpitEntryMode === 'auto' || cockpitEntryMode === 'take_ask') {
+      const lim = _entryLimitFromAsk(ask, _maxSlipPct);
+      return { payload: lim, displayPrice: ask, gatePrice: lim, capPrice, overCap: false };
     }
+    const inp   = document.getElementById('cockpitEntryPriceInput');
+    const typed = inp ? parseFloat(inp.value) : NaN;
+    if (!(typed > 0)) return { ...none, capPrice };
+    return { payload: typed, displayPrice: typed, gatePrice: typed, capPrice,
+             overCap: typed > capPrice + 1e-9 };
   }
 
   // Updates resolved price, bid/ask, cost, max loss (entry × 30% × qty × 100), B/E, and
@@ -4166,7 +4296,7 @@
   // Accessible at outer-closure scope so refreshArmedQuote can call it directly.
   function _updateEntryDisplay() {
     if (!armedContract) return;
-    const { displayPrice, gatePrice } = _resolveEntryPrice();
+    const { payload, displayPrice, gatePrice, capPrice, overCap } = _resolveEntryPrice();
     const qty    = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
     const ask    = armedContract.ask;
     const bid    = armedContract.bid ?? 0;
@@ -4176,9 +4306,16 @@
 
     const priceEl = document.getElementById('cockpitResolvedPrice');
     if (priceEl) {
-      priceEl.textContent = displayPrice != null
-        ? `$${displayPrice.toFixed(2)}`
-        : (cockpitEntryMode === 'auto' && bid <= 0 ? 'no bid' : '—');
+      priceEl.textContent = bid <= 0
+        ? 'no bid'
+        : payload != null ? `limit $${payload.toFixed(2)}` : '—';
+    }
+    const capEl = document.getElementById('cockpitSlipCapNote');
+    if (capEl) {
+      capEl.textContent = capPrice != null
+        ? (overCap ? `⚠ above cap $${capPrice.toFixed(2)}` : `cap $${capPrice.toFixed(2)}`)
+        : '';
+      capEl.style.color = overCap ? 'var(--danger)' : 'var(--text-muted)';
     }
 
     const baEl = document.getElementById('cockpitBidAskDisplay');
@@ -4212,8 +4349,7 @@
       if (beSubEl)   beSubEl.textContent   = '';
     }
 
-    // Spend gate mirrors trading.py:554: AUTO gates on ask; take_ask/your_price gate on limit.
-    // Must be updated if trading.py:554 changes.
+    // Spend gate mirrors trading.py (d2): the server gates on limit_price in every mode.
     const gateCost = gatePrice != null ? gatePrice * qty * 100 : ask * qty * 100;
     _updateSummaryRisk(gateCost);
 
@@ -4362,6 +4498,10 @@
       armedContract.ask = fresh.ask;
       armedContract.iv  = fresh.iv;
       armedContract.dte = fresh.dte;
+      // Quote provenance for entry price protection (ref_quote_ts at Place Order).
+      armedContract.quote_ts     = fresh.quote_ts;
+      armedContract.quoteAgeBase = fresh.quote_age_s;
+      armedContract.quoteRecvAt  = Date.now();
 
       // Refresh meta label
       const dir    = armedContract.bias === 'bullish' ? 'CALL' : 'PUT';
@@ -7641,61 +7781,61 @@
     okBtn.parentNode.replaceChild(newOk, okBtn);
     newOk.textContent = okLabel || 'Confirm';
     newOk.className   = 'dash-modal-btn dash-modal-btn-ok' + (okClass ? ' ' + okClass : '');
-    newOk.addEventListener('click', async () => {
+
+    // Optional secondary action (e.g. "Exit at market instead", "Rest at $X").
+    // Wired whenever onAlt is given; visible initially only if altLabel is too —
+    // an action result can reveal / relabel / hide it later.
+    const altBtn = document.getElementById('confirmAlt');
+    let newAlt = null;
+    if (altBtn) {
+      newAlt = altBtn.cloneNode(true);
+      altBtn.parentNode.replaceChild(newAlt, altBtn);
+      newAlt.className     = 'dash-modal-btn' + (altClass ? ' ' + altClass : '');
+      newAlt.textContent   = altLabel || '';
+      newAlt.style.display = (altLabel && onAlt) ? '' : 'none';
+    }
+
+    // Shared runner for both buttons. Both are disabled while an action is in flight
+    // (no double submit across buttons). An action may return:
+    //   { lockOk: '<label>' }  — an order is live at the broker; disable OK + relabel,
+    //                             hide alt, so nothing can be re-submitted (202 registering)
+    //   { okLabel: '<label>' } — needs another explicit click (price_moved "Confirm" /
+    //                             "Place at $Y"); OK stays enabled, relabelled
+    //   { altLabel: '<label>' } — reveal / relabel the secondary button ("Rest at $X")
+    //   { hideAlt: true }      — hide the secondary button
+    const run = async (fn) => {
       newOk.disabled = true;
+      if (newAlt) newAlt.disabled = true;
       const setStatus = (msg, cls) => {
         const el = document.getElementById('confirmStatus');
         el.textContent = msg;
         el.className   = 'dash-modal-status' + (cls ? ' ' + cls : '');
         if (cls === 'ok') setTimeout(closeModal, 2500);
       };
-      // onOk may return { lockOk: '<label>' } when an order is live at the broker
-      // and must not be re-submitted from this modal (e.g. 202 registering).
-      let lock = null;
+      let res = null;
       try {
-        const res = await onOk(setStatus);
-        if (res && res.lockOk) lock = res.lockOk;
+        res = await fn(setStatus);
       } catch (err) {
         const el = document.getElementById('confirmStatus');
         el.textContent = 'Unexpected error: ' + err.message;
         el.className   = 'dash-modal-status error';
       } finally {
+        const lock = res && res.lockOk;
         newOk.disabled = !!lock;
         if (lock) newOk.textContent = lock;
-      }
-    });
-
-    // Optional secondary action (e.g. "Exit at market instead")
-    const altBtn = document.getElementById('confirmAlt');
-    if (altBtn) {
-      const newAlt = altBtn.cloneNode(true);
-      altBtn.parentNode.replaceChild(newAlt, altBtn);
-      if (altLabel && onAlt) {
-        newAlt.textContent   = altLabel;
-        newAlt.className     = 'dash-modal-btn' + (altClass ? ' ' + altClass : '');
-        newAlt.style.display = '';
-        newAlt.addEventListener('click', async () => {
-          newAlt.disabled = true;
-          const setStatus = (msg, cls) => {
-            const el = document.getElementById('confirmStatus');
-            el.textContent = msg;
-            el.className   = 'dash-modal-status' + (cls ? ' ' + cls : '');
-            if (cls === 'ok') setTimeout(closeModal, 2500);
-          };
-          try {
-            await onAlt(setStatus);
-          } catch (err) {
-            const el = document.getElementById('confirmStatus');
-            el.textContent = 'Unexpected error: ' + err.message;
-            el.className   = 'dash-modal-status error';
-          } finally {
-            newAlt.disabled = false;
+        else if (res && res.okLabel) newOk.textContent = res.okLabel;
+        if (newAlt) {
+          newAlt.disabled = false;
+          if (lock || (res && res.hideAlt)) newAlt.style.display = 'none';
+          else if (res && res.altLabel && onAlt) {
+            newAlt.textContent   = res.altLabel;
+            newAlt.style.display = '';
           }
-        });
-      } else {
-        newAlt.style.display = 'none';
+        }
       }
-    }
+    };
+    newOk.addEventListener('click', () => run(onOk));
+    if (newAlt && onAlt) newAlt.addEventListener('click', () => run(onAlt));
 
     document.getElementById('confirmModal').style.display = 'flex';
   }

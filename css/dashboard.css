@@ -1661,6 +1661,7 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
 }
 .dash-modal-status.ok    { color: var(--accent); }
 .dash-modal-status.error { color: var(--danger); }
+.dash-modal-status.warn  { color: var(--warning); font-weight: 600; }
 
 /* ════════════════════════════════════════════════════════════════
    Trading cockpit — armed contract panel + projection matrix
