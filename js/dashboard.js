@@ -146,7 +146,7 @@
   let chainDayHigh         = null;  // session high from Polygon (same basis as chainDayRange)
   let chainDayLow          = null;  // session low from Polygon (same basis as chainDayRange)
   let lastRiskLeft         = null;  // latest risk_left.value from regime poll; null until first poll
-  let _armedRefreshTimer   = null;  // interval handle — ticks refreshArmedQuote every 30s while armed
+  let _armedRefreshTimer   = null;  // interval handle — ticks refreshArmedContext every 30s while armed (fast bid/ask loop: _quoteLoopTimer)
   let _armedQuoteRefreshing = false; // in-flight guard — prevents overlapping /api/chain/quote calls
   let _rrProfitSide       = null;  // profit-side SR levels hoisted from renderRrLine; read by OCO buttons
   let _ocoButtonRefreshFn = null;  // set by armContract so renderRrLine can trigger OCO button re-render
@@ -235,13 +235,6 @@
     let lim = Math.floor(cap / tick + 1e-9) * tick;
     if (lim < ask) lim = ask;
     return Math.round(lim * 100) / 100;
-  }
-
-  // Seconds since the armed contract's bid/ask was fetched from Tradier, from the
-  // server-reported age (no reliance on the browser clock). Infinity if unknown.
-  function _armedQuoteAge() {
-    if (!armedContract || armedContract.quoteAgeBase == null || !armedContract.quoteRecvAt) return Infinity;
-    return armedContract.quoteAgeBase + (Date.now() - armedContract.quoteRecvAt) / 1000;
   }
 
   // Returns true when within regular trading hours (9:30–16:00 ET).
@@ -2910,7 +2903,7 @@
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading expirations…</div>';
     expiryEl.innerHTML  = '<option value="">— loading —</option>';
-    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
+    _stopArmedQuoteLoops();
     armedContract         = null;
     chainArmedCloudLevels = null;
     matrixProjCache       = null;
@@ -2959,7 +2952,7 @@
     }
 
     chainBody.innerHTML = '<div class="dash-placeholder">Loading chain…</div>';
-    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
+    _stopArmedQuoteLoops();
     armedContract         = null;
     chainArmedCloudLevels = null;
     matrixProjCache       = null;
@@ -3174,6 +3167,8 @@
     if (orderPh)   orderPh.style.display   = 'none';
     const posMeta  = document.getElementById('positionsMeta');
     if (posMeta)   posMeta.textContent     = '';
+    // Order tab now visible → switch the armed quote to the 5s cadence right away.
+    if (armedContract) { refreshArmedQuote(); _scheduleArmedQuote(); }
   }
 
   function _onPayoutTab() {
@@ -3200,7 +3195,7 @@
   }
 
   async function armContract(strike, bias) {
-    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
+    _stopArmedQuoteLoops();
     if (window.SVGrid) window.SVGrid.closePanel();   // read-only grid panel (js/grid.js)
     _ocoButtonRefreshFn = null;
     armedContract = { ...strike, bias };
@@ -3211,7 +3206,11 @@
       type:  'cloud',
       role:  _isCall ? 'support' : 'resistance',
     })).filter(c => c.price > 0);
-    _armedRefreshTimer = setInterval(() => { if (armedContract) refreshArmedQuote(); }, 30000);
+    // Context (underlying / day range / IV / DTE) every 30s; live bid/ask via the fast loop.
+    _armedRefreshTimer = setInterval(() => {
+      if (armedContract && !document.hidden) refreshArmedContext();
+    }, QUOTE_SLOW_MS);
+    _scheduleArmedQuote();
 
     const chainBody    = document.getElementById('chainBody');
     const chainCockpit = document.getElementById('chainCockpit');
@@ -3922,9 +3921,9 @@
       if (e.key === 'Enter') document.getElementById('cockpitApplyTarget').click();
     });
 
-    // Cockpit refresh: re-fetch live quote then re-run matrix + payout curve
+    // Cockpit refresh (↻): re-fetch live quote + context, then re-run matrix + payout curve
     document.getElementById('cockpitRefreshBtn').addEventListener('click', async () => {
-      await refreshArmedQuote();
+      await Promise.all([refreshArmedContext(), refreshArmedQuote()]);
       loadProjectionMatrix();
       loadPayoutCurve();
     });
@@ -3988,7 +3987,7 @@
       }
 
       // ── Entry limit preview — recomputed again at Place Order (see onOk) ─────
-      const { payload: limitPreview, displayPrice: displayCostPrice, capPrice, overCap } = _resolveEntryPrice();
+      const { displayPrice: displayCostPrice } = _resolveEntryPrice();
 
       // your_price: validate that a price was actually typed before opening the modal
       if (cockpitEntryMode === 'your_price' && !(displayCostPrice > 0)) {
@@ -3997,25 +3996,15 @@
         return;
       }
 
-      let entryPriceHtml;
-      if (limitPreview == null) {
-        entryPriceHtml = `<span style="color:var(--danger,#e05);font-weight:600">⚠ No ask — no order will be placed.</span>`;
-      } else if (cockpitEntryMode === 'your_price') {
-        entryPriceHtml = overCap
-          ? `<span style="color:var(--danger,#e05);font-weight:600">$${limitPreview.toFixed(2)} — above the ${_maxSlipPct}% cap ($${capPrice.toFixed(2)}); will be rejected</span>`
-          : `$${limitPreview.toFixed(2)} (your price — may rest unfilled; cap $${capPrice.toFixed(2)})`;
-      } else {
-        entryPriceHtml = `≤ $${limitPreview.toFixed(2)} (ask $${ask.toFixed(2)} + max ${_maxSlipPct}% slippage)`;
-      }
-      const ageS = _armedQuoteAge();
-      const quoteHtml = `Quote: bid $${bid > 0 ? bid.toFixed(2) : '—'} / ask $${ask.toFixed(2)}` +
-        (isFinite(ageS) ? ` <span style="color:var(--text-muted)">(${ageS.toFixed(0)}s old)</span>` : '') + '<br>';
-
-      const costHtml = displayCostPrice != null
-        ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong>` +
-          (limitPreview != null && limitPreview !== displayCostPrice
-            ? ` · max <strong>${fmtPrice(limitPreview * qty * 100)}</strong>` : '') + '<br>'
-        : `Est. cost: <strong>— no limit price, no order will be placed</strong><br>`;
+      // Live fields (cmq*): updated in place by _updateConfirmQuote() on every quote
+      // refresh while the dialog is open; cmqAge counts up every second (_renderQuoteAge).
+      const quoteHtml =
+        `Quote: bid $<span id="cmqBid">${bid > 0 ? bid.toFixed(2) : '—'}</span>` +
+        ` · mid $<span id="cmqMid">${bid > 0 ? optionMid(bid, ask).toFixed(2) : '—'}</span>` +
+        ` · ask $<span id="cmqAsk">${ask.toFixed(2)}</span>` +
+        ` <span id="cmqAge" class="cockpit-quote-age"></span><br>`;
+      const entryPriceHtml = `<span id="cmqLimit">${_confirmEntryLimitHtml()}</span>`;
+      const costHtml = `Est. cost: <strong id="cmqCost">${_confirmCostHtml(qty)}</strong><br>`;
 
       // ── Exit-layer resolution — derive from checkbox state ───────────────────
       let effectiveExitLayer = cockpitExitLayer;
@@ -4208,10 +4197,12 @@
               // No automatic retry — the next Place Order click resubmits at this quote.
               armedContract.bid          = d.live.bid;
               armedContract.ask          = d.live.ask;
-              armedContract.quote_ts     = d.live.ts;
-              armedContract.quoteAgeBase = 0;
-              armedContract.quoteRecvAt  = Date.now();
+              armedContract.quote_ts     = d.live.ts;   // server clock, same basis as /api/v1/quote
+              _armedQuoteError           = null;
+              _patchQuoteLine();
               _updateEntryDisplay();
+              _updateConfirmQuote();
+              _renderQuoteAge();
               const sign = d.pct_change >= 0 ? '+' : '';
               const moved = `You saw $${d.ref.ask.toFixed(2)}, now $${d.live.ask.toFixed(2)} ` +
                             `(${sign}${d.pct_change.toFixed(1)}%).`;
@@ -4258,10 +4249,14 @@
         return _withAltDefault(await openModalOpts.submit(setStatus, true));
       };
       showConfirmModal(openModalOpts);
+      // Live fields + stale gate start immediately; dialog open → 5s cadence.
+      _updateConfirmQuote();
+      _renderQuoteAge();
+      _scheduleArmedQuote();
     });
 
-    // Auto-refresh quote then load projection matrix + payout curve on arm
-    await refreshArmedQuote();
+    // Fetch live quote + context, then load projection matrix + payout curve on arm
+    await Promise.all([refreshArmedContext(), refreshArmedQuote()]);
     _render5_12Cloud();
     loadProjectionMatrix();
     loadPayoutCurve();
@@ -4465,13 +4460,88 @@
   // Re-fetches the live quote for the armed contract from /api/chain/quote.
   // Updates armedContract.ask / .iv / .dte in place so subsequent projection
   // calls and the Open button use fresh data.
-  async function refreshArmedQuote() {
-    if (!armedContract || !chainTicker) return;
-    if (_armedQuoteRefreshing) return;
-    _armedQuoteRefreshing = true;
-    const ageEl = document.getElementById('cockpitQuoteAge');
-    if (ageEl) ageEl.textContent = ' · refreshing…';
+  // ── Armed-contract quote: fast live bid/ask + slow context ───────────────────
+  //
+  // refreshArmedQuote()   — bid/ask from /api/v1/quote/{symbol} (direct Tradier, no chain
+  //                         cache). 5s while the Order tab or the entry confirm dialog is
+  //                         visible, 30s otherwise, paused while document.hidden. One
+  //                         request in flight at a time: a tick that finds one running is
+  //                         skipped. Source of armedContract.quote_ts (→ ref_quote_ts).
+  // refreshArmedContext() — underlying, day range / OHLC, IV, DTE from /api/chain/quote
+  //                         every 30s. Never writes bid/ask (that data is chain-cached).
+  const QUOTE_FAST_MS = 5000;
+  const QUOTE_SLOW_MS = 30000;
+  let _quoteLoopTimer     = null;   // setTimeout handle for the fast loop
+  let _clockOffsetS       = 0;      // server_now − browser now, seconds (from the last quote)
+  let _armedQuoteError    = null;   // last refresh failure text; cleared on success
+  let _armedContextRefreshing = false;
 
+  function _renderArmedMeta() {
+    const metaEl = document.getElementById('cockpitMeta');
+    if (!metaEl || !armedContract) return;
+    const dir = armedContract.bias === 'bullish' ? 'CALL' : 'PUT';
+    const ask = Number(armedContract.ask) || 0;
+    const iv  = Number(armedContract.iv)  || 0;
+    metaEl.innerHTML =
+      `${dir} · ask $${ask.toFixed(2)} · ${armedContract.dte}DTE` +
+      (iv > 0 ? ` · IV ${(iv * 100).toFixed(0)}%` : '') +
+      ` <span class="cockpit-quote-age" id="cockpitQuoteAge"></span>`;
+    _renderQuoteAge();
+  }
+
+  function _patchQuoteLine() {
+    const _fBid = armedContract.bid ?? 0;
+    const _fAsk = armedContract.ask;
+    const _fMid = _fBid > 0 ? optionMid(_fBid, _fAsk) : null;
+    const bidEl = document.getElementById('cqlBid');
+    const midEl = document.getElementById('cqlMid');
+    const askEl = document.getElementById('cqlAsk');
+    const spEl  = document.getElementById('cqlSpread');
+    if (bidEl) bidEl.textContent = _fBid > 0 ? _fBid.toFixed(2) : '—';
+    if (midEl) midEl.textContent = _fMid != null ? _fMid.toFixed(2) : '—';
+    if (askEl) askEl.textContent = _fAsk.toFixed(2);
+    if (spEl && _fBid > 0 && _fAsk > 0 && _fMid != null) {
+      const _sp = (_fAsk - _fBid) / _fMid;
+      spEl.innerHTML  = _sp > 0.40
+        ? `<i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${(_sp * 100).toFixed(0)}%`
+        : `${(_sp * 100).toFixed(0)}%`;
+      spEl.className  = `cql-spread ${_sp > 0.40 ? 'cql-spread-warn' : 'cql-spread-muted'}`;
+    }
+  }
+
+  async function refreshArmedQuote() {
+    if (!armedContract || !armedContract.symbol) return;
+    if (_armedQuoteRefreshing) return;            // previous request still out → skip this tick
+    _armedQuoteRefreshing = true;
+    const forSymbol = armedContract.symbol;
+    try {
+      const fresh = await apiFetch(`/api/v1/quote/${encodeURIComponent(forSymbol)}`);
+      // Contract may have been re-armed while the request was out.
+      if (!armedContract || armedContract.symbol !== forSymbol) return;
+      _clockOffsetS          = fresh.server_now - Date.now() / 1000;
+      armedContract.bid      = fresh.bid;
+      armedContract.ask      = fresh.ask;
+      armedContract.quote_ts = fresh.quote_ts;   // → ref_quote_ts at Place Order
+      _armedQuoteError       = null;
+
+      _renderArmedMeta();
+      _patchQuoteLine();
+      _render5_12Cloud();                         // cloud premium block uses bid/ask
+      _updateEntryDisplay();                      // resolved limit, cost, max loss, B/E, spend gate
+      if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
+      _updateConfirmQuote();                      // live fields in an open entry dialog
+    } catch (err) {
+      _armedQuoteError = 'refresh failed';
+      console.warn('[quote] refresh failed', err && err.message);
+    } finally {
+      _armedQuoteRefreshing = false;
+      _renderQuoteAge();                          // also re-applies the stale gate
+    }
+  }
+
+  async function refreshArmedContext() {
+    if (!armedContract || !chainTicker || _armedContextRefreshing) return;
+    _armedContextRefreshing = true;
     try {
       const optionType = armedContract.option_type ||
         (armedContract.bias === 'bullish' ? 'call' : 'put');
@@ -4483,7 +4553,6 @@
         price:       chainCurrentPrice > 0 ? chainCurrentPrice : armedContract.strike,
       });
       const fresh = await apiFetch(`/api/chain/quote?${params}`);
-
       // Refresh day_range + OHLC split so ATR bar and Rem ATR column stay current.
       if (fresh.day_range   != null) chainDayRange    = fresh.day_range;
       if (fresh.day_open    != null) chainDayOpen     = fresh.day_open;
@@ -4492,58 +4561,122 @@
       // Live underlying — null pre-market or on fetch failure; leave chainCurrentPrice unchanged then.
       if (fresh.underlying  != null) chainCurrentPrice = fresh.underlying;
       if (focusedTicker) renderLevels(focusedTicker);
-
-      // Update in-place so qty handler and Open button use fresh ask/bid
-      armedContract.bid = fresh.bid;
-      armedContract.ask = fresh.ask;
-      armedContract.iv  = fresh.iv;
-      armedContract.dte = fresh.dte;
-      // Quote provenance for entry price protection (ref_quote_ts at Place Order).
-      armedContract.quote_ts     = fresh.quote_ts;
-      armedContract.quoteAgeBase = fresh.quote_age_s;
-      armedContract.quoteRecvAt  = Date.now();
-
-      // Refresh meta label
-      const dir    = armedContract.bias === 'bullish' ? 'CALL' : 'PUT';
-      const metaEl = document.getElementById('cockpitMeta');
-      if (metaEl) {
-        metaEl.innerHTML =
-          `${dir} · ask $${fresh.ask.toFixed(2)} · ${fresh.dte}DTE` +
-          (fresh.iv > 0 ? ` · IV ${(fresh.iv * 100).toFixed(0)}%` : '') +
-          ` <span class="cockpit-quote-age" id="cockpitQuoteAge"> · live</span>`;
+      if (armedContract) {
+        armedContract.iv  = fresh.iv;
+        armedContract.dte = fresh.dte;
+        _renderArmedMeta();
       }
-
-      // Patch bid/mid/ask/spread quote line in place
-      const _fBid = fresh.bid ?? 0;
-      const _fAsk = fresh.ask;
-      const _fMid = _fBid > 0 ? optionMid(_fBid, _fAsk) : null;
-      const bidEl = document.getElementById('cqlBid');
-      const midEl = document.getElementById('cqlMid');
-      const askEl = document.getElementById('cqlAsk');
-      const spEl  = document.getElementById('cqlSpread');
-      if (bidEl) bidEl.textContent = _fBid > 0 ? _fBid.toFixed(2) : '—';
-      if (midEl) midEl.textContent = _fMid != null ? _fMid.toFixed(2) : '—';
-      if (askEl) askEl.textContent = _fAsk.toFixed(2);
-      if (spEl && _fBid > 0 && _fAsk > 0 && _fMid != null) {
-        const _sp = (_fAsk - _fBid) / _fMid;
-        spEl.innerHTML  = _sp > 0.40
-          ? `<i class="ti ti-alert-triangle" style="color:var(--warning)"></i> ${(_sp * 100).toFixed(0)}%`
-          : `${(_sp * 100).toFixed(0)}%`;
-        spEl.className  = `cql-spread ${_sp > 0.40 ? 'cql-spread-warn' : 'cql-spread-muted'}`;
-      }
-
-      // Refresh cloud premium block with updated bid/ask
-      _render5_12Cloud();
-
-      // Refresh all display fields (resolved price, bid/ask, cost, max loss, B/E, spend gate)
-      _updateEntryDisplay();
-      // Refresh OCO P&L sub-labels if OCO bracket is active
-      if (cockpitExitLayer === 'oco_bracket') _updateOcoPnl();
-    } catch (_) {
-      if (ageEl) ageEl.textContent = ' · refresh failed';
+    } catch (err) {
+      console.warn('[quote] context refresh failed', err && err.message);
     } finally {
-      _armedQuoteRefreshing = false;
+      _armedContextRefreshing = false;
     }
+  }
+
+  // ── Fast-loop scheduling ──
+  function _orderTabVisible() {
+    return !!document.getElementById('tabOrder')?.classList.contains('active');
+  }
+  function _entryConfirmOpen() {
+    return !!document.getElementById('cmqAge') &&
+           document.getElementById('confirmModal')?.style.display === 'flex';
+  }
+  function _quoteCadenceMs() {
+    return (_orderTabVisible() || _entryConfirmOpen()) ? QUOTE_FAST_MS : QUOTE_SLOW_MS;
+  }
+  // (Re)start the fast loop. Cadence is re-read every tick, so switching tabs or opening
+  // the confirm dialog takes effect on the next tick; callers that need it sooner call this.
+  function _scheduleArmedQuote(delayMs) {
+    clearTimeout(_quoteLoopTimer);
+    _quoteLoopTimer = null;
+    if (!armedContract || document.hidden) return;
+    _quoteLoopTimer = setTimeout(() => {
+      _scheduleArmedQuote();     // schedule next tick first → steady cadence
+      refreshArmedQuote();       // no-op (skipped tick) if the previous request is still out
+    }, delayMs ?? _quoteCadenceMs());
+  }
+  function _stopArmedQuoteLoops() {
+    clearTimeout(_quoteLoopTimer);
+    _quoteLoopTimer = null;
+    if (_armedRefreshTimer) { clearInterval(_armedRefreshTimer); _armedRefreshTimer = null; }
+  }
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) { clearTimeout(_quoteLoopTimer); _quoteLoopTimer = null; return; }
+    if (armedContract) {
+      refreshArmedQuote();       // immediate refresh on return
+      refreshArmedContext();
+      _scheduleArmedQuote();
+    }
+  });
+
+  // ── Quote age (counts up every second; server clock via _clockOffsetS) ──
+  function _armedQuoteAge() {
+    if (!armedContract || !(armedContract.quote_ts > 0)) return Infinity;
+    return (Date.now() / 1000 + _clockOffsetS) - armedContract.quote_ts;
+  }
+  function _quoteAgeClass(age) {
+    if (!(age <= ENTRY_QUOTE_MAX_AGE_S)) return 'age-stale';   // red: > 20s or unknown
+    return age < 10 ? 'age-fresh' : 'age-aging';               // grey < 10s, amber 10–20s
+  }
+  function _quoteAgeText(age) {
+    const base = isFinite(age) ? `${Math.max(0, age).toFixed(0)}s` : '—';
+    return base + (_armedQuoteError ? ` (${_armedQuoteError})` : '');
+  }
+  function _renderQuoteAge() {
+    const age = _armedQuoteAge();
+    const cls = _quoteAgeClass(age);
+    const el  = document.getElementById('cockpitQuoteAge');
+    if (el) { el.textContent = ` · ${_quoteAgeText(age)}`; el.className = `cockpit-quote-age ${cls}`; }
+    const mEl = document.getElementById('cmqAge');
+    if (mEl) { mEl.textContent = `(${_quoteAgeText(age)} old)`; mEl.className = `cockpit-quote-age ${cls}`; }
+    _applyStaleGate(age);
+  }
+  setInterval(() => { if (armedContract) _renderQuoteAge(); }, 1000);
+
+  // Disable Place Order in the entry dialog while the quote is red; re-enabled by the
+  // next fresh quote. Never overrides an in-flight action (busy) or a live-order lock.
+  function _applyStaleGate(age = _armedQuoteAge()) {
+    const ok = document.getElementById('confirmOk');
+    if (!ok || !_entryConfirmOpen() || ok.dataset.busy || ok.dataset.locked) return;
+    const stale = !(age <= ENTRY_QUOTE_MAX_AGE_S);
+    ok.disabled = stale;
+    ok.title    = stale ? `Quote over ${ENTRY_QUOTE_MAX_AGE_S}s old — waiting for a fresh quote` : '';
+  }
+
+  // ── Entry confirm dialog: live fields ──
+  function _confirmEntryLimitHtml() {
+    const ask = armedContract.ask;
+    const { payload, capPrice, overCap } = _resolveEntryPrice();
+    if (payload == null) {
+      return `<span style="color:var(--danger,#e05);font-weight:600">⚠ No ask — no order will be placed.</span>`;
+    }
+    if (cockpitEntryMode === 'your_price') {
+      return overCap
+        ? `<span style="color:var(--danger,#e05);font-weight:600">$${payload.toFixed(2)} — above the ${_maxSlipPct}% cap ($${capPrice.toFixed(2)}); will be rejected</span>`
+        : `$${payload.toFixed(2)} (your price — prompts if the live ask is above it; cap $${capPrice.toFixed(2)})`;
+    }
+    return `≤ $${payload.toFixed(2)} (ask $${ask.toFixed(2)} + max ${_maxSlipPct}% slippage)`;
+  }
+  function _confirmCostHtml(qty) {
+    const { payload, displayPrice } = _resolveEntryPrice();
+    if (displayPrice == null) return '— no limit price, no order will be placed';
+    return fmtPrice(displayPrice * qty * 100) +
+      (payload != null && payload !== displayPrice ? ` · max ${fmtPrice(payload * qty * 100)}` : '');
+  }
+  function _updateConfirmQuote() {
+    if (!_entryConfirmOpen() || !armedContract) return;
+    const bid = armedContract.bid ?? 0;
+    const ask = armedContract.ask;
+    const qty = Math.max(1, parseInt((document.getElementById('chainQty') || {}).value, 10) || 1);
+    const set = (id, v, html = false) => {
+      const el = document.getElementById(id);
+      if (el) { if (html) el.innerHTML = v; else el.textContent = v; }
+    };
+    set('cmqBid', bid > 0 ? bid.toFixed(2) : '—');
+    set('cmqMid', bid > 0 ? optionMid(bid, ask).toFixed(2) : '—');
+    set('cmqAsk', ask.toFixed(2));
+    set('cmqLimit', _confirmEntryLimitHtml(), true);
+    set('cmqCost',  _confirmCostHtml(qty), true);
   }
 
   // Promoted to outer-closure scope so refreshArmedQuote and _updateBrokerBotCols (inner)
@@ -7781,6 +7914,12 @@
     okBtn.parentNode.replaceChild(newOk, okBtn);
     newOk.textContent = okLabel || 'Confirm';
     newOk.className   = 'dash-modal-btn dash-modal-btn-ok' + (okClass ? ' ' + okClass : '');
+    // cloneNode copies the disabled attribute and data-* — a previous dialog's lockOk /
+    // stale gate would otherwise carry over and open this one with OK already disabled.
+    newOk.disabled = false;
+    newOk.title    = '';
+    delete newOk.dataset.locked;
+    delete newOk.dataset.busy;
 
     // Optional secondary action (e.g. "Exit at market instead", "Rest at $X").
     // Wired whenever onAlt is given; visible initially only if altLabel is too —
@@ -7793,6 +7932,7 @@
       newAlt.className     = 'dash-modal-btn' + (altClass ? ' ' + altClass : '');
       newAlt.textContent   = altLabel || '';
       newAlt.style.display = (altLabel && onAlt) ? '' : 'none';
+      newAlt.disabled      = false;
     }
 
     // Shared runner for both buttons. Both are disabled while an action is in flight
@@ -7805,6 +7945,7 @@
     //   { hideAlt: true }      — hide the secondary button
     const run = async (fn) => {
       newOk.disabled = true;
+      newOk.dataset.busy = '1';        // stale gate leaves the button alone while busy
       if (newAlt) newAlt.disabled = true;
       const setStatus = (msg, cls) => {
         const el = document.getElementById('confirmStatus');
@@ -7821,6 +7962,8 @@
         el.className   = 'dash-modal-status error';
       } finally {
         const lock = res && res.lockOk;
+        delete newOk.dataset.busy;
+        if (lock) newOk.dataset.locked = '1';
         newOk.disabled = !!lock;
         if (lock) newOk.textContent = lock;
         else if (res && res.okLabel) newOk.textContent = res.okLabel;
@@ -7832,6 +7975,7 @@
             newAlt.style.display = '';
           }
         }
+        _applyStaleGate();   // entry dialog only: keep OK disabled if the quote is red
       }
     };
     newOk.addEventListener('click', () => run(onOk));

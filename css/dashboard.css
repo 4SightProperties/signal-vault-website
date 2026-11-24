@@ -1702,7 +1702,11 @@ body { overflow: hidden; height: 100vh; height: 100dvh; display: flex; flex-dire
   text-overflow: ellipsis;
 }
 
-.cockpit-quote-age { color: var(--text-muted); }
+.cockpit-quote-age { color: var(--text-muted); font-variant-numeric: tabular-nums; }
+/* Quote age: grey < 10s, amber 10–20s, red > 20s (Place Order disabled while red) */
+.cockpit-quote-age.age-fresh { color: var(--text-muted); }
+.cockpit-quote-age.age-aging { color: var(--warning); }
+.cockpit-quote-age.age-stale { color: var(--danger); font-weight: 600; }
 
 .cockpit-refresh-btn {
   flex-shrink: 0;
