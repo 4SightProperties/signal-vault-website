@@ -3366,7 +3366,7 @@
 
     <div class="cockpit-entry-sublabels">
       <span class="cockpit-entry-sublabel" id="cockpitEntrySublabel">limit order · day</span>
-      <span class="cockpit-entry-sublabel">market &amp; stop entry not supported</span>
+      <span class="cockpit-entry-sublabel">limit only · no live quote = no order (never market)</span>
     </div>
   </div>
 
@@ -3963,7 +3963,7 @@
       let entryPriceHtml;
       if (cockpitEntryMode === 'auto') {
         entryPriceHtml = bid <= 0
-          ? `<span style="color:var(--danger,#e05);font-weight:600">⚠ No bid — server will send a MARKET order, unbounded fill price</span>`
+          ? `<span style="color:var(--danger,#e05);font-weight:600">⚠ No bid — no order will be placed (Auto never sends a market order). Use Your price or pick another strike.</span>`
           : `$${displayCostPrice.toFixed(2)} (server-derived)`;
       } else if (cockpitEntryMode === 'take_ask') {
         entryPriceHtml = `$${displayCostPrice.toFixed(2)} (ask + 2% fill cushion)`;
@@ -3973,7 +3973,7 @@
 
       const costHtml = displayCostPrice != null
         ? `Est. cost: <strong>${fmtPrice(displayCostPrice * qty * 100)}</strong><br>`
-        : `Est. cost: <strong>unknown — market order, no limit</strong><br>`;
+        : `Est. cost: <strong>— no limit price, no order will be placed</strong><br>`;
 
       // ── Exit-layer resolution — derive from checkbox state ───────────────────
       let effectiveExitLayer = cockpitExitLayer;
@@ -4100,6 +4100,25 @@
                 'Check Working Orders to monitor or cancel.',
                 'ok',
               );
+            } else if (result.status === 'registering') {
+              // 202: filled at Tradier, booking failed server-side, handed to the
+              // reconciler (first check within 30s). Order is LIVE: lock the button.
+              setStatus(
+                'Order live, registering — do NOT re-enter. ' +
+                `Order ${result.order_id || ''} is filled at Tradier; the position will ` +
+                'appear in Open Positions automatically (first check within 30s).',
+                'warn',
+              );
+              return { lockOk: 'Order live — do not re-enter' };
+            } else if (result.status === 'live_unrecorded') {
+              // 202: order is live at Tradier but the server could not record it.
+              setStatus(
+                'Order LIVE at Tradier but NOT tracked — do NOT re-enter. ' +
+                (result.order_id ? `Order ${result.order_id}. ` : '') +
+                'Admin has been alerted; check Tradier.',
+                'error',
+              );
+              return { lockOk: 'Order live — do not re-enter' };
             } else {
               setStatus(`Status: ${result.status} — ${result.detail || ''}`, 'ok');
             }
@@ -7630,14 +7649,19 @@
         el.className   = 'dash-modal-status' + (cls ? ' ' + cls : '');
         if (cls === 'ok') setTimeout(closeModal, 2500);
       };
+      // onOk may return { lockOk: '<label>' } when an order is live at the broker
+      // and must not be re-submitted from this modal (e.g. 202 registering).
+      let lock = null;
       try {
-        await onOk(setStatus);
+        const res = await onOk(setStatus);
+        if (res && res.lockOk) lock = res.lockOk;
       } catch (err) {
         const el = document.getElementById('confirmStatus');
         el.textContent = 'Unexpected error: ' + err.message;
         el.className   = 'dash-modal-status error';
       } finally {
-        newOk.disabled = false;
+        newOk.disabled = !!lock;
+        if (lock) newOk.textContent = lock;
       }
     });
 
